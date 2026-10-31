@@ -432,7 +432,7 @@ impl Surveyor {
     }
 
     #[tool(
-        description = "The most connected nodes by PageRank: the hubs a change is most likely to ripple through."
+        description = "The hubs a change ripples through: nodes ranked by how many distinct files depend on them, with in and out degree and PageRank for reference."
     )]
     async fn god_nodes(
         &self,
@@ -442,20 +442,26 @@ impl Surveyor {
             include_structural: false,
             ..EdgeFilter::default()
         };
-        let ranked = self
+        let hubs = self
             .graph
-            .page_rank(p.limit.unwrap_or(20).clamp(1, 200), &filter);
+            .hubs(p.limit.unwrap_or(20).clamp(1, 200), &filter);
         #[derive(Serialize)]
-        struct Hub {
+        struct View {
+            dependent_files: usize,
+            in_degree: usize,
+            out_degree: usize,
             rank: f64,
             node: NodeView,
         }
         json_result(
-            &ranked
+            &hubs
                 .iter()
-                .map(|(n, r)| Hub {
-                    rank: *r,
-                    node: NodeView::of(n),
+                .map(|h| View {
+                    dependent_files: h.dependent_files,
+                    in_degree: h.in_degree,
+                    out_degree: h.out_degree,
+                    rank: h.rank,
+                    node: NodeView::of(h.node),
                 })
                 .collect::<Vec<_>>(),
         )

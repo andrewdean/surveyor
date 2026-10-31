@@ -188,6 +188,21 @@ pub struct PathStep<'a> {
     pub edge: Option<&'a Edge>,
 }
 
+/// A node many others depend on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Hub<'a> {
+    /// The node.
+    pub node: &'a Node,
+    /// Distinct files whose nodes have an accepted edge into this node.
+    pub dependent_files: usize,
+    /// Accepted incoming edges.
+    pub in_degree: usize,
+    /// Accepted outgoing edges.
+    pub out_degree: usize,
+    /// `PageRank` over the accepted edges, for reference.
+    pub rank: f64,
+}
+
 /// A cluster of nodes that reference each other more than the rest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Community {
@@ -491,33 +506,11 @@ impl CodeGraph {
         Some(steps)
     }
 
-    /// The `top` nodes by `PageRank` over the edges the filter accepts.
+    /// `PageRank` of every node, indexed like `self.nodes`, over the accepted edges.
     ///
     /// Power iteration over the edge list, linear in edges per round, so a graph of a
     /// few hundred thousand edges ranks in well under a second.
-    /// The best path from `from` to `to`: precise edges first, then any dependency
-    /// edge, then any edge at all, with the tier that succeeded.
-    #[must_use]
-    pub fn best_path(
-        &self,
-        from: &NodeId,
-        to: &NodeId,
-        directed: bool,
-    ) -> Option<(PathTier, Vec<PathStep<'_>>)> {
-        [
-            (PathTier::Precise, EdgeFilter::precise()),
-            (PathTier::Loose, EdgeFilter::loose()),
-            (PathTier::Any, EdgeFilter::default()),
-        ]
-        .into_iter()
-        .find_map(|(tier, filter)| {
-            self.shortest_path(from, to, &filter, directed)
-                .map(|steps| (tier, steps))
-        })
-    }
-
-    #[must_use]
-    pub fn page_rank(&self, top: usize, filter: &EdgeFilter) -> Vec<(&Node, f64)> {
+    fn page_rank_scores(&self, filter: &EdgeFilter) -> Vec<f64> {
         let n = self.graph.node_count();
         if n == 0 {
             return Vec::new();
@@ -551,7 +544,14 @@ impl CodeGraph {
             }
             std::mem::swap(&mut rank, &mut next);
         }
-        let mut scored: Vec<(&Node, f64)> = rank
+        rank
+    }
+
+    /// The `top` nodes by `PageRank` over the edges the filter accepts.
+    #[must_use]
+    pub fn page_rank(&self, top: usize, filter: &EdgeFilter) -> Vec<(&Node, f64)> {
+        let mut scored: Vec<(&Node, f64)> = self
+            .page_rank_scores(filter)
             .into_iter()
             .enumerate()
             .map(|(i, r)| (&self.nodes[self.graph[NodeIndex::new(i)]], r))
@@ -563,6 +563,80 @@ impl CodeGraph {
         });
         scored.truncate(top);
         scored
+    }
+
+    /// The `top` hubs: nodes ranked by how many distinct files depend on them.
+    ///
+    /// Fan-in across files is what a change ripples through; `PageRank` alone rewards
+    /// small closed cycles (an error enum and its `Display` impl) and is kept only as a
+    /// tiebreaker and for reference.
+    #[must_use]
+    pub fn hubs(&self, top: usize, filter: &EdgeFilter) -> Vec<Hub<'_>> {
+        let ranks = self.page_rank_scores(filter);
+        let mut hubs: Vec<Hub<'_>> = self
+            .graph
+            .node_indices()
+            .map(|ix| {
+                let node = &self.nodes[self.graph[ix]];
+                let incoming: Vec<&Node> = self
+                    .graph
+                    .edges_directed(ix, petgraph::Direction::Incoming)
+                    .filter(|er| filter.accepts(&self.edges[*er.weight()]))
+                    .map(|er| &self.nodes[self.graph[er.source()]])
+                    .collect();
+                let dependent_files = incoming
+                    .iter()
+                    .map(|n| n.file().map_or(n.id.as_str(), |f| f.as_str()))
+                    .collect::<HashSet<_>>()
+                    .len();
+                let out_degree = self
+                    .graph
+                    .edges_directed(ix, petgraph::Direction::Outgoing)
+                    .filter(|er| filter.accepts(&self.edges[*er.weight()]))
+                    .count();
+                Hub {
+                    node,
+                    dependent_files,
+                    in_degree: incoming.len(),
+                    out_degree,
+                    rank: ranks[ix.index()],
+                }
+            })
+            .collect();
+        hubs.sort_by(|a, b| {
+            b.dependent_files
+                .cmp(&a.dependent_files)
+                .then_with(|| b.in_degree.cmp(&a.in_degree))
+                .then_with(|| {
+                    b.rank
+                        .partial_cmp(&a.rank)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| a.node.id.cmp(&b.node.id))
+        });
+        hubs.truncate(top);
+        hubs
+    }
+
+    /// The best path from `from` to `to`: precise edges first, then any dependency
+    /// edge, then any edge at all, with the tier that succeeded.
+    #[must_use]
+    pub fn best_path(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        directed: bool,
+    ) -> Option<(PathTier, Vec<PathStep<'_>>)> {
+        [
+            (PathTier::Precise, EdgeFilter::precise()),
+            (PathTier::Loose, EdgeFilter::loose()),
+            (PathTier::Any, EdgeFilter::default()),
+        ]
+        .into_iter()
+        .find_map(|(tier, filter)| {
+            self.shortest_path(from, to, &filter, directed)
+                .map(|steps| (tier, steps))
+        })
     }
 
     /// Communities by label propagation over the edges the filter accepts.
@@ -809,6 +883,13 @@ mod tests {
 
         let ranked = g.page_rank(2, &EdgeFilter::default());
         assert_eq!(ranked[0].0.id.as_str(), "sql:s.t");
+        let hubs = g.hubs(3, &EdgeFilter::default());
+        assert_eq!(
+            hubs[0].node.id.as_str(),
+            "a::service",
+            "two callers plus the highest rank"
+        );
+        assert_eq!(hubs[0].in_degree, 2);
 
         let comms = g.communities(&EdgeFilter::default());
         assert_eq!(comms.len(), 1);

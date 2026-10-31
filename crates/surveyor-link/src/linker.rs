@@ -20,6 +20,10 @@ use crate::resolve::{Resolution, Site, SymbolIndex, Tier, decide, is_method, ran
 /// Resolver recorded on edges derived from `sqlparser` facts.
 const SQL_RESOLVER: &str = "sqlparser";
 
+/// Resolver recorded on dispatch edges: an implementation's method with the name of a
+/// method of the contract it implements, which the language guarantees is the override.
+const DISPATCH_RESOLVER: &str = "dispatch";
+
 /// Grammar recorded when a fact set names none (native enrichers).
 const NO_GRAMMAR: &str = "none";
 
@@ -66,6 +70,7 @@ fn run(mut b: Builder<'_>) -> GraphDelta {
     b.declared_relations();
     b.imports();
     b.references();
+    b.dispatch();
     b.literals();
     b.tests();
     b.finish()
@@ -789,6 +794,11 @@ impl<'a> Builder<'a> {
                     )
                 }),
                 ReferenceRole::Read | ReferenceRole::Write => self.link_table(si, src, &r),
+                // A path used as a value or in a pattern: a function handed to a caller, a
+                // variant matched. Any symbol may be the target; a miss is not a gap.
+                ReferenceRole::Mention => self.link_named(si, src, &r, false, false, |k| {
+                    k.is_symbol() || *k == NodeKind::Module
+                }),
                 _ => {}
             }
         }
@@ -1229,7 +1239,70 @@ impl<'a> Builder<'a> {
             })
     }
 
-    // ---- pass 7: tests ---------------------------------------------------------------
+    // ---- pass 7: dispatch ------------------------------------------------------------
+
+    /// `Trait::m -DISPATCHES_TO-> Impl::m` for every method an implementation defines
+    /// under the same name as a method of the trait or interface it implements.
+    ///
+    /// A call to the trait method reaches these bodies at runtime; without the edge a
+    /// path stops at the trait and `affected` never climbs from an implementation to the
+    /// callers of its contract.
+    fn dispatch(&mut self) {
+        let position = |id: &NodeId| self.node_pos.get(id).copied();
+        let implements: Vec<(usize, usize)> = self
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Implements)
+            .filter_map(|e| Some((position(&e.src)?, position(&e.dst)?)))
+            .collect();
+        let children: HashMap<usize, Vec<usize>> = self
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Defines)
+            .filter_map(|e| Some((position(&e.src)?, position(&e.dst)?)))
+            .fold(HashMap::new(), |mut acc, (parent, child)| {
+                acc.entry(parent).or_default().push(child);
+                acc
+            });
+        let methods = |owner: usize| -> Vec<usize> {
+            children
+                .get(&owner)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|&m| self.nodes[m].kind == NodeKind::Method)
+                .collect()
+        };
+        let pairs: Vec<(usize, usize)> = implements
+            .iter()
+            .flat_map(|&(implementor, contract)| {
+                let by_name: HashMap<&str, usize> = methods(contract)
+                    .into_iter()
+                    .map(|m| (self.nodes[m].name.as_str(), m))
+                    .collect();
+                methods(implementor)
+                    .into_iter()
+                    .filter_map(|m| by_name.get(self.nodes[m].name.as_str()).map(|&c| (c, m)))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for (contract_method, implementation) in pairs {
+            let Some(evidence) = self.evidence_of(implementation) else {
+                continue;
+            };
+            let prov = Provenance::resolved(ResolverId::new(DISPATCH_RESOLVER), evidence);
+            let against = vec![self.node_id(contract_method), self.node_id(implementation)];
+            self.push_edge_once(
+                contract_method,
+                EdgeKind::DispatchesTo,
+                implementation,
+                prov,
+                against,
+            );
+        }
+    }
+
+    // ---- pass 8: tests ---------------------------------------------------------------
 
     fn tests(&mut self) {
         let tested: Vec<(usize, usize, Provenance)> = self

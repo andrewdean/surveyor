@@ -16,6 +16,7 @@
 (struct_item name: (type_identifier) @name) @definition.struct
 (union_item name: (type_identifier) @name) @definition.struct
 (enum_item name: (type_identifier) @name) @definition.enum
+(enum_variant name: (identifier) @name) @definition.variant
 (trait_item name: (type_identifier) @name) @definition.trait
 (type_item name: (type_identifier) @name) @definition.type
 (const_item name: (identifier) @name) @definition.const
@@ -57,6 +58,10 @@
 
 (type_identifier) @name @reference.type
 (scoped_type_identifier name: (type_identifier) @name) @reference.type
+
+;; a path used as a value or in a pattern: `NodeKind::is_callable` passed as an argument,
+;; `Fact::Declaration(d)` matched; the host drops the ones that are already calls or imports
+(scoped_identifier) @reference.mention
 
 ;; ---- literals ----------------------------------------------------------------
 

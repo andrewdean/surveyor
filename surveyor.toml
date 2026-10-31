@@ -1,0 +1,23 @@
+# Surveyor's own repository profile: how Surveyor surveys itself.
+
+[repository]
+id = "surveyor"
+
+[walk]
+# Fixture repositories are test data, not Surveyor's code; without this the
+# fixture's tables and queries appear as Surveyor's own.
+exclude = [
+    "**/node_modules/**",
+    "**/target/**",
+    "**/.surveyor/**",
+    "**/*.lock",
+    "tests/fixtures/**",
+]
+
+[docs]
+designs = ["docs/design/**/*.md", "docs/rfd/**/*.md"]
+runbooks = ["docs/runbooks/**/*.md"]
+
+[scip]
+# `rust-analyzer scip . --output .surveyor/surveyor.scip` (about 20 s); gitignored.
+indexes = [".surveyor/surveyor.scip"]

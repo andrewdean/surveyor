@@ -103,6 +103,7 @@ pub struct StoreStats {
 pub struct LanceStore {
     conn: Connection,
     uri: String,
+    engine_version: String,
 }
 
 impl std::fmt::Debug for LanceStore {
@@ -128,9 +129,26 @@ impl LanceStore {
         let store = Self {
             conn,
             uri: uri.to_owned(),
+            engine_version: env!("CARGO_PKG_VERSION").to_owned(),
         };
         store.ensure_tables().await?;
         Ok(store)
+    }
+
+    /// Records `version` as the engine that writes snapshots, instead of the crate version.
+    ///
+    /// `surveyor update` compares it with the stored one and re-indexes in full when the
+    /// build that wrote the dataset differs from the one updating it.
+    #[must_use]
+    pub fn with_engine_version(mut self, version: impl Into<String>) -> Self {
+        self.engine_version = version.into();
+        self
+    }
+
+    /// The engine version written into new snapshots.
+    #[must_use]
+    pub fn engine_version(&self) -> &str {
+        &self.engine_version
     }
 
     /// The URI the store was opened with.
@@ -218,7 +236,7 @@ impl LanceStore {
             repo: repo.clone(),
             commit: commit.to_string(),
             indexed_at: Timestamp::now().as_unix_millis(),
-            surveyor_version: env!("CARGO_PKG_VERSION").to_owned(),
+            surveyor_version: self.engine_version.clone(),
             nodes,
             edges,
             files,
@@ -580,6 +598,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[expect(clippy::too_many_lines, reason = "one dataset, every store operation in order")]
     async fn round_trips_and_replaces_per_repository() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = LanceStore::open(dir.path().join("ds")).await.expect("open");
@@ -648,6 +667,21 @@ mod tests {
             .expect("snapshot")
             .expect("present");
         assert_eq!(snap.commit.as_str(), "c3");
+        assert_eq!(snap.surveyor_version, env!("CARGO_PKG_VERSION"));
+        let stamped = LanceStore::open(dir.path().join("ds"))
+            .await
+            .expect("open")
+            .with_engine_version("0.1.0+abc");
+        stamped
+            .replace_repository(&r1, &CommitId::new("c4"), false, &smaller, &files)
+            .await
+            .expect("rewrite");
+        let restamped = stamped
+            .snapshot(&r1)
+            .await
+            .expect("snapshot")
+            .expect("present");
+        assert_eq!(restamped.surveyor_version, "0.1.0+abc");
         assert_eq!(snap.nodes, 1);
         assert!(!snap.dirty);
         assert!(

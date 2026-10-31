@@ -37,5 +37,11 @@ pub use ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id};
 pub use input::{FileEntry, LinkInput, LinkOptions};
 #[doc(inline)]
 pub use linker::{Seed, link, relink};
+
+/// Bumped whenever linking produces different nodes or edges for the same facts.
+///
+/// Part of the engine fingerprint a dataset records, so `surveyor update` knows that
+/// facts linked by an older build cannot be mixed with new ones.
+pub const LINK_REVISION: u32 = 2;
 #[doc(inline)]
 pub use update::{ChangedFiles, RelinkReason, UpdatePlan, is_manifest, plan_update};

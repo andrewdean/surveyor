@@ -1,7 +1,7 @@
 //! Command definitions and their handlers.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, bail};
@@ -16,6 +16,30 @@ use crate::render::{self, Output, Updated};
 
 /// Directory under the repository root that holds the dataset.
 const STORE_DIR: &str = ".surveyor";
+
+/// The engine that writes a dataset: crate version, query packs and linker revision.
+///
+/// A dataset written by a different engine is re-indexed in full on `update`, because
+/// facts from two engines cannot be mixed file by file.
+fn engine_version() -> String {
+    let fingerprint = surveyor_model::ContentHash::of_parts([
+        surveyor_extract::query_pack_fingerprint().to_hex().as_str(),
+        surveyor_link::LINK_REVISION.to_string().as_str(),
+    ]);
+    format!(
+        "{}+{}",
+        env!("CARGO_PKG_VERSION"),
+        &fingerprint.short()[..8]
+    )
+}
+
+/// Opens the dataset at `path`, stamping new snapshots with this build's engine.
+async fn open_store(path: &Path) -> anyhow::Result<LanceStore> {
+    Ok(LanceStore::open(path)
+        .await
+        .context("open dataset")?
+        .with_engine_version(engine_version()))
+}
 
 /// Surveyor: a code intelligence graph with provenance.
 #[derive(Debug, Parser)]
@@ -56,8 +80,10 @@ pub enum Command {
     Path(PathArgs),
     /// Find nodes by name.
     Query(Query),
-    /// Most connected nodes by `PageRank`.
+    /// Nodes the most files depend on.
     Hubs(TopArgs),
+    /// List nodes by kind, location and the edges they have or lack.
+    Nodes(NodesArgs),
     /// Clusters of nodes that reference each other.
     Communities(TopArgs),
     /// References that found no declaration.
@@ -129,6 +155,50 @@ pub struct TopArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct NodesArgs {
+    /// Restrict to a node kind, such as `Function` or `Table`.
+    #[arg(long)]
+    pub kind: Option<NodeKind>,
+    /// Restrict to nodes whose file starts with this path.
+    #[arg(long = "in")]
+    pub in_path: Option<String>,
+    /// Keep only nodes that lack every one of these edge kinds, in either direction.
+    #[arg(long, value_delimiter = ',')]
+    pub without: Vec<EdgeKind>,
+    /// Keep only nodes that have every one of these edge kinds, in either direction.
+    #[arg(long = "with", value_delimiter = ',')]
+    pub with_kinds: Vec<EdgeKind>,
+    /// Maximum results.
+    #[arg(long, default_value_t = 200)]
+    pub limit: usize,
+}
+
+/// Nodes matching the listing filters, in identifier order.
+fn list_nodes<'a>(graph: &'a CodeGraph, a: &NodesArgs) -> Vec<&'a surveyor_model::Node> {
+    let has = |node: &surveyor_model::Node, kind: &EdgeKind| {
+        let filter = EdgeFilter::default().with_kinds(vec![kind.clone()]);
+        !graph.all_neighbors(&node.id, &filter).is_empty()
+    };
+    let under = |node: &surveyor_model::Node| {
+        a.in_path.as_deref().is_none_or(|p| {
+            node.file()
+                .is_some_and(|f| f.starts_with_dir(p) || f.as_str().starts_with(p))
+        })
+    };
+    let mut found: Vec<&surveyor_model::Node> = graph
+        .nodes()
+        .iter()
+        .filter(|n| a.kind.as_ref().is_none_or(|k| &n.kind == k))
+        .filter(|n| under(n))
+        .filter(|n| a.without.iter().all(|k| !has(n, k)))
+        .filter(|n| a.with_kinds.iter().all(|k| has(n, k)))
+        .collect();
+    found.sort_by(|x, y| x.id.cmp(&y.id));
+    found.truncate(a.limit);
+    found
+}
+
+#[derive(Debug, Args)]
 pub struct SourceArgs {
     /// A node identifier, or `path:line` / `path:start-end`.
     pub target: String,
@@ -161,7 +231,7 @@ async fn open_graph(cli: &Cli, p: &Paths) -> anyhow::Result<(LanceStore, CodeGra
             p.store.display()
         );
     }
-    let store = LanceStore::open(&p.store).await.context("open dataset")?;
+    let store = open_store(&p.store).await?;
     let repo = if let Some(id) = &cli.repo_id {
         RepoId::new(id)
     } else {
@@ -224,6 +294,7 @@ fn resolve_one<'a>(
     }
 }
 
+#[expect(clippy::too_many_lines, reason = "one match arm per subcommand")]
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
     let p = paths(&cli)?;
     let out = if cli.json { Output::Json } else { Output::Text };
@@ -231,7 +302,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Index(a) => run_index(&cli, &p, &a.scip, &out).await,
         Command::Update(a) => update(&cli, &p, a, &out).await,
         Command::Stats => {
-            let store = LanceStore::open(&p.store).await.context("open dataset")?;
+            let store = open_store(&p.store).await?;
             let stats = store.stats().await?;
             let per_repo = match cli.repo_id.as_deref().map(RepoId::new) {
                 Some(repo) => Some(store.graph_stats(&repo).await?),
@@ -289,8 +360,14 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 include_structural: false,
                 ..EdgeFilter::default()
             };
-            let ranked = graph.page_rank(t.top, &filter);
-            out.hubs(&graph, &ranked);
+            let hubs = graph.hubs(t.top, &filter);
+            out.hubs(&hubs);
+            Ok(())
+        }
+        Command::Nodes(a) => {
+            let (_, graph, _) = open_graph(&cli, &p).await?;
+            let found = list_nodes(&graph, a);
+            out.nodes(&found);
             Ok(())
         }
         Command::Communities(t) => {
@@ -457,7 +534,7 @@ async fn index(cli: &Cli, p: &Paths, scip: &[PathBuf]) -> anyhow::Result<Indexed
         "linked"
     );
 
-    let store = LanceStore::open(&p.store).await.context("open dataset")?;
+    let store = open_store(&p.store).await?;
     let snapshot = store
         .replace_repository(repo.id(), repo.commit(), repo.is_dirty(), &delta, &records)
         .await
@@ -483,10 +560,18 @@ async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow
     if !p.store.exists() {
         return full(cli, p, out, "no dataset", started).await;
     }
-    let store = LanceStore::open(&p.store).await.context("open dataset")?;
+    let store = open_store(&p.store).await?;
     let Some(snapshot) = store.snapshot(repo.id()).await? else {
         return full(cli, p, out, "repository not indexed", started).await;
     };
+    if snapshot.surveyor_version != store.engine_version() {
+        let reason = format!(
+            "the dataset was written by engine {}; this build is {}",
+            snapshot.surveyor_version,
+            store.engine_version()
+        );
+        return full(cli, p, out, &reason, started).await;
+    }
     let known = store.files(repo.id()).await.context("read file records")?;
     let hashes = known
         .iter()

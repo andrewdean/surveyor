@@ -91,6 +91,7 @@ fn definition_kind(kind: &str) -> Option<NodeKind> {
         "test" => NodeKind::Test,
         "module" => NodeKind::Module,
         "variable" => NodeKind::Variable,
+        "variant" => NodeKind::Variant,
         _ => return None,
     })
 }
@@ -635,13 +636,39 @@ impl RawFacts {
                 .then(b.span.end().cmp(&a.span.end()))
         });
         let mut sites = self.sites;
-        sites.sort_by_key(RawSite::start);
+        // Outer paths before the inner paths they contain, so containment is one look back.
+        sites.sort_by_key(|s| (s.start(), std::cmp::Reverse(s.span().end())));
+        let sites = drop_shadowed_mentions(sites);
         let (defs, sites) = assign_scopes(defs, sites);
         defs.into_iter()
             .map(Fact::Declaration)
             .chain(sites.into_iter().map(RawSite::into_fact))
             .collect()
     }
+}
+
+/// Drops `Mention` sites that another site already covers: a call's path, an import's
+/// path, or the inner segments of a longer path. `sites` must be sorted by start.
+fn drop_shadowed_mentions(sites: Vec<RawSite>) -> Vec<RawSite> {
+    let is_mention =
+        |s: &RawSite| matches!(s, RawSite::Reference(r) if r.role == ReferenceRole::Mention);
+    let covers = |outer: &RawSite, inner: &RawSite| {
+        let (o, i) = (outer.span().bytes, inner.span().bytes);
+        o.start <= i.start && i.end <= o.end
+    };
+    // Same-span duplicates: the non-mention wins regardless of order.
+    let mut kept: Vec<RawSite> = Vec::with_capacity(sites.len());
+    for site in sites {
+        match kept.last() {
+            Some(last) if is_mention(&site) && covers(last, &site) => {}
+            Some(last) if is_mention(last) && last.span().bytes == site.span().bytes => {
+                kept.pop();
+                kept.push(site);
+            }
+            _ => kept.push(site),
+        }
+    }
+    kept
 }
 
 /// Open declarations during the sweep, outermost first.
@@ -1164,6 +1191,47 @@ mod tests {
         let drain = refs.iter().find(|r| r.name == "drain").expect("drain");
         assert_eq!(u.slice(drain.span.bytes), "drain");
         assert_eq!(drain.scope, vec!["t".to_owned()]);
+    }
+
+    #[test]
+    fn rust_variants_and_path_values() {
+        let src = "enum Fact { Decl(u8), Gap }\nfn pick(f: Fact) -> bool { matches!(f, Fact::Gap) }\nfn mk() -> Fact { Fact::Decl(1) }\nfn apply() { run(NodeKind::is_callable); }\nuse std::fmt::Display;\n";
+        let facts = TreeSitterExtractor::new()
+            .extract(&unit("a.rs", src))
+            .expect("parses");
+        let decls: Vec<_> = facts.declarations().collect();
+        let decl = decls.iter().find(|d| d.name == "Decl").expect("variant");
+        assert_eq!(decl.kind, NodeKind::Variant);
+        assert_eq!(decl.scope, vec!["Fact".to_owned()]);
+        let refs: Vec<_> = facts.references().collect();
+        let gap = refs
+            .iter()
+            .find(|r| r.name == "Gap")
+            .expect("pattern mention");
+        assert_eq!(gap.role, ReferenceRole::Mention);
+        assert_eq!(gap.path, vec!["Fact", "Gap"]);
+        assert!(
+            refs.iter().any(|r| r.name == "Decl" && r.role.is_call()),
+            "a tuple variant construction is a call"
+        );
+        assert_eq!(
+            refs.iter().filter(|r| r.name == "Decl").count(),
+            1,
+            "the call's path is not also a mention"
+        );
+        let value = refs
+            .iter()
+            .find(|r| r.name == "is_callable")
+            .expect("function value");
+        assert_eq!(value.role, ReferenceRole::Mention);
+        assert_eq!(value.scope, vec!["apply".to_owned()]);
+        let display: Vec<_> = refs.iter().filter(|r| r.name == "Display").collect();
+        assert_eq!(
+            display.len(),
+            1,
+            "an import path is not also a mention: {display:?}"
+        );
+        assert_eq!(display[0].role, ReferenceRole::Import);
     }
 
     #[test]

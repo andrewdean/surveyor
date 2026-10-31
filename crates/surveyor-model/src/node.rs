@@ -39,6 +39,8 @@ pub enum NodeKind {
     Macro,
     Test,
     Variable,
+    /// One variant of an enum.
+    Variant,
     // Data
     Schema,
     Table,
@@ -114,6 +116,7 @@ impl NodeKind {
             Self::Macro => "Macro",
             Self::Test => "Test",
             Self::Variable => "Variable",
+            Self::Variant => "Variant",
             Self::Schema => "Schema",
             Self::Table => "Table",
             Self::Column => "Column",
@@ -176,6 +179,7 @@ impl NodeKind {
                 | Self::Macro
                 | Self::Test
                 | Self::Variable
+                | Self::Variant
         )
     }
 
@@ -225,6 +229,7 @@ impl NodeKind {
             K::Macro,
             K::Test,
             K::Variable,
+            K::Variant,
             K::Schema,
             K::Table,
             K::Column,

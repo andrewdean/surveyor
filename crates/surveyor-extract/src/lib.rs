@@ -74,3 +74,18 @@ pub use sql::{SqlExtractor, StatementSummary, summarize_sql};
 pub use treesitter::TreeSitterExtractor;
 #[doc(inline)]
 pub use walk::{ChangeSource, FileChanges, Repository};
+
+/// A hash of the embedded query packs: part of the engine fingerprint a dataset records.
+///
+/// Two builds with the same version but different packs produce different facts for the
+/// same file; an incremental update across such builds would mix vocabularies.
+#[must_use]
+pub fn query_pack_fingerprint() -> surveyor_model::ContentHash {
+    surveyor_model::ContentHash::of_parts([
+        include_str!("../../../languages/rust/surveyor.scm"),
+        include_str!("../../../languages/typescript/surveyor.scm"),
+        include_str!("../../../languages/javascript/surveyor.scm"),
+        include_str!("../../../languages/python/surveyor.scm"),
+        include_str!("../../../languages/bash/surveyor.scm"),
+    ])
+}

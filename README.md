@@ -42,8 +42,14 @@ for now). This checkout implements Phase 0 of that plan.
   declarations changed, and files whose edges lost an endpoint. Everything else stays
   as it was. A manifest change, or a change that would relink more than half the
   files, falls back to a full index. The result equals a fresh index of the same tree.
-- **Compute.** Neighbors by edge kind, reverse impact to a depth, shortest paths,
-  PageRank hubs, label-propagation communities and dependency cycles over `petgraph`.
+- **Compute.** Neighbors by edge kind, reverse impact to a depth, shortest paths with
+  a tier that says how certain the hops are, hubs ranked by how many files depend on a
+  node, label-propagation communities and dependency cycles over `petgraph`.
+- **Dispatch.** A trait or interface method carries `DISPATCHES_TO` edges to every
+  implementation that defines the same name, so a path through `dyn Trait` continues
+  into the bodies that run and `affected` on an implementation climbs to the callers of
+  its contract. Enum variants are `Variant` nodes; a path used as a value or in a
+  pattern is a `REFERENCES` edge.
 - **Interfaces.** A CLI and an MCP server whose first tools keep the names graphicle and
   Graphify publish (`query_graph`, `get_node`, `get_neighbors`, `shortest_path`,
   `god_nodes`, `get_community`, `read_project_source`) plus `affected`, `find_nodes`
@@ -135,7 +141,15 @@ surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway affected cw_cat
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway path main cw_outbox.outbox --directed
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway hubs
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway source rust:crates/a/src/lib.rs::Relay::drain
+surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway nodes --kind Function --in crates/outbox --without TESTED_BY
+surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway nodes --kind Function --in crates/outbox --without TESTED_BY
 ```
+
+`nodes` lists nodes by kind and location and by the edges they have or lack, which is
+how to ask set questions such as "which functions in this crate have no test".
+
+`nodes` lists nodes by kind and location and by the edges they have or lack, which is
+how to ask set questions such as "which functions in this crate have no test".
 
 Every command takes `--json`. Serve the same answers to an agent over MCP on stdio:
 
@@ -151,9 +165,14 @@ Every command takes `--json`. Serve the same answers to an agent over MCP on std
 ```
 
 A repository can carry a `surveyor.toml` to name itself, choose the SQL dialect and
-default schema, point at migration and documentation directories, and list SCIP
-indexes to merge when they exist (`[scip] indexes = ["index.scip"]`); every field has a
-default. See `tests/fixtures/mini/surveyor.toml`.
+default schema, point at migration and documentation directories, exclude paths, and
+list SCIP indexes to merge when they exist (`[scip] indexes = ["index.scip"]`); every
+field has a default. Exclude fixture trees, or their tables and symbols appear as the
+repository's own. See `tests/fixtures/mini/surveyor.toml` and Surveyor's own
+`surveyor.toml`.
+
+Surveyor surveys itself: `docs/dogfood/` records what the graph said about the tool and
+what changed because of it.
 
 ## Layout
 

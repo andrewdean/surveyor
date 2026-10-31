@@ -9,7 +9,7 @@ use surveyor_model::RepoPath;
 use anyhow::{Context, bail};
 use serde::Serialize;
 use surveyor_graph::{
-    Affected, CodeGraph, Community, Direction, EdgeFilter, Neighbor, PathStep, PathTier,
+    Affected, CodeGraph, Community, Direction, EdgeFilter, Hub, Neighbor, PathStep, PathTier,
 };
 use surveyor_model::{Edge, EdgeKind, GraphStats, Node, NodeKind, Unresolved};
 use surveyor_store::{RepositorySnapshot, StoreStats};
@@ -363,6 +363,8 @@ impl Output {
         }
         if nodes.is_empty() {
             println!("no matches");
+        } else {
+            println!("{} nodes", nodes.len());
         }
         for n in nodes {
             println!("{:<10} {:<50} {}", n.kind, n.qualified_name, location(n));
@@ -571,48 +573,44 @@ impl Output {
         }
     }
 
-    pub fn hubs(self, graph: &CodeGraph, ranked: &[(&Node, f64)]) {
+    pub fn hubs(self, hubs: &[Hub<'_>]) {
         if self == Self::Json {
             #[derive(Serialize)]
-            struct Hub {
-                rank: f64,
+            struct View {
+                dependent_files: usize,
                 in_degree: usize,
                 out_degree: usize,
+                rank: f64,
                 node: NodeView,
             }
             print_json(
-                &ranked
+                &hubs
                     .iter()
-                    .map(|(n, r)| Hub {
-                        rank: *r,
-                        in_degree: graph
-                            .neighbors(&n.id, Direction::Incoming, &EdgeFilter::default())
-                            .len(),
-                        out_degree: graph
-                            .neighbors(&n.id, Direction::Outgoing, &EdgeFilter::default())
-                            .len(),
-                        node: NodeView::of(n),
+                    .map(|h| View {
+                        dependent_files: h.dependent_files,
+                        in_degree: h.in_degree,
+                        out_degree: h.out_degree,
+                        rank: h.rank,
+                        node: NodeView::of(h.node),
                     })
                     .collect::<Vec<_>>(),
             );
             return;
         }
-        println!("{:<8} {:<6} {:<6} {:<10} node", "rank", "in", "out", "kind");
-        for (n, r) in ranked {
-            let inc = graph
-                .neighbors(&n.id, Direction::Incoming, &EdgeFilter::default())
-                .len();
-            let out = graph
-                .neighbors(&n.id, Direction::Outgoing, &EdgeFilter::default())
-                .len();
+        println!(
+            "{:<6} {:<6} {:<6} {:<8} {:<10} node",
+            "files", "in", "out", "rank", "kind"
+        );
+        for h in hubs {
             println!(
-                "{:<8.4} {:<6} {:<6} {:<10} {}  ({})",
-                r,
-                inc,
-                out,
-                n.kind,
-                n.qualified_name,
-                location(n)
+                "{:<6} {:<6} {:<6} {:<8.4} {:<10} {}  ({})",
+                h.dependent_files,
+                h.in_degree,
+                h.out_degree,
+                h.rank,
+                h.node.kind,
+                h.node.qualified_name,
+                location(h.node)
             );
         }
     }
