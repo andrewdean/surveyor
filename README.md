@@ -181,6 +181,9 @@ fn check(g) {
 `inn`, `package_of`, `reaches`, `cycles` and `count`; `const SEVERITY` is `fail`
 (default), `warn` or `budget` with `const BUDGET`. Scripts run sandboxed.
 
+`examples/causeway-rules/` ports the named checks of Causeway's VSA gate to rules over
+the graph, with the comparison against the original and the checks the graph cannot answer.
+
 `nodes` lists nodes by kind and location and by the edges they have or lack, which is
 how to ask set questions such as "which functions in this crate have no test".
 

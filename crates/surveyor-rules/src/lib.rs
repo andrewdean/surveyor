@@ -802,6 +802,52 @@ mod tests {
         assert_eq!(report.violation_count(), 3);
     }
 
+    /// The Causeway port under `examples/causeway-rules/` must keep compiling and
+    /// running against the engine: every rule loads, declares an identifier, and
+    /// finds nothing in a graph that has none of Causeway's structures.
+    #[test]
+    fn the_causeway_example_rules_load_and_run() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/causeway-rules");
+        let rules = RuleSet::load(&[dir], &[]).expect("the example rules compile");
+        let ids: Vec<&str> = rules.rules().iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "gate-staleness",
+                "runtime-env-resource-ctors",
+                "component-cross-deps",
+                "crypto-provider-installs",
+                "server-rpc-contract-deps",
+                "server-rpc-service-impls",
+                "server-orchestrators",
+                "island-cross-references",
+                "cross-slice-schema-refs",
+                "domain-god-crate-modules",
+                "domain-god-crate-dependents",
+            ],
+            "one rule per ported check, in file order"
+        );
+        let report = rules.run(graph()).expect("the example rules run");
+        let stale = &report.outcomes[0];
+        assert!(
+            !stale.passed && stale.violations.len() > 300,
+            "the fixture graph has none of Causeway's paths: {}",
+            stale.violations.len()
+        );
+        assert!(
+            report.outcomes[1..]
+                .iter()
+                .all(|o| o.passed && o.violations.is_empty()),
+            "{:?}",
+            report
+                .outcomes
+                .iter()
+                .filter(|o| !o.passed)
+                .map(|o| &o.id)
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn malformed_rules_are_refused() {
         assert!(
