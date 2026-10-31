@@ -12,6 +12,7 @@ lancedb.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 futures.workspace = true
+tracing.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 

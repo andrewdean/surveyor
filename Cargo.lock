@@ -6643,6 +6643,7 @@ dependencies = [
  "surveyor-model",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

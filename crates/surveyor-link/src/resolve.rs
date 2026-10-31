@@ -31,11 +31,17 @@ pub(crate) struct SymbolIndex {
     pub(crate) deps_of_package: HashMap<String, HashSet<String>>,
 }
 
+/// True for kinds a reference can resolve to by name.
+///
+/// Impl blocks are containers named after their type; they are never a target.
+pub(crate) fn is_nameable(kind: &NodeKind) -> bool {
+    (kind.is_symbol() && *kind != NodeKind::Impl)
+        || matches!(kind, NodeKind::Module | NodeKind::Query | NodeKind::Table)
+}
+
 impl SymbolIndex {
     pub(crate) fn insert(&mut self, idx: usize, node: &Node) {
-        // Impl blocks are containers named after their type; they are never a target.
-        let nameable = (node.kind.is_symbol() && node.kind != NodeKind::Impl)
-            || matches!(node.kind, NodeKind::Module | NodeKind::Query);
+        let nameable = is_nameable(&node.kind) && node.kind != NodeKind::Table;
         if nameable {
             self.by_name.entry(node.name.clone()).or_default().push(idx);
         }

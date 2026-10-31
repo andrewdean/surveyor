@@ -95,6 +95,27 @@ pub fn extract_repository(
     })
 }
 
+/// Reads `paths` from `repo` and extracts facts from them, for incremental update.
+///
+/// Paths that are missing or binary are skipped without error.
+pub fn extract_paths<'a>(
+    repo: &Repository,
+    profile: &Profile,
+    paths: impl IntoIterator<Item = &'a RepoPath>,
+) -> Result<Extraction, ExtractError> {
+    let extractors = default_extractors(profile)?;
+    let units = paths
+        .into_iter()
+        .filter(|p| repo.root().join(p.as_str()).is_file())
+        .map(|p| repo.unit(p))
+        .filter_map(Result::transpose)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Extraction {
+        commit: Some(repo.commit().clone()),
+        ..extract_units(&extractors, &units, profile.sql.dialect)
+    })
+}
+
 /// Runs `extractors` over `units` in parallel and enriches SQL literals.
 #[must_use]
 pub fn extract_units(

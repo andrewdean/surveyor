@@ -11,7 +11,7 @@ use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::table::Table;
 use surveyor_model::{
-    CommitId, ContentHash, Edge, GraphDelta, GraphStats, Language, Node, RepoId, RepoPath,
+    CommitId, ContentHash, Edge, EdgeId, GraphDelta, GraphStats, Language, Node, RepoId, RepoPath,
     Timestamp, Unresolved,
 };
 
@@ -25,6 +25,9 @@ use crate::schema::{
 /// Rows are appended in slices of this many to bound memory on large repositories.
 const BATCH_ROWS: usize = 50_000;
 
+/// Values per `IN (...)` list in a delete predicate; longer lists are split.
+const IN_LIST: usize = 500;
+
 /// One file as recorded with its index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileRecord {
@@ -36,6 +39,11 @@ pub struct FileRecord {
     pub content_hash: ContentHash,
     /// Size in bytes.
     pub bytes: u64,
+    /// Names the file references (symbols, tables, cited paths), sorted and distinct.
+    ///
+    /// Incremental update reads these to find the unchanged files whose resolution a
+    /// changed declaration can affect.
+    pub names: Vec<String>,
 }
 
 /// What the store knows about one indexed repository.
@@ -57,6 +65,24 @@ pub struct RepositorySnapshot {
     pub files: u64,
     /// Unresolved reference count.
     pub unresolved: u64,
+    /// Whether the working tree differed from `commit` when the index was written.
+    pub dirty: bool,
+}
+
+/// An incremental change to one repository's rows.
+#[derive(Debug, Clone, Default)]
+pub struct StoreUpdate {
+    /// Files whose nodes, edges, unresolved references and file rows are dropped
+    /// before `delta` is appended: the relinked files and the deleted ones.
+    pub drop_files: Vec<RepoPath>,
+    /// Edges dropped by identifier: those left dangling by a dropped node while their
+    /// own evidence lives in a file that is not relinked.
+    pub drop_edges: Vec<EdgeId>,
+    /// Nodes, edges and unresolved references to append. Nodes already present under
+    /// the same identifier (a merged table, the repository root) are replaced.
+    pub delta: GraphDelta,
+    /// File rows for the relinked files.
+    pub files: Vec<FileRecord>,
 }
 
 /// Counts across the dataset.
@@ -124,7 +150,15 @@ impl LanceStore {
         ];
         for (name, schema) in wanted {
             if existing.iter().any(|n| n == name) {
-                continue;
+                let table = self.table(name).await?;
+                let actual = table.schema().await?;
+                if schema::schema_matches(&actual, &schema) {
+                    continue;
+                }
+                // A table written by an older Surveyor: its rows cannot be read with the
+                // current conversions, so the table starts over and `index` rebuilds it.
+                tracing::warn!(table = name, "schema is out of date; recreating the table");
+                self.conn.drop_table(name, &[]).await?;
             }
             self.conn
                 .create_empty_table(name, schema)
@@ -133,6 +167,66 @@ impl LanceStore {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Deletes the rows of `table` whose `column` is one of `values`, in bounded lists.
+    async fn delete_in(
+        &self,
+        table: &Table,
+        repo: &RepoId,
+        column: &str,
+        values: impl IntoIterator<Item = String>,
+    ) -> Result<(), StoreError> {
+        let values: Vec<String> = values.into_iter().collect();
+        for chunk in values.chunks(IN_LIST) {
+            let list = chunk
+                .iter()
+                .map(|v| format!("'{}'", escape(v)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            table
+                .delete(format!("{} AND {column} IN ({list})", repo_predicate(repo)).as_str())
+                .await?;
+        }
+        Ok(())
+    }
+
+    fn file_rows(files: &[FileRecord]) -> Vec<schema::FileRow> {
+        files
+            .iter()
+            .map(|f| schema::FileRow {
+                path: f.path.clone(),
+                language: f.language.clone(),
+                content_hash: f.content_hash,
+                bytes: f.bytes,
+                names: f.names.clone(),
+            })
+            .collect()
+    }
+
+    async fn write_meta(
+        &self,
+        meta: &Table,
+        repo: &RepoId,
+        commit: &CommitId,
+        dirty: bool,
+        counts: [u64; 4],
+    ) -> Result<RepositorySnapshot, StoreError> {
+        let [nodes, edges, files, unresolved] = counts;
+        meta.delete(repo_predicate(repo).as_str()).await?;
+        let row = MetaRow {
+            repo: repo.clone(),
+            commit: commit.to_string(),
+            indexed_at: Timestamp::now().as_unix_millis(),
+            surveyor_version: env!("CARGO_PKG_VERSION").to_owned(),
+            nodes,
+            edges,
+            files,
+            unresolved,
+            dirty,
+        };
+        self.append(meta, meta_batch(&row)?).await?;
+        Ok(snapshot(&row))
     }
 
     async fn table(&self, name: &str) -> Result<Table, StoreError> {
@@ -173,6 +267,7 @@ impl LanceStore {
         &self,
         repo: &RepoId,
         commit: &CommitId,
+        dirty: bool,
         delta: &GraphDelta,
         files: &[FileRecord],
     ) -> Result<RepositorySnapshot, StoreError> {
@@ -182,38 +277,90 @@ impl LanceStore {
         let files_t = self.table(FILES).await?;
         let unresolved = self.table(UNRESOLVED).await?;
         let meta = self.table(META).await?;
-        for t in [&nodes, &edges, &files_t, &unresolved, &meta] {
+        for t in [&nodes, &edges, &files_t, &unresolved] {
             t.delete(predicate.as_str()).await?;
         }
         self.append(&nodes, nodes_batch(repo, &delta.nodes)?)
             .await?;
         self.append(&edges, edges_batch(repo, &delta.edges)?)
             .await?;
-        let rows: Vec<schema::FileRow> = files
-            .iter()
-            .map(|f| schema::FileRow {
-                path: f.path.clone(),
-                language: f.language.clone(),
-                content_hash: f.content_hash,
-                bytes: f.bytes,
-            })
-            .collect();
+        let rows = Self::file_rows(files);
         self.append(&files_t, files_batch(repo, commit.as_str(), &rows)?)
             .await?;
         self.append(&unresolved, unresolved_batch(repo, &delta.unresolved)?)
             .await?;
-        let row = MetaRow {
-            repo: repo.clone(),
-            commit: commit.to_string(),
-            indexed_at: Timestamp::now().as_unix_millis(),
-            surveyor_version: env!("CARGO_PKG_VERSION").to_owned(),
-            nodes: delta.nodes.len() as u64,
-            edges: delta.edges.len() as u64,
-            files: files.len() as u64,
-            unresolved: delta.unresolved.len() as u64,
-        };
-        self.append(&meta, meta_batch(&row)?).await?;
-        Ok(snapshot(&row))
+        let counts = [
+            delta.nodes.len() as u64,
+            delta.edges.len() as u64,
+            files.len() as u64,
+            delta.unresolved.len() as u64,
+        ];
+        self.write_meta(&meta, repo, commit, dirty, counts).await
+    }
+
+    /// Applies an incremental update to `repo`: drops the rows of the relinked and
+    /// deleted files plus the dangling edges, appends the relinked delta, and records
+    /// `commit` with recounted totals. Lance records the write as a new version.
+    pub async fn apply_update(
+        &self,
+        repo: &RepoId,
+        commit: &CommitId,
+        dirty: bool,
+        update: &StoreUpdate,
+    ) -> Result<RepositorySnapshot, StoreError> {
+        let nodes = self.table(NODES).await?;
+        let edges = self.table(EDGES).await?;
+        let files_t = self.table(FILES).await?;
+        let unresolved = self.table(UNRESOLVED).await?;
+        let meta = self.table(META).await?;
+        let paths = || update.drop_files.iter().map(ToString::to_string);
+        self.delete_in(&nodes, repo, "file", paths()).await?;
+        self.delete_in(
+            &nodes,
+            repo,
+            "id",
+            update.delta.nodes.iter().map(|n| n.id.to_string()),
+        )
+        .await?;
+        self.delete_in(&edges, repo, "file", paths()).await?;
+        self.delete_in(
+            &edges,
+            repo,
+            "id",
+            update.drop_edges.iter().map(ToString::to_string),
+        )
+        .await?;
+        self.delete_in(&unresolved, repo, "file", paths()).await?;
+        self.delete_in(
+            &files_t,
+            repo,
+            "path",
+            paths().chain(update.files.iter().map(|f| f.path.to_string())),
+        )
+        .await?;
+        self.append(&nodes, nodes_batch(repo, &update.delta.nodes)?)
+            .await?;
+        self.append(&edges, edges_batch(repo, &update.delta.edges)?)
+            .await?;
+        self.append(
+            &files_t,
+            files_batch(repo, commit.as_str(), &Self::file_rows(&update.files))?,
+        )
+        .await?;
+        self.append(
+            &unresolved,
+            unresolved_batch(repo, &update.delta.unresolved)?,
+        )
+        .await?;
+        let predicate = repo_predicate(repo);
+        let mut counts = [0u64; 4];
+        for (slot, table) in counts
+            .iter_mut()
+            .zip([&nodes, &edges, &files_t, &unresolved])
+        {
+            *slot = table.count_rows(Some(predicate.clone())).await? as u64;
+        }
+        self.write_meta(&meta, repo, commit, dirty, counts).await
     }
 
     /// Loads the nodes and edges of `repo`, or of every repository when `None`.
@@ -247,19 +394,33 @@ impl LanceStore {
         Ok(None)
     }
 
+    /// Files recorded for `repo`, with their content hashes and referenced names.
+    pub async fn files(&self, repo: &RepoId) -> Result<Vec<FileRecord>, StoreError> {
+        let t = self.table(FILES).await?;
+        let mut out = Vec::new();
+        for batch in self.collect(&t, Some(repo_predicate(repo))).await? {
+            out.extend(files_from_batch(&batch)?.into_iter().map(|f| FileRecord {
+                path: f.path,
+                language: f.language,
+                content_hash: f.content_hash,
+                bytes: f.bytes,
+                names: f.names,
+            }));
+        }
+        Ok(out)
+    }
+
     /// Files recorded for `repo` with their content hashes, for incremental update.
     pub async fn file_hashes(
         &self,
         repo: &RepoId,
     ) -> Result<HashMap<RepoPath, ContentHash>, StoreError> {
-        let t = self.table(FILES).await?;
-        let mut out = HashMap::new();
-        for batch in self.collect(&t, Some(repo_predicate(repo))).await? {
-            for f in files_from_batch(&batch)? {
-                out.insert(f.path, f.content_hash);
-            }
-        }
-        Ok(out)
+        Ok(self
+            .files(repo)
+            .await?
+            .into_iter()
+            .map(|f| (f.path, f.content_hash))
+            .collect())
     }
 
     /// Unresolved references recorded for `repo`.
@@ -355,6 +516,7 @@ fn snapshot(row: &MetaRow) -> RepositorySnapshot {
         edges: row.edges,
         files: row.files,
         unresolved: row.unresolved,
+        dirty: row.dirty,
     }
 }
 
@@ -428,13 +590,14 @@ mod tests {
             language: Some(Language::Rust),
             content_hash: ContentHash::of(b"x"),
             bytes: 1,
+            names: vec!["b".into()],
         }];
         store
-            .replace_repository(&r1, &CommitId::new("c1"), &delta(&r1), &files)
+            .replace_repository(&r1, &CommitId::new("c1"), false, &delta(&r1), &files)
             .await
             .expect("write one");
         store
-            .replace_repository(&r2, &CommitId::new("c2"), &delta(&r2), &files)
+            .replace_repository(&r2, &CommitId::new("c2"), true, &delta(&r2), &files)
             .await
             .expect("write two");
 
@@ -471,7 +634,7 @@ mod tests {
         smaller.nodes.truncate(1);
         smaller.edges.clear();
         store
-            .replace_repository(&r1, &CommitId::new("c3"), &smaller, &files)
+            .replace_repository(&r1, &CommitId::new("c3"), false, &smaller, &files)
             .await
             .expect("rewrite");
         let (nodes, edges) = store.load_graph(Some(&r1)).await.expect("load again");
@@ -486,6 +649,19 @@ mod tests {
             .expect("present");
         assert_eq!(snap.commit.as_str(), "c3");
         assert_eq!(snap.nodes, 1);
+        assert!(!snap.dirty);
+        assert!(
+            store
+                .snapshot(&r2)
+                .await
+                .expect("snapshot")
+                .expect("present")
+                .dirty
+        );
+        assert_eq!(
+            store.files(&r1).await.expect("files")[0].names,
+            vec!["b".to_owned()]
+        );
         assert_eq!(store.snapshots().await.expect("snapshots").len(), 2);
         assert_eq!(store.unresolved(&r2).await.expect("unresolved").len(), 1);
         assert_eq!(store.file_hashes(&r1).await.expect("hashes").len(), 1);
@@ -501,5 +677,117 @@ mod tests {
             .await
             .expect("reopen");
         assert_eq!(again.load_graph(None).await.expect("load").0.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use surveyor_model::{
+        ByteSpan, Confidence, EdgeKind, Evidence, GrammarId, LineSpan, NodeId, NodeKind,
+        Provenance, RuleId, SourceLocation, TextSpan,
+    };
+
+    use super::*;
+
+    fn node(repo: &RepoId, id: &str, file: &str) -> Node {
+        Node::synthetic(NodeId::new(id), NodeKind::Function, id, repo.clone()).at(
+            RepoPath::new(file),
+            TextSpan::new(ByteSpan::new(0, 1), LineSpan::new(1, 1)),
+        )
+    }
+
+    fn edge(repo: &RepoId, a: &Node, b: &Node, file: &str) -> Edge {
+        let ev = Evidence {
+            repo: repo.clone(),
+            location: SourceLocation::new(
+                RepoPath::new(file),
+                TextSpan::new(ByteSpan::new(0, 1), LineSpan::new(1, 1)),
+            ),
+            commit: CommitId::new("c1"),
+            content_hash: ContentHash::of(b"x"),
+        };
+        Edge::new(
+            a.id.clone(),
+            EdgeKind::Calls,
+            b.id.clone(),
+            Provenance::syntactic(GrammarId::new("rust"), RuleId::new("r"), ev)
+                .with_confidence(Confidence::CERTAIN),
+        )
+    }
+
+    fn file(path: &str) -> FileRecord {
+        FileRecord {
+            path: RepoPath::new(path),
+            language: Some(Language::Rust),
+            content_hash: ContentHash::of(path.as_bytes()),
+            bytes: 1,
+            names: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn update_drops_by_file_and_id_then_appends() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = LanceStore::open(dir.path().join("ds")).await.expect("open");
+        let repo = RepoId::new("r");
+        let (a, b, c) = (
+            node(&repo, "a", "a.rs"),
+            node(&repo, "b", "b.rs"),
+            node(&repo, "c", "c.rs"),
+        );
+        let ab = edge(&repo, &a, &b, "a.rs");
+        let cb = edge(&repo, &c, &b, "c.rs");
+        let initial = GraphDelta {
+            nodes: vec![a.clone(), b.clone(), c.clone()],
+            edges: vec![ab, cb.clone()],
+            unresolved: Vec::new(),
+        };
+        store
+            .replace_repository(
+                &repo,
+                &CommitId::new("c1"),
+                false,
+                &initial,
+                &[file("a.rs"), file("b.rs"), file("c.rs")],
+            )
+            .await
+            .expect("write");
+
+        // b.rs is relinked (its node comes back with a new hash), a.rs is deleted, and
+        // the edge from c.rs to b dangles only by identifier.
+        let b2 = Node {
+            content_hash: ContentHash::of(b"changed"),
+            ..b.clone()
+        };
+        let update = StoreUpdate {
+            drop_files: vec![RepoPath::new("b.rs"), RepoPath::new("a.rs")],
+            drop_edges: vec![cb.id.clone()],
+            delta: GraphDelta {
+                nodes: vec![b2.clone()],
+                edges: Vec::new(),
+                unresolved: Vec::new(),
+            },
+            files: vec![file("b.rs")],
+        };
+        let snap = store
+            .apply_update(&repo, &CommitId::new("c2"), true, &update)
+            .await
+            .expect("update");
+        assert_eq!((snap.nodes, snap.edges, snap.files), (2, 0, 2));
+        assert_eq!(snap.commit.as_str(), "c2");
+        assert!(snap.dirty);
+        let (nodes, edges) = store.load_graph(Some(&repo)).await.expect("load");
+        assert!(edges.is_empty());
+        let mut ids: Vec<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["b", "c"]);
+        assert_eq!(
+            nodes
+                .iter()
+                .find(|n| n.id.as_str() == "b")
+                .map(|n| n.content_hash),
+            Some(b2.content_hash)
+        );
+        assert_eq!(store.files(&repo).await.expect("files").len(), 2);
     }
 }

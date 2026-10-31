@@ -51,7 +51,9 @@ pub use manifest::ManifestExtractor;
 #[doc(inline)]
 pub use markdown::MarkdownExtractor;
 #[doc(inline)]
-pub use pipeline::{Extraction, UnitRecord, default_extractors, extract_repository, extract_units};
+pub use pipeline::{
+    Extraction, UnitRecord, default_extractors, extract_paths, extract_repository, extract_units,
+};
 #[doc(inline)]
 pub use profile::{DocsProfile, Profile, SqlDialect, SqlProfile, WalkProfile};
 #[doc(inline)]
@@ -61,4 +63,4 @@ pub use sql::{SqlExtractor, StatementSummary, summarize_sql};
 #[doc(inline)]
 pub use treesitter::TreeSitterExtractor;
 #[doc(inline)]
-pub use walk::Repository;
+pub use walk::{ChangeSource, FileChanges, Repository};

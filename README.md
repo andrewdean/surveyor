@@ -26,6 +26,14 @@ for now). This checkout implements Phase 0 of that plan.
   span, lines, commit and a hash of the cited text.
 - **Storage.** Five Lance tables (`nodes`, `edges`, `files`, `unresolved`, `meta`)
   partitioned by repository; each index run is a new dataset version.
+- **Incremental update.** `surveyor update` finds what changed since the recorded
+  commit (`git diff` when both the index and the checkout are clean commits, content
+  hashes otherwise), re-extracts the changed files, and relinks only the files whose
+  resolution the change can affect: the changed files, files whose edges were resolved
+  against a declaration whose text changed, files that reference a name whose set of
+  declarations changed, and files whose edges lost an endpoint. Everything else stays
+  as it was. A manifest change, or a change that would relink more than half the
+  files, falls back to a full index. The result equals a fresh index of the same tree.
 - **Compute.** Neighbors by edge kind, reverse impact to a depth, shortest paths,
   PageRank hubs, label-propagation communities and dependency cycles over `petgraph`.
 - **Interfaces.** A CLI and an MCP server whose first tools keep the names graphicle and
@@ -48,6 +56,22 @@ fresh dataset is 68 MB. Loading the graph for a query takes about 2.5 seconds. T
 Surveyor crates themselves are compiled without optimization in this measurement; a
 release build will be faster.
 
+`surveyor update` on Causeway after one commit, same build (the cold index on the same
+afternoon took 42 to 45 s):
+
+| Change | Files relinked | Update |
+|---|---:|---:|
+| nothing (commit moved, content same) | 0 | 4.5 s |
+| one statement added to `causeway_outbox::append` | 7 (the file and its 6 callers) | 7.4 s |
+| a new public function whose name 4 other files reference | 5 | 8.0 s |
+| one statement added to `Parser::expect`, a hub method | 31 | 9.7 s |
+| one file deleted and one added, uncommitted (hash path) | 20 | 6.9 s |
+
+About 2.5 s of each run is loading the stored graph and 1 to 2 s is the Lance delete
+and append; the rest is extraction and relinking of the listed files. After the four
+updates in sequence the dataset was compared node by node and edge by edge, including
+citations, with a fresh index of the final tree: identical.
+
 ## Use
 
 ```bash
@@ -58,6 +82,12 @@ Index a checkout (the dataset lands in `<repo>/.surveyor`, or wherever `--store`
 
 ```bash
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway index
+```
+
+After a commit, or while editing, bring the dataset up to date without a full index:
+
+```bash
+surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway update
 ```
 
 Ask it questions:
@@ -113,7 +143,8 @@ cargo fmt --all
 
 ## Not yet
 
-SCIP ingest, incremental update over `gix`, cards and embeddings, context packs, Rhai
-invariants, the Causeway adapter, `serve` with streamable HTTP, personas and runtime
-connectors are the following phases of the RFD. The `changed_paths_since` walker method
-exists; nothing calls it yet.
+SCIP ingest, cards and embeddings, context packs, Rhai invariants, the Causeway
+adapter, `serve` with streamable HTTP, personas and runtime connectors are the following
+phases of the RFD. Incremental update does not watch the file system yet (`notify` is
+Phase 1 too) and treats a `surveyor.toml` edit like any other file: run `index` after
+changing the profile.

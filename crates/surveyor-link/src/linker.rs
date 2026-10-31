@@ -4,7 +4,7 @@
 //! helpers in `resolve`, and appends nodes or edges. The builder is the one place
 //! that mutates; everything it consults returns values.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use surveyor_model::{
     ByteSpan, Confidence, ContentHash, DeclarationFact, DeclaredRelation, DeclaredSource, Edge,
@@ -26,10 +26,38 @@ const NO_GRAMMAR: &str = "none";
 /// Crate roots Rust imports never resolve to a package node.
 const RUST_BUILTIN_ROOTS: &[&str] = &["std", "core", "alloc", "crate", "self", "super"];
 
+/// The part of an indexed graph that an incremental update keeps.
+///
+/// Nodes and edges of files that are not relinked, plus the file-less nodes (the
+/// repository root, schemas, external packages). The relink passes resolve against
+/// these as if they had been built in the same run.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Seed {
+    /// Surviving nodes.
+    pub nodes: Vec<Node>,
+    /// Surviving edges.
+    pub edges: Vec<Edge>,
+}
+
 /// Links one repository's facts into a graph delta.
 #[must_use]
 pub fn link(input: &LinkInput) -> GraphDelta {
+    run(Builder::new(input))
+}
+
+/// Links the facts of the relinked files against `seed`.
+///
+/// The delta holds the nodes and edges the relinked files produce plus every seed
+/// node the passes changed (the root's commit, a table a migration merged into);
+/// seed nodes and edges that stand are not repeated.
+#[must_use]
+pub fn relink(input: &LinkInput, seed: Seed) -> GraphDelta {
     let mut b = Builder::new(input);
+    b.absorb(seed);
+    run(b)
+}
+
+fn run(mut b: Builder<'_>) -> GraphDelta {
     b.root();
     b.packages();
     b.files();
@@ -68,6 +96,10 @@ struct Builder<'a> {
     package_by_name: HashMap<String, usize>,
     /// Declaration nodes per file, sorted by span start, with parent links.
     decls_by_file: HashMap<RepoPath, Vec<DeclRef>>,
+    /// Nodes below this index came from the seed and are reported only when changed.
+    seed_count: usize,
+    /// Seed nodes a pass changed.
+    dirty_seeds: BTreeSet<usize>,
 }
 
 impl<'a> Builder<'a> {
@@ -86,6 +118,78 @@ impl<'a> Builder<'a> {
             package_dirs: Vec::new(),
             package_by_name: HashMap::new(),
             decls_by_file: HashMap::new(),
+            seed_count: 0,
+            dirty_seeds: BTreeSet::new(),
+        }
+    }
+
+    /// Loads the surviving graph so the passes resolve against it.
+    ///
+    /// Nodes enter the symbol index; packages and files enter the lookups the passes
+    /// use; edges seed the dedupe sets and the package, import and dependency
+    /// relations that rank candidates.
+    fn absorb(&mut self, seed: Seed) {
+        for node in seed.nodes {
+            let path = node.file().cloned();
+            let idx = self.push_node(node);
+            let node = &self.nodes[idx];
+            match (&node.kind, path) {
+                (NodeKind::File, Some(path)) => {
+                    self.file_nodes.insert(path, idx);
+                }
+                (NodeKind::Package, _) => {
+                    if let Some(dir) = node.attributes.get("dir") {
+                        self.package_dirs.push((dir.clone(), idx));
+                    }
+                    let (coordinate, name) = (node.qualified_name.clone(), node.name.clone());
+                    self.register_package(&coordinate, &name, idx);
+                }
+                _ => {}
+            }
+        }
+        self.seed_count = self.nodes.len();
+        for edge in &seed.edges {
+            self.edge_ids.insert(edge.id.clone());
+            let (Some(&src), Some(&dst)) =
+                (self.node_pos.get(&edge.src), self.node_pos.get(&edge.dst))
+            else {
+                continue;
+            };
+            self.pair_seen.insert((src, edge.kind.clone(), dst));
+            let (s, d) = (&self.nodes[src], &self.nodes[dst]);
+            match (&edge.kind, &s.kind, &d.kind) {
+                (EdgeKind::Contains, NodeKind::Package, NodeKind::File) => {
+                    if let Some(file) = d.file() {
+                        self.index
+                            .package_of_file
+                            .insert(file.clone(), s.id.to_string());
+                    }
+                }
+                (EdgeKind::Imports, NodeKind::File, NodeKind::Package) => {
+                    if let Some(file) = s.file() {
+                        self.index
+                            .imports_of_file
+                            .entry(file.clone())
+                            .or_default()
+                            .insert(d.id.to_string());
+                    }
+                }
+                (EdgeKind::DependsOn, NodeKind::Package, NodeKind::Package) => {
+                    self.index
+                        .deps_of_package
+                        .entry(s.id.to_string())
+                        .or_default()
+                        .insert(d.id.to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Marks a seed node as changed so it is written back.
+    fn touch(&mut self, idx: usize) {
+        if idx < self.seed_count {
+            self.dirty_seeds.insert(idx);
         }
     }
 
@@ -209,14 +313,19 @@ impl<'a> Builder<'a> {
 
     fn root(&mut self) {
         let repo = &self.input.repo;
-        let node = Node::synthetic(
-            repo_id(repo),
-            NodeKind::Repository,
-            repo.as_str(),
-            repo.clone(),
-        )
-        .with_attribute("commit", self.input.commit.as_str());
-        self.root = self.push_node(node);
+        let id = repo_id(repo);
+        let commit = self.input.commit.as_str().to_owned();
+        self.root = if let Some(existing) = self.node_pos.get(&id).copied() {
+            self.nodes[existing]
+                .attributes
+                .insert("commit".to_owned(), commit);
+            self.touch(existing);
+            existing
+        } else {
+            let node = Node::synthetic(id, NodeKind::Repository, repo.as_str(), repo.clone())
+                .with_attribute("commit", commit);
+            self.push_node(node)
+        };
     }
 
     fn packages(&mut self) {
@@ -252,16 +361,25 @@ impl<'a> Builder<'a> {
             self.push_edge(self.root, EdgeKind::Contains, idx, prov, Vec::new());
             if d.kind == NodeKind::Package {
                 self.package_dirs.push((dir, idx));
-                self.package_by_name.insert(normalize_pkg(&d.name), idx);
-                if let Some((_, short)) = coordinate.rsplit_once('/') {
-                    self.package_by_name
-                        .entry(normalize_pkg(short))
-                        .or_insert(idx);
-                }
+                self.register_package(&coordinate, &d.name, idx);
             }
         }
         self.package_dirs
             .sort_by_key(|(dir, _)| std::cmp::Reverse(dir.len()));
+    }
+
+    /// Makes a package findable by its registry and name, and by its short name for
+    /// scoped coordinates such as `npm/@scope/name`.
+    fn register_package(&mut self, coordinate: &str, name: &str, idx: usize) {
+        let registry = registry_of(coordinate);
+        self.package_by_name
+            .entry(package_key(registry, name))
+            .or_insert(idx);
+        if let Some((_, short)) = coordinate.rsplit_once('/') {
+            self.package_by_name
+                .entry(package_key(registry, short))
+                .or_insert(idx);
+        }
     }
 
     fn owner_package(&self, path: &RepoPath) -> Option<usize> {
@@ -353,10 +471,14 @@ impl<'a> Builder<'a> {
         );
         if mergeable && let Some(&existing) = self.node_pos.get(&id) {
             let node = &mut self.nodes[existing];
+            let before = node.attributes.len();
             for (k, v) in &d.attributes {
                 node.attributes
                     .entry(k.clone())
                     .or_insert_with(|| v.clone());
+            }
+            if node.attributes.len() != before {
+                self.touch(existing);
             }
             return existing;
         }
@@ -382,7 +504,10 @@ impl<'a> Builder<'a> {
     // ---- pass 3: structural edges ----------------------------------------------------
 
     fn structure(&mut self) {
-        let files: Vec<RepoPath> = self.decls_by_file.keys().cloned().collect();
+        // Sorted so that the migration whose span cites a merged table is the same on
+        // every run.
+        let mut files: Vec<RepoPath> = self.decls_by_file.keys().cloned().collect();
+        files.sort();
         for file in files {
             let refs = self.decls_by_file[&file].clone();
             let file_node = self.file_nodes.get(&file).copied();
@@ -584,9 +709,7 @@ impl<'a> Builder<'a> {
             .with_qualified_name(coordinate)
             .with_attribute("external", "true");
         let idx = self.push_node(node);
-        self.package_by_name
-            .entry(normalize_pkg(&name))
-            .or_insert(idx);
+        self.register_package(coordinate, &name, idx);
         idx
     }
 
@@ -786,52 +909,11 @@ impl<'a> Builder<'a> {
                 .or_else(|| {
                     r.path
                         .first()
-                        .and_then(|p| self.package_by_name.get(&normalize_pkg(p)).copied())
+                        .and_then(|p| self.package_by_name.get(&package_key("pypi", p)).copied())
                 })
                 .into_iter()
                 .collect(),
-            Some(Language::Rust) => {
-                let root = r.path.first().map_or("", String::as_str);
-                if matches!(root, "std" | "core" | "alloc") {
-                    return;
-                }
-                let same_package = RUST_BUILTIN_ROOTS.contains(&root);
-                let package_idx = if same_package {
-                    None
-                } else {
-                    self.package_by_name.get(&normalize_pkg(root)).copied()
-                };
-                let symbols: Vec<usize> = if r.path.len() >= 2 || same_package {
-                    let candidates = self.candidates(&r.name, src, |_| true);
-                    let qualifier = r
-                        .path
-                        .iter()
-                        .rev()
-                        .nth(1)
-                        .filter(|q| !RUST_BUILTIN_ROOTS.contains(&q.as_str()))
-                        .cloned();
-                    let ranked: Vec<usize> =
-                        rank(&self.index, &file, candidates, qualifier.as_deref())
-                            .into_iter()
-                            .filter(|(tier, i)| match package_idx {
-                                Some(p) => self.nodes[*i]
-                                    .file()
-                                    .and_then(|f| self.index.package_of_file.get(f))
-                                    .is_some_and(|owner| *owner == self.nodes[p].id.to_string()),
-                                None => *tier != Tier::SameRepo || !same_package,
-                            })
-                            .map(|(_, i)| i)
-                            .collect();
-                    if !ranked.is_empty() && ranked.len() <= self.input.options.max_candidates {
-                        ranked
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    Vec::new()
-                };
-                package_idx.into_iter().chain(symbols).collect()
-            }
+            Some(Language::Rust) => self.rust_import_targets(src, &file, r),
             _ => Vec::new(),
         };
         if targets.is_empty() {
@@ -858,6 +940,52 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Targets of a Rust `use`: the crate's package node when the root names a
+    /// dependency, plus the imported symbols when the path is specific enough.
+    fn rust_import_targets(&self, src: usize, file: &RepoPath, r: &ReferenceFact) -> Vec<usize> {
+        let root = r.path.first().map_or("", String::as_str);
+        if matches!(root, "std" | "core" | "alloc") {
+            return Vec::new();
+        }
+        let same_package = RUST_BUILTIN_ROOTS.contains(&root);
+        let package_idx = if same_package {
+            None
+        } else {
+            self.package_by_name
+                .get(&package_key("cargo", root))
+                .copied()
+        };
+        let symbols: Vec<usize> = if r.path.len() >= 2 || same_package {
+            let candidates = self.candidates(&r.name, src, |_| true);
+            let qualifier = r
+                .path
+                .iter()
+                .rev()
+                .nth(1)
+                .filter(|q| !RUST_BUILTIN_ROOTS.contains(&q.as_str()))
+                .cloned();
+            let ranked: Vec<usize> = rank(&self.index, file, candidates, qualifier.as_deref())
+                .into_iter()
+                .filter(|(tier, i)| match package_idx {
+                    Some(p) => self.nodes[*i]
+                        .file()
+                        .and_then(|f| self.index.package_of_file.get(f))
+                        .is_some_and(|owner| *owner == self.nodes[p].id.to_string()),
+                    None => *tier != Tier::SameRepo || !same_package,
+                })
+                .map(|(_, i)| i)
+                .collect();
+            if !ranked.is_empty() && ranked.len() <= self.input.options.max_candidates {
+                ranked
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+        package_idx.into_iter().chain(symbols).collect()
+    }
+
     fn npm_package(&self, path: &[String]) -> Option<usize> {
         let first = path.first()?;
         let name = if first.starts_with('@') {
@@ -865,7 +993,9 @@ impl<'a> Builder<'a> {
         } else {
             first.clone()
         };
-        self.package_by_name.get(&normalize_pkg(&name)).copied()
+        self.package_by_name
+            .get(&package_key("npm", &name))
+            .copied()
     }
 
     fn resolve_relative_file(
@@ -1027,10 +1157,24 @@ impl<'a> Builder<'a> {
     }
 
     fn finish(self) -> GraphDelta {
+        let Self {
+            mut nodes,
+            seed_count,
+            dirty_seeds,
+            edges,
+            unresolved,
+            ..
+        } = self;
+        let fresh = nodes.split_off(seed_count);
+        let changed_seeds = nodes
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| dirty_seeds.contains(i))
+            .map(|(_, n)| n);
         GraphDelta {
-            nodes: self.nodes,
-            edges: self.edges,
-            unresolved: self.unresolved,
+            nodes: changed_seeds.chain(fresh).collect(),
+            edges,
+            unresolved,
         }
     }
 }
@@ -1106,8 +1250,19 @@ fn with_parents(mut refs: Vec<DeclRef>) -> Vec<DeclRef> {
     refs
 }
 
-fn normalize_pkg(name: &str) -> String {
+pub(crate) fn normalize_pkg(name: &str) -> String {
     name.to_lowercase().replace('-', "_")
+}
+
+/// The registry part of a package coordinate: `cargo` in `cargo/serde`.
+fn registry_of(coordinate: &str) -> &str {
+    coordinate.split_once('/').map_or("", |(r, _)| r)
+}
+
+/// The lookup key for a package: registry plus normalized name, so a Rust `use` never
+/// resolves to the `PyPI` or npm package that shares the crate's name.
+fn package_key(registry: &str, name: &str) -> String {
+    format!("{registry}/{}", normalize_pkg(name))
 }
 
 /// Rust prelude items and the methods of `Option`, `Result`, strings and collections.
@@ -1482,7 +1637,7 @@ const BUILTIN_BASH: &[&str] = &[
 ];
 
 /// Names the standard library or runtime provides; a miss on these is not a gap.
-fn is_builtin_name(language: Option<&Language>, name: &str) -> bool {
+pub(crate) fn is_builtin_name(language: Option<&Language>, name: &str) -> bool {
     match language {
         Some(Language::Python) => BUILTIN_PYTHON.contains(&name) || BUILTIN_COMMON.contains(&name),
         Some(Language::TypeScript | Language::Tsx | Language::JavaScript) => {

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use arrow_array::builder::{
-    Float32Builder, Int64Builder, StringBuilder, UInt32Builder, UInt64Builder,
+    BooleanBuilder, Float32Builder, Int64Builder, StringBuilder, UInt32Builder, UInt64Builder,
 };
 use arrow_array::cast::AsArray;
 use arrow_array::types::{Float32Type, Int64Type, UInt32Type, UInt64Type};
@@ -75,6 +75,7 @@ pub(crate) fn files_schema() -> SchemaRef {
         utf8("content_hash", false),
         Field::new("bytes", DataType::UInt64, false),
         utf8("commit", false),
+        utf8("names", false),
     ]))
 }
 
@@ -102,7 +103,21 @@ pub(crate) fn meta_schema() -> SchemaRef {
         Field::new("edges", DataType::UInt64, false),
         Field::new("files", DataType::UInt64, false),
         Field::new("unresolved", DataType::UInt64, false),
+        Field::new("dirty", DataType::Boolean, false),
     ]))
+}
+
+/// True when `actual` has the fields of `wanted`, by name and type, in order.
+///
+/// Field metadata and nullability are ignored: Lance may rewrite both, and neither
+/// changes what the row conversions read.
+pub(crate) fn schema_matches(actual: &Schema, wanted: &Schema) -> bool {
+    actual.fields().len() == wanted.fields().len()
+        && actual
+            .fields()
+            .iter()
+            .zip(wanted.fields())
+            .all(|(a, w)| a.name() == w.name() && a.data_type() == w.data_type())
 }
 
 /// A row of the `files` table.
@@ -112,6 +127,8 @@ pub struct FileRow {
     pub language: Option<Language>,
     pub content_hash: ContentHash,
     pub bytes: u64,
+    /// Names the file references, for incremental update.
+    pub names: Vec<String>,
 }
 
 fn finish(columns: Vec<ArrayRef>, schema: SchemaRef) -> Result<RecordBatch, StoreError> {
@@ -233,6 +250,7 @@ pub(crate) fn files_batch(
     let mut hash = StringBuilder::new();
     let mut bytes = UInt64Builder::new();
     let mut commit_b = StringBuilder::new();
+    let mut names = StringBuilder::new();
     for f in files {
         repo_b.append_value(repo.as_str());
         path.append_value(f.path.as_str());
@@ -240,6 +258,7 @@ pub(crate) fn files_batch(
         hash.append_value(f.content_hash.to_hex());
         bytes.append_value(f.bytes);
         commit_b.append_value(commit);
+        names.append_value(serde_json::to_string(&f.names)?);
     }
     finish(
         vec![
@@ -249,6 +268,7 @@ pub(crate) fn files_batch(
             Arc::new(hash.finish()),
             Arc::new(bytes.finish()),
             Arc::new(commit_b.finish()),
+            Arc::new(names.finish()),
         ],
         files_schema(),
     )
@@ -304,9 +324,13 @@ pub(crate) struct MetaRow {
     pub edges: u64,
     pub files: u64,
     pub unresolved: u64,
+    /// Whether the working tree differed from `commit` when indexed.
+    pub dirty: bool,
 }
 
 pub(crate) fn meta_batch(row: &MetaRow) -> Result<RecordBatch, StoreError> {
+    let mut dirty = BooleanBuilder::new();
+    dirty.append_value(row.dirty);
     finish(
         vec![
             Arc::new(arrow_array::StringArray::from(vec![row.repo.as_str()])),
@@ -319,6 +343,7 @@ pub(crate) fn meta_batch(row: &MetaRow) -> Result<RecordBatch, StoreError> {
             Arc::new(arrow_array::UInt64Array::from(vec![row.edges])),
             Arc::new(arrow_array::UInt64Array::from(vec![row.files])),
             Arc::new(arrow_array::UInt64Array::from(vec![row.unresolved])),
+            Arc::new(dirty.finish()),
         ],
         meta_schema(),
     )
@@ -381,6 +406,14 @@ impl<'a> Cols<'a> {
             .col(name)?
             .as_primitive_opt::<Int64Type>()
             .ok_or_else(|| StoreError::schema(format!("column {name} is not i64")))?;
+        Ok(arr.value(row))
+    }
+
+    fn bool(&self, name: &str, row: usize) -> Result<bool, StoreError> {
+        let arr = self
+            .col(name)?
+            .as_boolean_opt()
+            .ok_or_else(|| StoreError::schema(format!("column {name} is not boolean")))?;
         Ok(arr.value(row))
     }
 
@@ -467,6 +500,7 @@ pub(crate) fn files_from_batch(batch: &RecordBatch) -> Result<Vec<FileRow>, Stor
                 .and_then(|l| l.parse::<Language>().ok()),
             content_hash: c.parsed::<ContentHash>("content_hash", row)?,
             bytes: c.u64("bytes", row)?.unwrap_or(0),
+            names: serde_json::from_str::<Vec<String>>(c.req("names", row)?)?,
         })
     })
 }
@@ -496,6 +530,7 @@ pub(crate) fn meta_from_batch(batch: &RecordBatch) -> Result<Vec<MetaRow>, Store
             edges: c.u64("edges", row)?.unwrap_or(0),
             files: c.u64("files", row)?.unwrap_or(0),
             unresolved: c.u64("unresolved", row)?.unwrap_or(0),
+            dirty: c.bool("dirty", row)?,
         })
     })
 }

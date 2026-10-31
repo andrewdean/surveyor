@@ -19,4 +19,4 @@ mod schema;
 #[doc(inline)]
 pub use error::StoreError;
 #[doc(inline)]
-pub use lance::{FileRecord, LanceStore, RepositorySnapshot, StoreStats};
+pub use lance::{FileRecord, LanceStore, RepositorySnapshot, StoreStats, StoreUpdate};

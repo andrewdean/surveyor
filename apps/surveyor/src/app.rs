@@ -1,17 +1,18 @@
 //! Command definitions and their handlers.
 
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
-use surveyor_extract::{Profile, Repository, extract_repository};
+use surveyor_extract::{Extraction, Profile, Repository, extract_paths, extract_repository};
 use surveyor_graph::{CodeGraph, EdgeFilter};
-use surveyor_link::{FileEntry, LinkInput, link};
-use surveyor_model::{EdgeKind, NodeKind, RepoId};
-use surveyor_store::{FileRecord, LanceStore};
+use surveyor_link::{ChangedFiles, FileEntry, LinkInput, link, plan_update, relink};
+use surveyor_model::{EdgeKind, Fact, GraphStats, LiteralRole, NodeKind, RepoId, RepoPath};
+use surveyor_store::{FileRecord, LanceStore, RepositorySnapshot, StoreUpdate};
 
-use crate::render::{self, Output};
+use crate::render::{self, Output, Updated};
 
 /// Directory under the repository root that holds the dataset.
 const STORE_DIR: &str = ".surveyor";
@@ -43,6 +44,8 @@ pub struct Cli {
 pub enum Command {
     /// Index the repository into the dataset.
     Index,
+    /// Reindex only what changed since the dataset's recorded commit.
+    Update(UpdateArgs),
     /// Show dataset and repository counts.
     Stats,
     /// Describe one symbol: where it is, what it touches, who touches it.
@@ -63,6 +66,13 @@ pub enum Command {
     Source(SourceArgs),
     /// Serve the graph over MCP on stdio.
     Mcp,
+}
+
+#[derive(Debug, Args)]
+pub struct UpdateArgs {
+    /// Fall back to a full index when more than this share of files would be relinked.
+    #[arg(long, default_value_t = 0.5)]
+    pub full_threshold: f64,
 }
 
 #[derive(Debug, Args)]
@@ -210,7 +220,8 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     let p = paths(&cli)?;
     let out = if cli.json { Output::Json } else { Output::Text };
     match &cli.command {
-        Command::Index => index(&cli, &p, &out).await,
+        Command::Index => run_index(&cli, &p, &out).await,
+        Command::Update(a) => update(&cli, &p, a, &out).await,
         Command::Stats => {
             let store = LanceStore::open(&p.store).await.context("open dataset")?;
             let stats = store.stats().await?;
@@ -306,7 +317,78 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     }
 }
 
-async fn index(cli: &Cli, p: &Paths, out: &Output) -> anyhow::Result<()> {
+/// What a full index produced.
+struct Indexed {
+    snapshot: RepositorySnapshot,
+    stats: GraphStats,
+    errors: usize,
+}
+
+/// The file rows and link entries for an extraction.
+fn file_entries(extraction: &Extraction) -> (Vec<FileEntry>, Vec<FileRecord>) {
+    let names = referenced_names(extraction);
+    let files: Vec<FileEntry> = extraction
+        .units
+        .iter()
+        .map(|u| FileEntry {
+            path: u.path.clone(),
+            language: u.language.clone(),
+            content_hash: u.content_hash,
+            bytes: u.bytes,
+        })
+        .collect();
+    let records = files
+        .iter()
+        .map(|f| FileRecord {
+            path: f.path.clone(),
+            language: f.language.clone(),
+            content_hash: f.content_hash,
+            bytes: f.bytes,
+            names: names.get(&f.path).cloned().unwrap_or_default(),
+        })
+        .collect();
+    (files, records)
+}
+
+/// The names each file references: symbols and tables by short name, plus the paths
+/// documentation cites. Incremental update uses them to find files to relink.
+fn referenced_names(extraction: &Extraction) -> BTreeMap<RepoPath, Vec<String>> {
+    let mut names: BTreeMap<RepoPath, BTreeSet<String>> = BTreeMap::new();
+    for set in &extraction.fact_sets {
+        let entry = names.entry(set.path.clone()).or_default();
+        for fact in &set.facts {
+            match fact {
+                Fact::Reference(r) => {
+                    entry.insert(r.name.clone());
+                }
+                Fact::Literal(l) if l.role == LiteralRole::Path => {
+                    let cited = l.value.trim_start_matches("./").trim_end_matches('/');
+                    entry.insert(cited.to_owned());
+                }
+                _ => {}
+            }
+        }
+    }
+    names
+        .into_iter()
+        .map(|(path, set)| (path, set.into_iter().collect()))
+        .collect()
+}
+
+async fn run_index(cli: &Cli, p: &Paths, out: &Output) -> anyhow::Result<()> {
+    let started = Instant::now();
+    let indexed = index(cli, p).await?;
+    out.indexed(
+        &indexed.snapshot,
+        &indexed.stats,
+        &p.store,
+        indexed.errors,
+        started.elapsed(),
+    );
+    Ok(())
+}
+
+async fn index(cli: &Cli, p: &Paths) -> anyhow::Result<Indexed> {
     let started = Instant::now();
     let repo = Repository::open(&p.root, cli.repo_id.as_deref().map(RepoId::new))
         .context("open repository")?;
@@ -326,25 +408,7 @@ async fn index(cli: &Cli, p: &Paths, out: &Output) -> anyhow::Result<()> {
         tracing::warn!(error = %err, "extraction error");
     }
 
-    let files: Vec<FileEntry> = extraction
-        .units
-        .iter()
-        .map(|u| FileEntry {
-            path: u.path.clone(),
-            language: u.language.clone(),
-            content_hash: u.content_hash,
-            bytes: u.bytes,
-        })
-        .collect();
-    let records: Vec<FileRecord> = files
-        .iter()
-        .map(|f| FileRecord {
-            path: f.path.clone(),
-            language: f.language.clone(),
-            content_hash: f.content_hash,
-            bytes: f.bytes,
-        })
-        .collect();
+    let (files, records) = file_entries(&extraction);
     let input = LinkInput::new(repo.id().clone(), repo.commit().clone())
         .with_files(files)
         .with_fact_sets(extraction.fact_sets);
@@ -355,17 +419,236 @@ async fn index(cli: &Cli, p: &Paths, out: &Output) -> anyhow::Result<()> {
         nodes = stats.nodes,
         edges = stats.edges,
         unresolved = stats.unresolved,
-        ms = linked_at.checked_sub(extracted_at).unwrap().as_millis() as u64,
+        ms = linked_at.saturating_sub(extracted_at).as_millis() as u64,
         "linked"
     );
 
     let store = LanceStore::open(&p.store).await.context("open dataset")?;
     let snapshot = store
-        .replace_repository(repo.id(), repo.commit(), &delta, &records)
+        .replace_repository(repo.id(), repo.commit(), repo.is_dirty(), &delta, &records)
         .await
         .context("write dataset")?;
     let total = started.elapsed();
-    tracing::info!(ms = total.checked_sub(linked_at).unwrap().as_millis() as u64, store = %p.store.display(), "written");
-    out.indexed(&snapshot, &stats, &p.store, extraction.errors.len(), total);
+    tracing::info!(ms = total.saturating_sub(linked_at).as_millis() as u64, store = %p.store.display(), "written");
+    Ok(Indexed {
+        snapshot,
+        stats,
+        errors: extraction.errors.len(),
+    })
+}
+
+/// Reindexes what changed since the dataset's recorded commit.
+///
+/// Falls back to a full index when there is no index yet, when a manifest changed, or
+/// when the plan would relink more than `--full-threshold` of the files.
+async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow::Result<()> {
+    let started = Instant::now();
+    let repo = Repository::open(&p.root, cli.repo_id.as_deref().map(RepoId::new))
+        .context("open repository")?;
+    let profile = Profile::load(&p.root).context("load surveyor.toml")?;
+    if !p.store.exists() {
+        return full(cli, p, out, "no dataset", started).await;
+    }
+    let store = LanceStore::open(&p.store).await.context("open dataset")?;
+    let Some(snapshot) = store.snapshot(repo.id()).await? else {
+        return full(cli, p, out, "repository not indexed", started).await;
+    };
+    let known = store.files(repo.id()).await.context("read file records")?;
+    let hashes = known
+        .iter()
+        .map(|f| (f.path.clone(), f.content_hash))
+        .collect();
+    let changes = repo
+        .changes_since(&profile, Some(&snapshot.commit), snapshot.dirty, &hashes)
+        .context("detect changes")?;
+    tracing::info!(
+        source = changes.source.as_str(),
+        modified = changes.modified.len(),
+        added = changes.added.len(),
+        deleted = changes.deleted.len(),
+        unchanged = changes.unchanged,
+        ms = started.elapsed().as_millis() as u64,
+        "changes"
+    );
+    let changed = ChangedFiles {
+        modified: changes.modified.iter().cloned().collect(),
+        added: changes.added.iter().cloned().collect(),
+        deleted: changes.deleted.iter().cloned().collect(),
+    };
+    if changed.touches_manifest() {
+        return full(cli, p, out, "a package manifest changed", started).await;
+    }
+    if changes.is_empty() && snapshot.commit == *repo.commit() && snapshot.dirty == repo.is_dirty()
+    {
+        out.updated(
+            &Updated {
+                snapshot,
+                strategy: changes.source.as_str().to_owned(),
+                reason: None,
+                modified: Vec::new(),
+                added: Vec::new(),
+                deleted: Vec::new(),
+                relinked: BTreeMap::new(),
+                extraction_errors: 0,
+                took: started.elapsed(),
+            },
+            &p.store,
+        );
+        return Ok(());
+    }
+
+    match incremental(&repo, &profile, &store, &known, &changed, args).await? {
+        Incremental::Applied {
+            snapshot,
+            relinked,
+            extraction_errors,
+        } => {
+            out.updated(
+                &Updated {
+                    snapshot,
+                    strategy: changes.source.as_str().to_owned(),
+                    reason: None,
+                    modified: changes.modified,
+                    added: changes.added,
+                    deleted: changes.deleted,
+                    relinked,
+                    extraction_errors,
+                    took: started.elapsed(),
+                },
+                &p.store,
+            );
+            Ok(())
+        }
+        Incremental::TooLarge(reason) => full(cli, p, out, &reason, started).await,
+    }
+}
+
+/// How an incremental attempt ended.
+enum Incremental {
+    /// The delta was written.
+    Applied {
+        snapshot: RepositorySnapshot,
+        relinked: BTreeMap<RepoPath, String>,
+        extraction_errors: usize,
+    },
+    /// The plan would relink too much of the repository.
+    TooLarge(String),
+}
+
+/// Probes the changed files, plans the relink, relinks and writes the delta.
+async fn incremental(
+    repo: &Repository,
+    profile: &Profile,
+    store: &LanceStore,
+    known: &[FileRecord],
+    changed: &ChangedFiles,
+    args: &UpdateArgs,
+) -> anyhow::Result<Incremental> {
+    let started = Instant::now();
+    // Probe: link the changed files alone to learn the declarations they now hold.
+    let first = extract_paths(repo, profile, changed.to_extract()).context("extract")?;
+    let (probe_files, _) = file_entries(&first);
+    let probe = link(
+        &LinkInput::new(repo.id().clone(), repo.commit().clone())
+            .with_files(probe_files)
+            .with_fact_sets(first.fact_sets.clone()),
+    );
+    let (nodes, edges) = store
+        .load_graph(Some(repo.id()))
+        .await
+        .context("load graph")?;
+    let loaded_at = started.elapsed();
+    let names: HashMap<RepoPath, Vec<String>> = known
+        .iter()
+        .map(|f| (f.path.clone(), f.names.clone()))
+        .collect();
+    let plan = plan_update(&nodes, &edges, &names, changed, &probe);
+    tracing::info!(
+        relink = plan.relink.len(),
+        drop_files = plan.drop_files.len(),
+        drop_edges = plan.drop_edges.len(),
+        seed_nodes = plan.seed.nodes.len(),
+        seed_edges = plan.seed.edges.len(),
+        ms = (started.elapsed().saturating_sub(loaded_at)).as_millis() as u64,
+        "planned"
+    );
+    let share = plan.relink.len() as f64 / known.len().max(1) as f64;
+    if share > args.full_threshold {
+        return Ok(Incremental::TooLarge(format!(
+            "{} of {} files would be relinked",
+            plan.relink.len(),
+            known.len()
+        )));
+    }
+
+    let second = extract_paths(repo, profile, plan.relink_unchanged()).context("extract")?;
+    let mut extraction = first;
+    extraction.units.extend(second.units);
+    extraction.fact_sets.extend(second.fact_sets);
+    extraction.errors.extend(second.errors);
+    for err in extraction.errors.iter().take(20) {
+        tracing::warn!(error = %err, "extraction error");
+    }
+    let (files, records) = file_entries(&extraction);
+    let input = LinkInput::new(repo.id().clone(), repo.commit().clone())
+        .with_files(files)
+        .with_fact_sets(extraction.fact_sets);
+    let delta = relink(&input, plan.seed);
+    let linked_at = started.elapsed();
+    tracing::info!(
+        nodes = delta.nodes.len(),
+        edges = delta.edges.len(),
+        unresolved = delta.unresolved.len(),
+        "relinked"
+    );
+    let store_update = StoreUpdate {
+        drop_files: plan.drop_files.iter().cloned().collect(),
+        drop_edges: plan.drop_edges,
+        delta,
+        files: records,
+    };
+    let snapshot = store
+        .apply_update(repo.id(), repo.commit(), repo.is_dirty(), &store_update)
+        .await
+        .context("write dataset")?;
+    tracing::info!(
+        ms = started.elapsed().saturating_sub(linked_at).as_millis() as u64,
+        "written"
+    );
+    Ok(Incremental::Applied {
+        snapshot,
+        relinked: plan
+            .relink
+            .into_iter()
+            .map(|(path, reason)| (path, reason.label()))
+            .collect(),
+        extraction_errors: extraction.errors.len(),
+    })
+}
+
+/// Runs a full index in place of an update and reports it as such.
+async fn full(
+    cli: &Cli,
+    p: &Paths,
+    out: &Output,
+    reason: &str,
+    started: Instant,
+) -> anyhow::Result<()> {
+    tracing::info!(reason, "updating with a full index");
+    let indexed = index(cli, p).await?;
+    out.updated(
+        &Updated {
+            snapshot: indexed.snapshot,
+            strategy: "full".to_owned(),
+            reason: Some(reason.to_owned()),
+            modified: Vec::new(),
+            added: Vec::new(),
+            deleted: Vec::new(),
+            relinked: BTreeMap::new(),
+            extraction_errors: indexed.errors,
+            took: started.elapsed(),
+        },
+        &p.store,
+    );
     Ok(())
 }

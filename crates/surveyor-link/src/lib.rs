@@ -29,10 +29,13 @@ mod ids;
 mod input;
 mod linker;
 mod resolve;
+mod update;
 
 #[doc(inline)]
 pub use ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id};
 #[doc(inline)]
 pub use input::{FileEntry, LinkInput, LinkOptions};
 #[doc(inline)]
-pub use linker::link;
+pub use linker::{Seed, link, relink};
+#[doc(inline)]
+pub use update::{ChangedFiles, RelinkReason, UpdatePlan, is_manifest, plan_update};

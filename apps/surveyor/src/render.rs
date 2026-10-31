@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
+use surveyor_model::RepoPath;
+
 use anyhow::{Context, bail};
 use serde::Serialize;
 use surveyor_graph::{
@@ -78,6 +80,29 @@ impl EdgeView {
                 .collect(),
         }
     }
+}
+
+/// What an `update` run did.
+#[derive(Debug)]
+pub struct Updated {
+    /// The snapshot after the write.
+    pub snapshot: RepositorySnapshot,
+    /// `git`, `hashes` or `full`.
+    pub strategy: String,
+    /// Why a full index ran instead, when it did.
+    pub reason: Option<String>,
+    /// Files whose content changed.
+    pub modified: Vec<RepoPath>,
+    /// Files that are new.
+    pub added: Vec<RepoPath>,
+    /// Files that are gone.
+    pub deleted: Vec<RepoPath>,
+    /// Every relinked file with the reason.
+    pub relinked: BTreeMap<RepoPath, String>,
+    /// Per-file extraction failures.
+    pub extraction_errors: usize,
+    /// Wall-clock time.
+    pub took: Duration,
 }
 
 fn location(n: &Node) -> String {
@@ -180,6 +205,81 @@ impl Output {
             "  edges by derivation: {}",
             top_counts(&stats.edges_by_derivation, 5)
         );
+    }
+
+    pub fn updated(self, u: &Updated, store: &Path) {
+        if self == Self::Json {
+            #[derive(Serialize)]
+            struct View<'a> {
+                repo: &'a str,
+                commit: &'a str,
+                store: String,
+                strategy: &'a str,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                reason: Option<&'a str>,
+                modified: &'a [RepoPath],
+                added: &'a [RepoPath],
+                deleted: &'a [RepoPath],
+                relinked: &'a BTreeMap<RepoPath, String>,
+                nodes: u64,
+                edges: u64,
+                files: u64,
+                unresolved: u64,
+                extraction_errors: usize,
+                seconds: f64,
+            }
+            print_json(&View {
+                repo: u.snapshot.repo.as_str(),
+                commit: u.snapshot.commit.as_str(),
+                store: store.display().to_string(),
+                strategy: &u.strategy,
+                reason: u.reason.as_deref(),
+                modified: &u.modified,
+                added: &u.added,
+                deleted: &u.deleted,
+                relinked: &u.relinked,
+                nodes: u.snapshot.nodes,
+                edges: u.snapshot.edges,
+                files: u.snapshot.files,
+                unresolved: u.snapshot.unresolved,
+                extraction_errors: u.extraction_errors,
+                seconds: u.took.as_secs_f64(),
+            });
+            return;
+        }
+        println!(
+            "updated {} to {} in {:.1}s ({}{})",
+            u.snapshot.repo,
+            short(u.snapshot.commit.as_str()),
+            u.took.as_secs_f64(),
+            u.strategy,
+            u.reason
+                .as_deref()
+                .map(|r| format!(": {r}"))
+                .unwrap_or_default()
+        );
+        println!(
+            "  changed: {} modified, {} added, {} deleted; relinked {} files",
+            u.modified.len(),
+            u.added.len(),
+            u.deleted.len(),
+            u.relinked.len()
+        );
+        for (path, reason) in u.relinked.iter().take(20) {
+            println!("    {path}  ({reason})");
+        }
+        if u.relinked.len() > 20 {
+            println!("    … and {} more", u.relinked.len() - 20);
+        }
+        println!(
+            "  files {}  nodes {}  edges {}  unresolved {}  extraction errors {}",
+            u.snapshot.files,
+            u.snapshot.nodes,
+            u.snapshot.edges,
+            u.snapshot.unresolved,
+            u.extraction_errors
+        );
+        println!("  store {}", store.display());
     }
 
     pub fn stats(self, store: &Path, stats: &StoreStats, per_repo: Option<&GraphStats>) {

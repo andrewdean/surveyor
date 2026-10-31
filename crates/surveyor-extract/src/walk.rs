@@ -6,10 +6,12 @@
 //! language or is a recognized manifest becomes a [`SourceUnit`]; binary and oversized
 //! files are skipped.
 
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
+use globset::GlobSet;
 use ignore::WalkBuilder;
-use surveyor_model::{CommitId, Language, RepoId, RepoPath, SourceUnit};
+use surveyor_model::{CommitId, ContentHash, Language, RepoId, RepoPath, SourceUnit};
 
 use crate::ExtractError;
 use crate::profile::Profile;
@@ -19,6 +21,60 @@ pub const NO_COMMIT: &str = "worktree";
 
 /// File names that are extracted although their extension carries no language.
 const MANIFEST_NAMES: &[&str] = &["Cargo.toml", "package.json", "pyproject.toml", "Dockerfile"];
+
+/// How the changed files were found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangeSource {
+    /// `git diff` between the indexed commit and `HEAD` named the candidates, each then
+    /// confirmed by content hash.
+    Git { since: CommitId },
+    /// Every indexable file was hashed and compared with the recorded hash.
+    Hashes,
+}
+
+impl ChangeSource {
+    /// The short name used in reports: `git` or `hashes`.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Git { .. } => "git",
+            Self::Hashes => "hashes",
+        }
+    }
+}
+
+/// What changed in a checkout since its index was written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileChanges {
+    /// How the candidates were found.
+    pub source: ChangeSource,
+    /// Indexed files whose content differs.
+    pub modified: Vec<RepoPath>,
+    /// Indexable files the index does not know.
+    pub added: Vec<RepoPath>,
+    /// Indexed files that are gone, binary or no longer indexable.
+    pub deleted: Vec<RepoPath>,
+    /// Candidates whose hash still matches.
+    pub unchanged: usize,
+}
+
+impl FileChanges {
+    /// True when nothing changed.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.modified.is_empty() && self.added.is_empty() && self.deleted.is_empty()
+    }
+
+    /// Files that must be read again: the modified and the added ones.
+    pub fn to_extract(&self) -> impl Iterator<Item = &RepoPath> {
+        self.modified.iter().chain(&self.added)
+    }
+
+    /// Every path the change touches.
+    pub fn touched(&self) -> impl Iterator<Item = &RepoPath> {
+        self.to_extract().chain(&self.deleted)
+    }
+}
 
 /// A checkout Surveyor indexes.
 #[derive(Debug, Clone)]
@@ -92,6 +148,84 @@ impl Repository {
     /// Loads the repository profile from the root.
     pub fn profile(&self) -> Result<Profile, ExtractError> {
         Profile::load(&self.root)
+    }
+
+    /// True when the walk would visit `path`: not excluded, not hidden, extractable
+    /// and within the size limit. Used for paths git names rather than the walk.
+    fn is_indexable(&self, profile: &Profile, exclude: &GlobSet, path: &RepoPath) -> bool {
+        let hidden = path
+            .as_str()
+            .split('/')
+            .any(|part| part.starts_with('.') && part != "." && part != "..");
+        let small = std::fs::metadata(self.root.join(path.as_str()))
+            .is_ok_and(|m| m.len() <= profile.walk.max_file_bytes);
+        !hidden && small && !exclude.is_match(path.as_str()) && is_extractable(path)
+    }
+
+    /// Compares the checkout with the files recorded at index time.
+    ///
+    /// When both the recorded index and the checkout are clean commits, git names the
+    /// candidate paths; otherwise every indexable path is a candidate. Either way a
+    /// candidate counts as changed only when its content hash differs from `known`,
+    /// so a commit that touches a file without changing it costs nothing.
+    pub fn changes_since(
+        &self,
+        profile: &Profile,
+        since: Option<&CommitId>,
+        since_dirty: bool,
+        known: &HashMap<RepoPath, ContentHash>,
+    ) -> Result<FileChanges, ExtractError> {
+        let exclude = profile.exclude_set()?;
+        let clean = !self.dirty && !since_dirty && self.commit.as_str() != NO_COMMIT;
+        let from_git = since
+            .filter(|s| clean && s.as_str() != NO_COMMIT)
+            .and_then(|s| {
+                self.changed_paths_since(s)
+                    .map_err(|e| tracing::info!(error = %e, "git diff unavailable; hashing"))
+                    .ok()
+                    .map(|paths| (s.clone(), paths))
+            });
+        let (source, candidates): (ChangeSource, BTreeSet<RepoPath>) = match from_git {
+            Some((since, paths)) => (
+                ChangeSource::Git { since },
+                paths
+                    .into_iter()
+                    .filter(|p| known.contains_key(p) || self.is_indexable(profile, &exclude, p))
+                    .collect(),
+            ),
+            None => (
+                ChangeSource::Hashes,
+                self.paths(profile)?
+                    .into_iter()
+                    .chain(known.keys().cloned())
+                    .collect(),
+            ),
+        };
+        let mut changes = FileChanges {
+            source,
+            modified: Vec::new(),
+            added: Vec::new(),
+            deleted: Vec::new(),
+            unchanged: 0,
+        };
+        for path in candidates {
+            let present = self
+                .root
+                .join(path.as_str())
+                .is_file()
+                .then(|| self.unit(&path))
+                .transpose()?
+                .flatten()
+                .map(|u| u.content_hash);
+            match (present, known.get(&path)) {
+                (Some(now), Some(then)) if now == *then => changes.unchanged += 1,
+                (Some(_), Some(_)) => changes.modified.push(path),
+                (Some(_), None) => changes.added.push(path),
+                (None, Some(_)) => changes.deleted.push(path),
+                (None, None) => {}
+            }
+        }
+        Ok(changes)
     }
 
     /// Lists the repository-relative paths of files worth extracting.
@@ -230,5 +364,32 @@ mod tests {
         );
         let units = repo.units(&profile).expect("units");
         assert_eq!(units.len(), 2, "binary file is dropped");
+    }
+
+    #[test]
+    fn changes_are_found_by_hash_without_git() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+        std::fs::write(dir.path().join("src/a.rs"), "fn a() {}").expect("write");
+        std::fs::write(dir.path().join("src/b.rs"), "fn b() {}").expect("write");
+        let repo = Repository::open(dir.path(), None).expect("opens");
+        let profile = repo.profile().expect("profile");
+        let known: HashMap<RepoPath, ContentHash> = [
+            (RepoPath::new("src/a.rs"), ContentHash::of(b"fn a() {}")),
+            (RepoPath::new("src/b.rs"), ContentHash::of(b"old")),
+            (RepoPath::new("src/gone.rs"), ContentHash::of(b"x")),
+        ]
+        .into_iter()
+        .collect();
+        std::fs::write(dir.path().join("src/c.rs"), "fn c() {}").expect("write");
+        let changes = repo
+            .changes_since(&profile, Some(&CommitId::new("abc")), false, &known)
+            .expect("changes");
+        assert_eq!(changes.source, ChangeSource::Hashes);
+        assert_eq!(changes.unchanged, 1);
+        assert_eq!(changes.modified, vec![RepoPath::new("src/b.rs")]);
+        assert_eq!(changes.added, vec![RepoPath::new("src/c.rs")]);
+        assert_eq!(changes.deleted, vec![RepoPath::new("src/gone.rs")]);
+        assert_eq!(changes.touched().count(), 3);
     }
 }
