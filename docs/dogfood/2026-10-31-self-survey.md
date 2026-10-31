@@ -73,6 +73,12 @@ surveyor index                                             # profile in surveyor
   snapshot records the engine that wrote it (crate version, a hash of the query packs
   and a linker revision, `0.1.0+<hash>`), and `update` re-indexes in full when the
   build differs. The first update after this change took that path on this repository.
+- A refreshed SCIP index is an input the dataset depends on, and `update` did not
+  notice it: after regenerating the index, `update` relinked only the one Markdown file
+  that had changed and the files the index now covered kept their name-matched edges
+  (unresolved stayed at 241 instead of returning to about 110). Fixed the same day by
+  folding the SCIP index files' content hashes into the engine stamp, so a changed
+  index is a changed engine and `update` re-indexes in full.
 - Communities by label propagation collapse into one cluster of 821 members; the
   second cluster is the graph API. Louvain or Leiden is needed before `communities` is
   useful on a real codebase.

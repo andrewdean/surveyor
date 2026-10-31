@@ -598,7 +598,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[expect(clippy::too_many_lines, reason = "one dataset, every store operation in order")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one dataset, every store operation in order"
+    )]
     async fn round_trips_and_replaces_per_repository() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = LanceStore::open(dir.path().join("ds")).await.expect("open");
