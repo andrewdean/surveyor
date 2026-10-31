@@ -206,7 +206,6 @@ fn resolve_one<'a>(
     }
 }
 
-#[expect(clippy::too_many_lines, reason = "one match arm per subcommand")]
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
     let p = paths(&cli)?;
     let out = if cli.json { Output::Json } else { Output::Text };
@@ -249,16 +248,14 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let (_, graph, _) = open_graph(&cli, &p).await?;
             let from = resolve_one(&graph, &a.from, None)?;
             let to = resolve_one(&graph, &a.to, None)?;
-            let filter = EdgeFilter {
-                include_structural: false,
-                ..EdgeFilter::default()
-            };
-            let path = graph
-                .shortest_path(&from.id, &to.id, &filter, a.directed)
-                .or_else(|| {
-                    graph.shortest_path(&from.id, &to.id, &EdgeFilter::default(), a.directed)
-                });
-            out.path(from, to, path.as_deref());
+            let found = graph.best_path(&from.id, &to.id, a.directed);
+            out.path(
+                from,
+                to,
+                found
+                    .as_ref()
+                    .map(|(tier, steps)| (*tier, steps.as_slice())),
+            );
             Ok(())
         }
         Command::Query(q) => {

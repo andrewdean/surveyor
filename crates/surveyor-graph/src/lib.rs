@@ -82,6 +82,37 @@ impl EdgeFilter {
         }
     }
 
+    /// Certain, deterministic, non-structural edges that are not test coverage.
+    ///
+    /// The first tier a path search tries: a chain of these is a dependency an engineer
+    /// would recognize, with no name-matching guesses in it.
+    #[must_use]
+    pub fn precise() -> Self {
+        Self {
+            kinds: Some(Self::dependency_kinds()),
+            deterministic_only: true,
+            min_confidence: 1.0,
+            include_structural: false,
+        }
+    }
+
+    /// Non-structural edges that are not test coverage, at any confidence.
+    #[must_use]
+    pub fn loose() -> Self {
+        Self {
+            kinds: Some(Self::dependency_kinds()),
+            ..Self::default()
+        }
+    }
+
+    fn dependency_kinds() -> Vec<EdgeKind> {
+        EdgeKind::builtin()
+            .iter()
+            .filter(|k| !k.is_structural() && **k != EdgeKind::TestedBy)
+            .cloned()
+            .collect()
+    }
+
     /// Restricts to the given kinds and returns the filter.
     #[must_use]
     pub fn with_kinds(mut self, kinds: Vec<EdgeKind>) -> Self {
@@ -134,6 +165,18 @@ pub struct Affected<'a> {
     pub via: &'a Edge,
     /// Product of confidences along the path.
     pub confidence: f32,
+}
+
+/// How trustworthy the edges of a found path are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PathTier {
+    /// Every hop is certain and deterministic, and none is test coverage.
+    Precise,
+    /// Dependency edges only, some resolved by name with less than full confidence.
+    Loose,
+    /// Any edge, including containment and test coverage.
+    Any,
 }
 
 /// One step of a path: the node and the edge used to reach it (none for the start).
@@ -452,6 +495,27 @@ impl CodeGraph {
     ///
     /// Power iteration over the edge list, linear in edges per round, so a graph of a
     /// few hundred thousand edges ranks in well under a second.
+    /// The best path from `from` to `to`: precise edges first, then any dependency
+    /// edge, then any edge at all, with the tier that succeeded.
+    #[must_use]
+    pub fn best_path(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        directed: bool,
+    ) -> Option<(PathTier, Vec<PathStep<'_>>)> {
+        [
+            (PathTier::Precise, EdgeFilter::precise()),
+            (PathTier::Loose, EdgeFilter::loose()),
+            (PathTier::Any, EdgeFilter::default()),
+        ]
+        .into_iter()
+        .find_map(|(tier, filter)| {
+            self.shortest_path(from, to, &filter, directed)
+                .map(|steps| (tier, steps))
+        })
+    }
+
     #[must_use]
     pub fn page_rank(&self, top: usize, filter: &EdgeFilter) -> Vec<(&Node, f64)> {
         let n = self.graph.node_count();
@@ -727,6 +791,16 @@ mod tests {
             )
             .is_some()
         );
+
+        let (tier, steps) = g
+            .best_path(&NodeId::new("a::main"), &NodeId::new("sql:s.t"), true)
+            .expect("path");
+        assert_eq!(tier, PathTier::Loose, "the 0.5 call forces the second tier");
+        assert_eq!(steps.len(), 4);
+        let (tier, _) = g
+            .best_path(&NodeId::new("a::main"), &NodeId::new("a::service"), true)
+            .expect("path");
+        assert_eq!(tier, PathTier::Precise);
 
         let found = g.find("service", None, 5);
         assert_eq!(found[0].id.as_str(), "a::service");

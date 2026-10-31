@@ -22,7 +22,7 @@ use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabiliti
 use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use surveyor_graph::{CodeGraph, Direction, EdgeFilter};
+use surveyor_graph::{CodeGraph, Direction, EdgeFilter, PathTier};
 use surveyor_model::{Edge, EdgeKind, Node, NodeId, NodeKind, RepoId};
 use surveyor_store::LanceStore;
 
@@ -393,7 +393,7 @@ impl Surveyor {
     }
 
     #[tool(
-        description = "Shortest dependency path between two nodes, with the edge and citation for each hop."
+        description = "Shortest dependency path between two nodes, with the edge and citation for each hop and a tier: precise (every hop certain), loose (some hops resolved by name) or any (through containment or tests)."
     )]
     async fn shortest_path(
         &self,
@@ -401,17 +401,7 @@ impl Surveyor {
     ) -> Result<CallToolResult, McpError> {
         let from = self.resolve(&p.from)?;
         let to = self.resolve(&p.to)?;
-        let filter = EdgeFilter {
-            include_structural: false,
-            ..EdgeFilter::default()
-        };
-        let path = self
-            .graph
-            .shortest_path(&from.id, &to.id, &filter, p.directed)
-            .or_else(|| {
-                self.graph
-                    .shortest_path(&from.id, &to.id, &EdgeFilter::default(), p.directed)
-            });
+        let path = self.graph.best_path(&from.id, &to.id, p.directed);
         #[derive(Serialize)]
         struct Step {
             node: NodeView,
@@ -421,11 +411,16 @@ impl Surveyor {
         #[derive(Serialize)]
         struct View {
             found: bool,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            tier: Option<PathTier>,
             steps: Vec<Step>,
         }
         json_result(&View {
             found: path.is_some(),
+            tier: path.as_ref().map(|(tier, _)| *tier),
             steps: path
+                .as_ref()
+                .map(|(_, steps)| steps.as_slice())
                 .unwrap_or_default()
                 .iter()
                 .map(|s| Step {

@@ -55,14 +55,7 @@ impl MarkdownExtractor {
             return Ok(set);
         };
 
-        let (title, title_span) = first_heading(text).unwrap_or_else(|| {
-            let stem = unit
-                .path
-                .file_name()
-                .and_then(|n| n.rsplit_once('.'))
-                .map_or("document", |(s, _)| s);
-            (stem.to_owned(), ByteSpan::new(0, 0))
-        });
+        let (title, title_span) = document_title(text, &unit.path);
         let mut attributes = BTreeMap::new();
         attributes.insert("path".to_owned(), unit.path.to_string());
         if let Some(uid) =
@@ -118,9 +111,63 @@ impl Extractor for MarkdownExtractor {
     }
 }
 
-fn first_heading(text: &str) -> Option<(String, ByteSpan)> {
+/// The document's name: the front matter `title`, else the first heading, else the
+/// file stem. A heading that only names a section (`Summary`, `Overview`) is skipped
+/// when a better name exists.
+fn document_title(text: &str, path: &surveyor_model::RepoPath) -> (String, ByteSpan) {
+    const SECTION_HEADINGS: &[&str] =
+        &["summary", "overview", "abstract", "introduction", "context"];
+    let headings: Vec<(String, ByteSpan)> = level_one_headings(text);
+    let named = headings
+        .iter()
+        .find(|(h, _)| !SECTION_HEADINGS.contains(&h.to_lowercase().as_str()));
+    front_matter_entry(text, "title")
+        .or_else(|| named.or(headings.first()).cloned())
+        .unwrap_or_else(|| {
+            let stem = path
+                .file_name()
+                .and_then(|n| n.rsplit_once('.'))
+                .map_or("document", |(s, _)| s);
+            (stem.to_owned(), ByteSpan::new(0, 0))
+        })
+}
+
+/// A front matter `key: value` line as `(value, span of the line)`.
+fn front_matter_entry(text: &str, key: &str) -> Option<(String, ByteSpan)> {
+    let mut offset = 0usize;
+    let mut lines = text.split_inclusive('\n');
+    let first = lines.next()?;
+    if first.trim() != "---" {
+        return None;
+    }
+    offset += first.len();
+    for line in lines {
+        let start = offset;
+        offset += line.len();
+        let trimmed = line.trim_end();
+        if trimmed == "---" {
+            return None;
+        }
+        if let Some((k, v)) = trimmed.split_once(':')
+            && k.trim() == key
+        {
+            let value = v.trim().trim_matches(['"', '\'']).to_owned();
+            return (!value.is_empty()).then(|| {
+                (
+                    value,
+                    ByteSpan::new(start as u64, (start + trimmed.len()) as u64),
+                )
+            });
+        }
+    }
+    None
+}
+
+/// Every `# heading` outside the front matter, with the span of its line.
+fn level_one_headings(text: &str) -> Vec<(String, ByteSpan)> {
     let mut offset = 0usize;
     let mut in_front_matter = false;
+    let mut out = Vec::new();
     for (i, line) in text.split_inclusive('\n').enumerate() {
         let start = offset;
         offset += line.len();
@@ -130,20 +177,18 @@ fn first_heading(text: &str) -> Option<(String, ByteSpan)> {
             continue;
         }
         if in_front_matter {
-            if trimmed == "---" {
-                in_front_matter = false;
-            }
+            in_front_matter = trimmed != "---";
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("# ") {
             let title = rest.trim().trim_end_matches('#').trim().to_owned();
-            return Some((
+            out.push((
                 title,
                 ByteSpan::new(start as u64, (start + trimmed.len()) as u64),
             ));
         }
     }
-    None
+    out
 }
 
 fn front_matter_value(text: &str, key: &str) -> Option<String> {
@@ -286,6 +331,34 @@ mod tests {
         let mut b = GlobSetBuilder::new();
         b.add(Glob::new(p).expect("glob"));
         b.build().expect("set")
+    }
+
+    #[test]
+    fn title_comes_from_front_matter_then_heading_then_stem() {
+        let ex = MarkdownExtractor::new(set("docs/rfd/**/*.md"), set("docs/runbooks/**/*.md"));
+        let doc = |path: &str, text: &str| {
+            let u = SourceUnit::new(
+                RepoId::new("r"),
+                RepoPath::new(path),
+                CommitId::new("c"),
+                text.into(),
+            );
+            let facts = ex.extract(&u).expect("extracts");
+            let d = facts.declarations().next().expect("declaration").clone();
+            (d.name.clone(), u.slice(d.name_span).to_owned())
+        };
+        let (name, cited) = doc(
+            "docs/rfd/RFD-1.md",
+            "---\nuid: x\ntitle: Operational resilience: stuck work\n---\n\n# Summary\n\nBody.\n",
+        );
+        assert_eq!(name, "Operational resilience: stuck work");
+        assert_eq!(cited, "title: Operational resilience: stuck work");
+        let (name, _) = doc("docs/rfd/RFD-2.md", "# Summary\n\n# Real title\n");
+        assert_eq!(name, "Real title");
+        let (name, _) = doc("docs/rfd/RFD-3.md", "# Summary\n\nonly a section heading\n");
+        assert_eq!(name, "Summary");
+        let (name, _) = doc("docs/rfd/RFD-4-no-heading.md", "plain text\n");
+        assert_eq!(name, "RFD-4-no-heading");
     }
 
     #[test]

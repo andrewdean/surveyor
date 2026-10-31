@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use serde::Serialize;
-use surveyor_graph::{Affected, CodeGraph, Community, Direction, EdgeFilter, Neighbor, PathStep};
+use surveyor_graph::{
+    Affected, CodeGraph, Community, Direction, EdgeFilter, Neighbor, PathStep, PathTier,
+};
 use surveyor_model::{Edge, EdgeKind, GraphStats, Node, NodeKind, Unresolved};
 use surveyor_store::{RepositorySnapshot, StoreStats};
 
@@ -394,7 +396,7 @@ impl Output {
         }
     }
 
-    pub fn path(self, from: &Node, to: &Node, path: Option<&[PathStep<'_>]>) {
+    pub fn path(self, from: &Node, to: &Node, path: Option<(PathTier, &[PathStep<'_>])>) {
         if self == Self::Json {
             #[derive(Serialize)]
             struct Step {
@@ -407,13 +409,17 @@ impl Output {
                 from: NodeView,
                 to: NodeView,
                 found: bool,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                tier: Option<PathTier>,
                 steps: Vec<Step>,
             }
             print_json(&View {
                 from: NodeView::of(from),
                 to: NodeView::of(to),
                 found: path.is_some(),
+                tier: path.map(|(tier, _)| tier),
                 steps: path
+                    .map(|(_, steps)| steps)
                     .unwrap_or_default()
                     .iter()
                     .map(|s| Step {
@@ -429,9 +435,14 @@ impl Output {
                 "no path from {} to {}",
                 from.qualified_name, to.qualified_name
             ),
-            Some(steps) => {
+            Some((tier, steps)) => {
+                let note = match tier {
+                    PathTier::Precise => "every hop certain",
+                    PathTier::Loose => "some hops resolved by name; check the confidences",
+                    PathTier::Any => "only through containment or test coverage; treat as a lead",
+                };
                 println!(
-                    "path from {} to {} ({} hops):",
+                    "path from {} to {} ({} hops, {note}):",
                     from.qualified_name,
                     to.qualified_name,
                     steps.len().saturating_sub(1)
