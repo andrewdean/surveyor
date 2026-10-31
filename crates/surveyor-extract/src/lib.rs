@@ -51,7 +51,7 @@ pub use manifest::ManifestExtractor;
 #[doc(inline)]
 pub use markdown::MarkdownExtractor;
 #[doc(inline)]
-pub use pipeline::{Extraction, UnitRecord, extract_repository, extract_units};
+pub use pipeline::{Extraction, UnitRecord, default_extractors, extract_repository, extract_units};
 #[doc(inline)]
 pub use profile::{DocsProfile, Profile, SqlDialect, SqlProfile, WalkProfile};
 #[doc(inline)]
