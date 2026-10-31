@@ -1,0 +1,7 @@
+/target
+/.surveyor
+.DS_Store
+*.swp
+.env.local
+/target-fast
+*.log

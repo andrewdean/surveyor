@@ -1,0 +1,15 @@
+[package]
+name = "surveyor-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Surveyor graph compute over petgraph"
+
+[dependencies]
+surveyor-model.workspace = true
+petgraph.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

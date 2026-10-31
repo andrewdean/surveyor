@@ -1,0 +1,16 @@
+[package]
+name = "surveyor-link"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Surveyor linking: facts to nodes and edges with provenance"
+
+[dependencies]
+surveyor-model.workspace = true
+
+[dev-dependencies]
+surveyor-extract.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,118 @@
+[workspace]
+resolver = "3"
+members  = ["crates/*", "apps/*"]
+
+[workspace.package]
+edition      = "2024"
+rust-version = "1.95"
+version      = "0.1.0"
+publish      = false
+repository   = "https://github.com/andrewdean/surveyor"
+
+[workspace.dependencies]
+# internal
+surveyor-model   = { path = "crates/surveyor-model" }
+surveyor-extract = { path = "crates/surveyor-extract" }
+surveyor-link    = { path = "crates/surveyor-link" }
+surveyor-store   = { path = "crates/surveyor-store" }
+surveyor-graph   = { path = "crates/surveyor-graph" }
+surveyor-mcp     = { path = "crates/surveyor-mcp" }
+
+# serialization and errors
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml       = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+thiserror  = "2"
+anyhow     = "1"
+
+# parsing
+tree-sitter            = "0.27"
+tree-sitter-rust       = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-python     = "0.25"
+tree-sitter-bash       = "0.25"
+sqlparser              = { version = "0.63", features = ["visitor"] }
+streaming-iterator     = "0.1"
+rhai                   = { version = "1.27", default-features = false, features = ["std", "internals", "sync", "no_custom_syntax"] }
+
+# source access
+ignore  = "0.4"
+globset = "0.4"
+rayon   = "1"
+itertools = "0.14"
+blake3  = "1"
+gix     = { version = "0.90", default-features = false, features = ["basic", "extras", "comfort", "sha1", "auto-chain-error", "revision", "blob-diff"] }
+
+# store
+lancedb      = { version = "0.41", default-features = false }
+arrow-array  = "58"
+arrow-schema = "58"
+futures      = "0.3"
+
+# compute
+petgraph = { version = "0.8", default-features = false, features = ["std", "stable_graph"] }
+
+# runtime and interfaces
+tokio              = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "io-util", "signal", "sync", "time", "fs"] }
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi"] }
+clap               = { version = "4", features = ["derive", "env"] }
+rmcp               = { version = "3", default-features = false, features = ["server", "macros", "transport-io"] }
+schemars           = "1"
+mimalloc           = "0.1"
+
+# testing
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code                   = "forbid"
+missing_debug_implementations = "warn"
+redundant_imports             = "warn"
+redundant_lifetimes           = "warn"
+trivial_numeric_casts         = "warn"
+unused_lifetimes              = "warn"
+ambiguous_negative_literals   = "warn"
+
+[workspace.lints.clippy]
+pedantic    = { level = "warn", priority = -1 }
+complexity  = { level = "warn", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+perf        = { level = "warn", priority = -1 }
+style       = { level = "warn", priority = -1 }
+suspicious  = { level = "warn", priority = -1 }
+allow_attributes_without_reason = "warn"
+clone_on_ref_ptr                = "warn"
+if_then_some_else_none          = "warn"
+map_err_ignore                  = "warn"
+unused_result_ok                = "warn"
+# Message templates keep literal braces; see M-LOG-STRUCTURED.
+literal_string_with_formatting_args = "allow"
+# Node and edge identifiers are long by design; the docs explain each one.
+module_name_repetitions = "allow"
+missing_errors_doc      = "allow"
+missing_panics_doc      = "allow"
+must_use_candidate      = "allow"
+# Error structs carry a Backtrace on purpose (M-ERRORS-CANONICAL-STRUCTS).
+result_large_err = "allow"
+# Byte offsets and counts move between usize, u64 and f32 at well-understood sizes.
+cast_possible_truncation = "allow"
+cast_possible_wrap       = "allow"
+cast_precision_loss      = "allow"
+cast_sign_loss           = "allow"
+# Local view structs next to the code that serializes them read better than a module of them.
+items_after_statements = "allow"
+# `src`/`dst`, `start`/`end` style pairs are the domain's vocabulary.
+similar_names           = "allow"
+many_single_char_names  = "allow"
+struct_field_names      = "allow"
+
+[profile.dev]
+# Lance and DataFusion are large; optimize dependencies once, keep our crates fast to rebuild.
+opt-level = 0
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto           = "thin"
+codegen-units = 4

@@ -1,0 +1,11 @@
+[package]
+name = "outbox"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sqlx = "0.8"
+tokio = "1"
+
+[package.metadata.cargo-machete]
+ignored = ["tokio"]

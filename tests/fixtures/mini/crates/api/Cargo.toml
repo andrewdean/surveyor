@@ -1,0 +1,11 @@
+[package]
+name = "api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+outbox = { path = "../outbox" }
+axum = "0.8"
+
+[package.metadata.cargo-machete]
+ignored = ["axum"]

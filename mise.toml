@@ -1,0 +1,41 @@
+[tools]
+rust                  = "1.95.0"
+"cargo:cargo-nextest" = "latest"
+"cargo:cargo-deny"    = "latest"
+"cargo:cargo-machete" = "latest"
+
+[env]
+CARGO_TERM_COLOR = "always"
+RUST_BACKTRACE   = "1"
+
+[tasks.fmt]
+description = "Format all Rust sources"
+run         = "cargo fmt --all"
+
+[tasks."fmt:check"]
+description = "Verify formatting without writing"
+run         = "cargo fmt --all -- --check"
+
+[tasks.clippy]
+description = "Run clippy with workspace lints (warnings as errors)"
+run         = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+
+[tasks.test]
+description = "Run the test suite via cargo-nextest"
+run         = "cargo nextest run --workspace --all-features"
+
+[tasks.build]
+description = "Build all workspace crates"
+run         = "cargo build --workspace --all-features"
+
+[tasks.deny]
+description = "Run cargo-deny over advisories, licenses, bans, sources"
+run         = "cargo deny check"
+
+[tasks.machete]
+description = "Detect unused workspace dependencies"
+run         = "cargo machete"
+
+[tasks.ci]
+description = "Composite gate run by CI"
+depends     = ["fmt:check", "clippy", "test", "deny", "machete"]

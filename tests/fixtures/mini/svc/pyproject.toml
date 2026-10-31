@@ -1,0 +1,4 @@
+[project]
+name = "mini-svc"
+version = "0.1.0"
+dependencies = ["psycopg>=3"]

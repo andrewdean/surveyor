@@ -1,0 +1,11 @@
+[repository]
+id = "mini"
+
+[sql]
+dialect = "postgresql"
+default_schema = "public"
+migrations = ["migrations/**/*.sql"]
+
+[docs]
+designs = ["docs/rfd/**/*.md"]
+runbooks = ["docs/runbooks/**/*.md"]

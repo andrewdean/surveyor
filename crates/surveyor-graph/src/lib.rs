@@ -1,0 +1,750 @@
+//! In-memory graph compute over `petgraph`.
+//!
+//! [`CodeGraph`] loads the nodes and edges of one or more repositories and answers the
+//! relationship questions agents ask: neighbors by edge kind, reverse impact to a
+//! depth, the shortest path between two symbols, hubs by `PageRank`, communities by
+//! label propagation, and cycles by strongly connected components. Every answer
+//! returns the edges traversed, so the caller can cite their evidence.
+//!
+//! # Examples
+//!
+//! ```
+//! use surveyor_graph::{CodeGraph, EdgeFilter};
+//! use surveyor_model::GraphDelta;
+//!
+//! let graph = CodeGraph::from_delta(GraphDelta::new());
+//! assert_eq!(graph.node_count(), 0);
+//! assert!(graph.find("anything", None, 5).is_empty());
+//! let _ = EdgeFilter::default();
+//! ```
+
+// Rust guideline compliant 2026-02-21
+
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+
+use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
+use petgraph::visit::EdgeRef;
+use serde::{Deserialize, Serialize};
+use surveyor_model::{Edge, EdgeKind, GraphDelta, Node, NodeId, NodeKind};
+
+/// The direction of an edge relative to a node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Direction {
+    /// Edges that start at the node.
+    Outgoing,
+    /// Edges that end at the node.
+    Incoming,
+}
+
+impl From<Direction> for petgraph::Direction {
+    fn from(d: Direction) -> Self {
+        match d {
+            Direction::Outgoing => petgraph::Direction::Outgoing,
+            Direction::Incoming => petgraph::Direction::Incoming,
+        }
+    }
+}
+
+/// Which edges a traversal may follow.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EdgeFilter {
+    /// Edge kinds allowed; `None` allows every kind.
+    pub kinds: Option<Vec<EdgeKind>>,
+    /// Drop edges whose derivation is not deterministic (inferred or observed).
+    pub deterministic_only: bool,
+    /// Drop edges below this confidence.
+    pub min_confidence: f32,
+    /// Follow `CONTAINS` and `DEFINES` edges.
+    pub include_structural: bool,
+}
+
+impl Default for EdgeFilter {
+    fn default() -> Self {
+        Self {
+            kinds: None,
+            deterministic_only: false,
+            min_confidence: 0.0,
+            include_structural: true,
+        }
+    }
+}
+
+impl EdgeFilter {
+    /// Only the kinds along which a change propagates, deterministic edges only.
+    #[must_use]
+    pub fn impact() -> Self {
+        Self {
+            kinds: Some(EdgeKind::impact_kinds().to_vec()),
+            deterministic_only: true,
+            min_confidence: 0.0,
+            include_structural: false,
+        }
+    }
+
+    /// Restricts to the given kinds and returns the filter.
+    #[must_use]
+    pub fn with_kinds(mut self, kinds: Vec<EdgeKind>) -> Self {
+        self.kinds = Some(kinds);
+        self
+    }
+
+    /// Requires at least `confidence` and returns the filter.
+    #[must_use]
+    pub fn with_min_confidence(mut self, confidence: f32) -> Self {
+        self.min_confidence = confidence;
+        self
+    }
+
+    fn accepts(&self, edge: &Edge) -> bool {
+        if !self.include_structural && edge.kind.is_structural() {
+            return false;
+        }
+        if let Some(kinds) = &self.kinds
+            && !kinds.contains(&edge.kind)
+        {
+            return false;
+        }
+        if self.deterministic_only && !edge.provenance.is_deterministic() {
+            return false;
+        }
+        edge.provenance.confidence.get() >= self.min_confidence
+    }
+}
+
+/// A node reached from another, with the edge that reached it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Neighbor<'a> {
+    /// The node reached.
+    pub node: &'a Node,
+    /// The edge traversed.
+    pub edge: &'a Edge,
+    /// True when the edge points from the start node to this one.
+    pub outgoing: bool,
+}
+
+/// A node in the reverse impact set of a change.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Affected<'a> {
+    /// The node that may break.
+    pub node: &'a Node,
+    /// Hops from the changed node.
+    pub depth: usize,
+    /// The edge that brought the impact one hop closer to this node.
+    pub via: &'a Edge,
+    /// Product of confidences along the path.
+    pub confidence: f32,
+}
+
+/// One step of a path: the node and the edge used to reach it (none for the start).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathStep<'a> {
+    /// The node.
+    pub node: &'a Node,
+    /// The edge used to reach it, if any.
+    pub edge: Option<&'a Edge>,
+}
+
+/// A cluster of nodes that reference each other more than the rest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Community {
+    /// Stable label: the lexically smallest member identifier.
+    pub id: String,
+    /// Member node identifiers, sorted.
+    pub members: Vec<NodeId>,
+}
+
+/// A loaded graph.
+#[derive(Debug)]
+pub struct CodeGraph {
+    graph: DiGraph<usize, usize>,
+    nodes: Vec<Node>,
+    edges: Vec<Edge>,
+    by_id: HashMap<NodeId, NodeIndex>,
+    by_name: HashMap<String, Vec<NodeIndex>>,
+}
+
+impl CodeGraph {
+    /// Builds a graph from nodes and edges; edges with unknown endpoints are dropped.
+    #[must_use]
+    pub fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
+        let mut graph = DiGraph::with_capacity(nodes.len(), edges.len());
+        let mut by_id = HashMap::with_capacity(nodes.len());
+        let mut by_name: HashMap<String, Vec<NodeIndex>> = HashMap::new();
+        for (i, node) in nodes.iter().enumerate() {
+            let ix = graph.add_node(i);
+            by_id.insert(node.id.clone(), ix);
+            by_name
+                .entry(node.name.to_lowercase())
+                .or_default()
+                .push(ix);
+        }
+        let mut kept: Vec<Edge> = Vec::with_capacity(edges.len());
+        for edge in edges {
+            let (Some(&s), Some(&d)) = (by_id.get(&edge.src), by_id.get(&edge.dst)) else {
+                continue;
+            };
+            let ei = kept.len();
+            graph.add_edge(s, d, ei);
+            kept.push(edge);
+        }
+        Self {
+            graph,
+            nodes,
+            edges: kept,
+            by_id,
+            by_name,
+        }
+    }
+
+    /// Builds a graph from a linker delta.
+    #[must_use]
+    pub fn from_delta(delta: GraphDelta) -> Self {
+        Self::new(delta.nodes, delta.edges)
+    }
+
+    /// Number of nodes.
+    #[must_use]
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Number of edges.
+    #[must_use]
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+
+    /// All nodes.
+    #[must_use]
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes
+    }
+
+    /// All edges.
+    #[must_use]
+    pub fn edges(&self) -> &[Edge] {
+        &self.edges
+    }
+
+    /// The node with `id`, if present.
+    #[must_use]
+    pub fn node(&self, id: &NodeId) -> Option<&Node> {
+        self.by_id.get(id).map(|ix| &self.nodes[self.graph[*ix]])
+    }
+
+    /// The edge with the given identifier, if present.
+    #[must_use]
+    pub fn edge(&self, id: &surveyor_model::EdgeId) -> Option<&Edge> {
+        self.edges.iter().find(|e| &e.id == id)
+    }
+
+    /// Finds nodes by name, qualified name or identifier.
+    ///
+    /// Exact identifier matches come first, then exact names, then qualified names
+    /// that end with the query, then substrings. `kind` restricts the result.
+    #[must_use]
+    pub fn find(&self, query: &str, kind: Option<&NodeKind>, limit: usize) -> Vec<&Node> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Vec::new();
+        }
+        let ql = q.to_lowercase();
+        let last = ql
+            .rsplit("::")
+            .next()
+            .unwrap_or(&ql)
+            .rsplit('.')
+            .next()
+            .unwrap_or(&ql)
+            .to_owned();
+
+        let exact_id = self.node(&NodeId::new(q)).map(|n| (0u8, n));
+        let by_name = self.by_name.get(&last).into_iter().flatten().map(|ix| {
+            let n = &self.nodes[self.graph[*ix]];
+            let qn = n.qualified_name.to_lowercase();
+            let score = if qn == ql || n.name.to_lowercase() == ql {
+                1
+            } else if qn.ends_with(&ql) || n.id.as_str().to_lowercase().ends_with(&ql) {
+                2
+            } else {
+                3
+            };
+            (score, n)
+        });
+        let substrings = self
+            .nodes
+            .iter()
+            .filter(|n| {
+                n.qualified_name.to_lowercase().contains(&ql)
+                    || n.id.as_str().to_lowercase().contains(&ql)
+            })
+            .map(|n| (4u8, n));
+
+        let mut seen: HashSet<&NodeId> = HashSet::new();
+        let mut scored: Vec<(u8, &Node)> = exact_id
+            .into_iter()
+            .chain(by_name)
+            .chain(substrings)
+            .filter(|(_, n)| seen.insert(&n.id))
+            .filter(|(_, n)| kind.is_none_or(|k| &n.kind == k))
+            .collect();
+        scored.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| kind_priority(&a.1.kind).cmp(&kind_priority(&b.1.kind)))
+                .then_with(|| a.1.qualified_name.len().cmp(&b.1.qualified_name.len()))
+                .then_with(|| a.1.id.cmp(&b.1.id))
+        });
+        scored.into_iter().map(|(_, n)| n).take(limit).collect()
+    }
+
+    /// Direct neighbors of `id` in `direction`, through edges the filter accepts.
+    #[must_use]
+    pub fn neighbors(
+        &self,
+        id: &NodeId,
+        direction: Direction,
+        filter: &EdgeFilter,
+    ) -> Vec<Neighbor<'_>> {
+        let Some(&ix) = self.by_id.get(id) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for er in self.graph.edges_directed(ix, direction.into()) {
+            let edge = &self.edges[*er.weight()];
+            if !filter.accepts(edge) {
+                continue;
+            }
+            let other = if direction == Direction::Outgoing {
+                er.target()
+            } else {
+                er.source()
+            };
+            out.push(Neighbor {
+                node: &self.nodes[self.graph[other]],
+                edge,
+                outgoing: direction == Direction::Outgoing,
+            });
+        }
+        out.sort_by(|a, b| {
+            a.edge
+                .kind
+                .cmp(&b.edge.kind)
+                .then_with(|| a.node.id.cmp(&b.node.id))
+        });
+        out
+    }
+
+    /// Neighbors in both directions.
+    #[must_use]
+    pub fn all_neighbors(&self, id: &NodeId, filter: &EdgeFilter) -> Vec<Neighbor<'_>> {
+        let mut out = self.neighbors(id, Direction::Outgoing, filter);
+        out.extend(self.neighbors(id, Direction::Incoming, filter));
+        out
+    }
+
+    /// Nodes that may break when `id` changes: reverse traversal to `depth` hops.
+    ///
+    /// Follows the filter's edge kinds backwards (a caller is affected by its callee,
+    /// a query by its table), breadth first, reporting each node once at its shortest
+    /// depth with the confidence product along the path found.
+    #[must_use]
+    pub fn affected(&self, id: &NodeId, depth: usize, filter: &EdgeFilter) -> Vec<Affected<'_>> {
+        let Some(&start) = self.by_id.get(id) else {
+            return Vec::new();
+        };
+        let mut seen: HashMap<NodeIndex, usize> = HashMap::new();
+        seen.insert(start, 0);
+        let mut queue: VecDeque<(NodeIndex, usize, f32)> = VecDeque::new();
+        queue.push_back((start, 0, 1.0));
+        let mut out: Vec<Affected<'_>> = Vec::new();
+        while let Some((ix, d, conf)) = queue.pop_front() {
+            if d == depth {
+                continue;
+            }
+            let mut incoming: Vec<(EdgeIndex, NodeIndex)> = self
+                .graph
+                .edges_directed(ix, petgraph::Direction::Incoming)
+                .map(|er| (er.id(), er.source()))
+                .collect();
+            incoming.sort_by_key(|(e, _)| self.edges[self.graph[*e]].id.as_str().to_owned());
+            for (ei, src) in incoming {
+                let edge = &self.edges[self.graph[ei]];
+                if !filter.accepts(edge) || seen.contains_key(&src) {
+                    continue;
+                }
+                let c = conf * edge.provenance.confidence.get();
+                seen.insert(src, d + 1);
+                out.push(Affected {
+                    node: &self.nodes[self.graph[src]],
+                    depth: d + 1,
+                    via: edge,
+                    confidence: c,
+                });
+                queue.push_back((src, d + 1, c));
+            }
+        }
+        out
+    }
+
+    /// Shortest path from `from` to `to`, treating edges as undirected unless `directed`.
+    #[must_use]
+    pub fn shortest_path(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        filter: &EdgeFilter,
+        directed: bool,
+    ) -> Option<Vec<PathStep<'_>>> {
+        let (&a, &b) = (self.by_id.get(from)?, self.by_id.get(to)?);
+        let mut prev: HashMap<NodeIndex, (NodeIndex, usize)> = HashMap::new();
+        let mut queue = VecDeque::from([a]);
+        let mut seen: HashSet<NodeIndex> = HashSet::from([a]);
+        'bfs: while let Some(ix) = queue.pop_front() {
+            let dirs: &[petgraph::Direction] = if directed {
+                &[petgraph::Direction::Outgoing]
+            } else {
+                &[petgraph::Direction::Outgoing, petgraph::Direction::Incoming]
+            };
+            for dir in dirs {
+                for er in self.graph.edges_directed(ix, *dir) {
+                    let edge = &self.edges[*er.weight()];
+                    if !filter.accepts(edge) {
+                        continue;
+                    }
+                    let next = if *dir == petgraph::Direction::Outgoing {
+                        er.target()
+                    } else {
+                        er.source()
+                    };
+                    if seen.insert(next) {
+                        prev.insert(next, (ix, *er.weight()));
+                        if next == b {
+                            break 'bfs;
+                        }
+                        queue.push_back(next);
+                    }
+                }
+            }
+        }
+        if a != b && !prev.contains_key(&b) {
+            return None;
+        }
+        let mut steps: Vec<PathStep<'_>> = Vec::new();
+        let mut cur = b;
+        while cur != a {
+            let (p, e) = prev[&cur];
+            steps.push(PathStep {
+                node: &self.nodes[self.graph[cur]],
+                edge: Some(&self.edges[e]),
+            });
+            cur = p;
+        }
+        steps.push(PathStep {
+            node: &self.nodes[self.graph[a]],
+            edge: None,
+        });
+        steps.reverse();
+        Some(steps)
+    }
+
+    /// The `top` nodes by `PageRank` over the edges the filter accepts.
+    ///
+    /// Power iteration over the edge list, linear in edges per round, so a graph of a
+    /// few hundred thousand edges ranks in well under a second.
+    #[must_use]
+    pub fn page_rank(&self, top: usize, filter: &EdgeFilter) -> Vec<(&Node, f64)> {
+        let n = self.graph.node_count();
+        if n == 0 {
+            return Vec::new();
+        }
+        let accepted: Vec<(usize, usize)> = self
+            .graph
+            .edge_references()
+            .filter(|er| filter.accepts(&self.edges[*er.weight()]))
+            .map(|er| (er.source().index(), er.target().index()))
+            .collect();
+        let mut out_degree = vec![0usize; n];
+        for (s, _) in &accepted {
+            out_degree[*s] += 1;
+        }
+        // 0.85 is the damping factor of the original PageRank paper; 30 rounds
+        // converge well past three decimals on graphs of this size.
+        const DAMPING: f64 = 0.85;
+        const ROUNDS: usize = 30;
+        let uniform = 1.0 / n as f64;
+        let mut rank = vec![uniform; n];
+        let mut next = vec![0.0f64; n];
+        for _ in 0..ROUNDS {
+            let dangling: f64 = (0..n)
+                .filter(|i| out_degree[*i] == 0)
+                .map(|i| rank[i])
+                .sum();
+            let base = (1.0 - DAMPING) * uniform + DAMPING * dangling * uniform;
+            next.fill(base);
+            for (s, d) in &accepted {
+                next[*d] += DAMPING * rank[*s] / out_degree[*s] as f64;
+            }
+            std::mem::swap(&mut rank, &mut next);
+        }
+        let mut scored: Vec<(&Node, f64)> = rank
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| (&self.nodes[self.graph[NodeIndex::new(i)]], r))
+            .collect();
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.id.cmp(&b.0.id))
+        });
+        scored.truncate(top);
+        scored
+    }
+
+    /// Communities by label propagation over the edges the filter accepts.
+    ///
+    /// Deterministic: nodes are visited in identifier order and ties break toward the
+    /// smallest label. Singleton communities are omitted.
+    #[must_use]
+    pub fn communities(&self, filter: &EdgeFilter) -> Vec<Community> {
+        let n = self.nodes.len();
+        let mut order: Vec<NodeIndex> = self.graph.node_indices().collect();
+        order.sort_by(|a, b| {
+            self.nodes[self.graph[*a]]
+                .id
+                .cmp(&self.nodes[self.graph[*b]].id)
+        });
+        let mut label: Vec<usize> = (0..n).collect();
+        // Twenty sweeps bound the cost on large graphs; propagation on code graphs
+        // settles in well under ten.
+        for _ in 0..20 {
+            let mut changed = false;
+            for &ix in &order {
+                let mut counts: BTreeMap<usize, usize> = BTreeMap::new();
+                for dir in [petgraph::Direction::Outgoing, petgraph::Direction::Incoming] {
+                    for er in self.graph.edges_directed(ix, dir) {
+                        if !filter.accepts(&self.edges[*er.weight()]) {
+                            continue;
+                        }
+                        let other = if dir == petgraph::Direction::Outgoing {
+                            er.target()
+                        } else {
+                            er.source()
+                        };
+                        *counts.entry(label[other.index()]).or_default() += 1;
+                    }
+                }
+                let Some((&best, _)) = counts
+                    .iter()
+                    .max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)))
+                else {
+                    continue;
+                };
+                if label[ix.index()] != best {
+                    label[ix.index()] = best;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let mut groups: BTreeMap<usize, Vec<NodeId>> = BTreeMap::new();
+        for ix in self.graph.node_indices() {
+            groups
+                .entry(label[ix.index()])
+                .or_default()
+                .push(self.nodes[self.graph[ix]].id.clone());
+        }
+        let mut out: Vec<Community> = groups
+            .into_values()
+            .filter(|m| m.len() > 1)
+            .map(|mut members| {
+                members.sort();
+                Community {
+                    id: members[0].to_string(),
+                    members,
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.members
+                .len()
+                .cmp(&a.members.len())
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        out
+    }
+
+    /// Strongly connected components with at least `min_size` nodes (dependency cycles).
+    #[must_use]
+    pub fn cycles(&self, min_size: usize, filter: &EdgeFilter) -> Vec<Vec<&Node>> {
+        let mut sub: DiGraph<(), ()> =
+            DiGraph::with_capacity(self.graph.node_count(), self.graph.edge_count());
+        for _ in 0..self.graph.node_count() {
+            sub.add_node(());
+        }
+        for er in self.graph.edge_references() {
+            if filter.accepts(&self.edges[*er.weight()]) {
+                sub.add_edge(er.source(), er.target(), ());
+            }
+        }
+        let mut out: Vec<Vec<&Node>> = petgraph::algo::tarjan_scc(&sub)
+            .into_iter()
+            .filter(|c| c.len() >= min_size.max(2))
+            .map(|c| {
+                let mut nodes: Vec<&Node> = c
+                    .into_iter()
+                    .map(|ix| &self.nodes[self.graph[ix]])
+                    .collect();
+                nodes.sort_by(|a, b| a.id.cmp(&b.id));
+                nodes
+            })
+            .collect();
+        out.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a[0].id.cmp(&b[0].id)));
+        out
+    }
+
+    /// Nodes of `kind`, in identifier order.
+    #[must_use]
+    pub fn nodes_of_kind(&self, kind: &NodeKind) -> Vec<&Node> {
+        let mut out: Vec<&Node> = self.nodes.iter().filter(|n| &n.kind == kind).collect();
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        out
+    }
+}
+
+/// Symbols rank above files and files above structure when a query matches several.
+fn kind_priority(kind: &NodeKind) -> u8 {
+    match kind {
+        k if k.is_symbol() => 0,
+        NodeKind::Table | NodeKind::Schema | NodeKind::Column => 1,
+        NodeKind::Module | NodeKind::Package => 2,
+        NodeKind::File => 3,
+        _ => 4,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use surveyor_model::{
+        ByteSpan, CommitId, Confidence, ContentHash, Evidence, GrammarId, LineSpan, Provenance,
+        RepoId, RepoPath, RuleId, SourceLocation, TextSpan,
+    };
+
+    use super::*;
+
+    fn node(id: &str, kind: NodeKind) -> Node {
+        let name = id.rsplit("::").next().unwrap_or(id).to_owned();
+        Node::synthetic(NodeId::new(id), kind, name, RepoId::new("r")).with_qualified_name(id)
+    }
+
+    fn edge(src: &str, kind: EdgeKind, dst: &str, confidence: f32) -> Edge {
+        let ev = Evidence {
+            repo: RepoId::new("r"),
+            location: SourceLocation::new(
+                RepoPath::new("f.rs"),
+                TextSpan::new(ByteSpan::new(0, 1), LineSpan::new(1, 1)),
+            ),
+            commit: CommitId::new("c"),
+            content_hash: ContentHash::of(b"x"),
+        };
+        let prov = Provenance::syntactic(GrammarId::new("rust"), RuleId::new("r"), ev)
+            .with_confidence(Confidence::new(confidence));
+        Edge::new(NodeId::new(src), kind, NodeId::new(dst), prov)
+    }
+
+    fn sample() -> CodeGraph {
+        let nodes = vec![
+            node("a::main", NodeKind::Function),
+            node("a::service", NodeKind::Function),
+            node("a::repo", NodeKind::Function),
+            node("sql:s.t", NodeKind::Table),
+            node("a::tests::t1", NodeKind::Test),
+            node("file:a.rs", NodeKind::File),
+        ];
+        let edges = vec![
+            edge("a::main", EdgeKind::Calls, "a::service", 1.0),
+            edge("a::service", EdgeKind::Calls, "a::repo", 0.5),
+            edge("a::repo", EdgeKind::Reads, "sql:s.t", 1.0),
+            edge("a::tests::t1", EdgeKind::Calls, "a::service", 1.0),
+            edge("file:a.rs", EdgeKind::Contains, "a::main", 1.0),
+        ];
+        CodeGraph::new(nodes, edges)
+    }
+
+    #[test]
+    fn affected_walks_backwards_with_confidence() {
+        let g = sample();
+        let hits = g.affected(&NodeId::new("sql:s.t"), 3, &EdgeFilter::impact());
+        let ids: Vec<&str> = hits.iter().map(|a| a.node.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["a::repo", "a::service", "a::main", "a::tests::t1"]
+        );
+        let main = hits
+            .iter()
+            .find(|a| a.node.id.as_str() == "a::main")
+            .expect("main");
+        assert_eq!(main.depth, 3);
+        assert!((main.confidence - 0.5).abs() < 1e-6);
+        assert_eq!(
+            g.affected(&NodeId::new("sql:s.t"), 1, &EdgeFilter::impact())
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn path_find_rank_and_communities() {
+        let g = sample();
+        let path = g
+            .shortest_path(
+                &NodeId::new("a::main"),
+                &NodeId::new("sql:s.t"),
+                &EdgeFilter::default(),
+                true,
+            )
+            .expect("path");
+        assert_eq!(path.len(), 4);
+        assert!(path[0].edge.is_none());
+        assert_eq!(path[3].edge.map(|e| e.kind.clone()), Some(EdgeKind::Reads));
+        assert!(
+            g.shortest_path(
+                &NodeId::new("sql:s.t"),
+                &NodeId::new("a::main"),
+                &EdgeFilter::default(),
+                true
+            )
+            .is_none()
+        );
+        assert!(
+            g.shortest_path(
+                &NodeId::new("sql:s.t"),
+                &NodeId::new("a::main"),
+                &EdgeFilter::default(),
+                false
+            )
+            .is_some()
+        );
+
+        let found = g.find("service", None, 5);
+        assert_eq!(found[0].id.as_str(), "a::service");
+        assert_eq!(g.find("a::service", None, 5)[0].id.as_str(), "a::service");
+        assert_eq!(g.find("t", Some(&NodeKind::Table), 5).len(), 1);
+
+        let ranked = g.page_rank(2, &EdgeFilter::default());
+        assert_eq!(ranked[0].0.id.as_str(), "sql:s.t");
+
+        let comms = g.communities(&EdgeFilter::default());
+        assert_eq!(comms.len(), 1);
+        assert_eq!(comms[0].members.len(), 6);
+        assert!(g.cycles(2, &EdgeFilter::default()).is_empty());
+        let n = g.neighbors(
+            &NodeId::new("a::service"),
+            Direction::Incoming,
+            &EdgeFilter::default(),
+        );
+        assert_eq!(n.len(), 2);
+    }
+}

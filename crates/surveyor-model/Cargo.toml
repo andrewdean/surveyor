@@ -1,0 +1,15 @@
+[package]
+name = "surveyor-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Surveyor graph model: nodes, edges, provenance and evidence (no I/O)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+blake3.workspace = true
+
+[lints]
+workspace = true

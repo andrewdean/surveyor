@@ -1,0 +1,358 @@
+//! End-to-end: index the `mini` fixture and ask it the Phase 0 questions.
+//!
+//! Every assertion that names an edge also checks that its citation points at text
+//! that exists and says what the edge claims.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde_json::Value;
+
+fn fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/mini")
+        .canonicalize()
+        .expect("fixture exists")
+}
+
+fn surveyor(store: &Path, args: &[&str]) -> Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_surveyor"))
+        .arg("--repo-root")
+        .arg(fixture())
+        .arg("--store")
+        .arg(store)
+        .arg("--json")
+        .args(args)
+        .output()
+        .expect("runs");
+    assert!(
+        output.status.success(),
+        "surveyor {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|e| {
+        panic!(
+            "json for {args:?}: {e}\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    })
+}
+
+fn cited_text(citation: &str) -> String {
+    let (file, lines) = citation.rsplit_once(':').expect("file:lines");
+    let (start, end) = match lines.split_once('-') {
+        Some((a, b)) => (a.parse::<usize>().unwrap(), b.parse::<usize>().unwrap()),
+        None => (
+            lines.parse::<usize>().unwrap(),
+            lines.parse::<usize>().unwrap(),
+        ),
+    };
+    let text = std::fs::read_to_string(fixture().join(file)).expect("cited file exists");
+    text.lines()
+        .skip(start - 1)
+        .take(end - start + 1)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn relations<'a>(explain: &'a Value, direction: &str, kind: &str) -> Vec<&'a Value> {
+    explain[direction]
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter(|r| r["kind"] == kind)
+        .collect()
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one scenario walks every Phase 0 question in order"
+)]
+fn index_and_answer_phase_zero_questions() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = dir.path().join("ds");
+
+    let indexed = surveyor(&store, &["index"]);
+    assert_eq!(indexed["repo"], "mini");
+    assert!(indexed["nodes"].as_u64().unwrap() > 60, "{indexed}");
+    assert!(indexed["edges"].as_u64().unwrap() > 80, "{indexed}");
+    assert_eq!(indexed["extraction_errors"], 0);
+    let by_kind = &indexed["nodes_by_kind"];
+    for kind in [
+        "Package",
+        "File",
+        "Struct",
+        "Trait",
+        "Impl",
+        "Method",
+        "Function",
+        "Test",
+        "Class",
+        "Interface",
+        "Table",
+        "Column",
+        "Index",
+        "Constraint",
+        "Query",
+        "Design",
+        "Runbook",
+    ] {
+        assert!(
+            by_kind[kind].as_u64().unwrap_or(0) > 0,
+            "no {kind} nodes: {by_kind}"
+        );
+    }
+    let edges = &indexed["edges_by_kind"];
+    for kind in [
+        "CONTAINS",
+        "DEFINES",
+        "CALLS",
+        "IMPLEMENTS",
+        "EXTENDS",
+        "USES_TYPE",
+        "READS",
+        "WRITES",
+        "MIGRATES",
+        "IMPORTS",
+        "DEPENDS_ON",
+        "TESTED_BY",
+        "DESIGNED_BY",
+        "DOCUMENTED_BY",
+    ] {
+        assert!(
+            edges[kind].as_u64().unwrap_or(0) > 0,
+            "no {kind} edges: {edges}"
+        );
+    }
+    assert!(indexed["edges_by_derivation"]["resolved"].as_u64().unwrap() > 0);
+    assert!(indexed["edges_by_derivation"]["declared"].as_u64().unwrap() > 0);
+
+    // explain: the relay's drain method calls publish and reads the outbox through the store.
+    let drain = surveyor(&store, &["explain", "Relay::drain"]);
+    assert_eq!(
+        drain["node"]["id"],
+        "rust:crates/outbox/src/relay.rs::Relay::drain"
+    );
+    assert_eq!(drain["node"]["kind"], "Method");
+    let calls = relations(&drain, "outgoing", "CALLS");
+    let names: Vec<&str> = calls
+        .iter()
+        .map(|r| r["node"]["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"publish") && names.contains(&"pending") && names.contains(&"mark_sent"),
+        "{names:?}"
+    );
+    let publish = calls
+        .iter()
+        .find(|r| r["node"]["name"] == "publish")
+        .unwrap();
+    let citation = publish["evidence"][0].as_str().unwrap();
+    assert!(
+        cited_text(citation).contains("self.publish(row)"),
+        "citation {citation} does not show the call"
+    );
+    let tested = relations(&drain, "outgoing", "TESTED_BY");
+    assert!(
+        tested
+            .iter()
+            .any(|r| r["node"]["name"] == "drains_pending_rows")
+    );
+
+    // explain a table: migrations, readers and writers across languages.
+    let outbox = surveyor(&store, &["explain", "cw_outbox.outbox"]);
+    assert_eq!(outbox["node"]["kind"], "Table");
+    let members: Vec<&str> = outbox["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        members.contains(&"payload") && members.contains(&"outbox_pending_idx"),
+        "{members:?}"
+    );
+    let readers: Vec<&str> = relations(&outbox, "incoming", "READS")
+        .iter()
+        .map(|r| r["node"]["id"].as_str().unwrap())
+        .collect();
+    assert!(
+        readers.iter().any(|r| r.ends_with("OutboxStore::pending")),
+        "{readers:?}"
+    );
+    let writers: Vec<&str> = relations(&outbox, "incoming", "WRITES")
+        .iter()
+        .map(|r| r["node"]["id"].as_str().unwrap())
+        .collect();
+    assert!(
+        writers
+            .iter()
+            .any(|r| r.ends_with("OutboxStore::mark_sent")),
+        "{writers:?}"
+    );
+    let migrated = relations(&outbox, "incoming", "MIGRATES");
+    assert!(
+        migrated
+            .iter()
+            .any(|r| r["node"]["id"] == "file:migrations/0001_outbox.sql")
+    );
+    let read_edge: Value = (*relations(&outbox, "incoming", "READS")
+        .iter()
+        .find(|r| r["node"]["id"].as_str().unwrap().ends_with("pending"))
+        .unwrap())
+    .clone();
+    assert_eq!(read_edge["derivation"], "resolved");
+    assert!(
+        cited_text(read_edge["evidence"][0].as_str().unwrap()).contains("FROM cw_outbox.outbox")
+    );
+
+    // users table is read from Rust and Python.
+    let users = surveyor(&store, &["explain", "cw_users.users"]);
+    let readers: Vec<&str> = relations(&users, "incoming", "READS")
+        .iter()
+        .map(|r| r["node"]["id"].as_str().unwrap())
+        .collect();
+    assert!(
+        readers.iter().any(|r| r.starts_with("rust:crates/api")),
+        "{readers:?}"
+    );
+    assert!(
+        readers.iter().any(|r| r.starts_with("python:svc/db.py")),
+        "{readers:?}"
+    );
+
+    // affected: changing the outbox table reaches the store, the relay, the API binary and the test.
+    let affected = surveyor(&store, &["affected", "cw_outbox.outbox", "--depth", "4"]);
+    let ids: Vec<&str> = affected["affected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["node"]["id"].as_str().unwrap())
+        .collect();
+    for expected in [
+        "rust:crates/outbox/src/store.rs::OutboxStore::pending",
+        "rust:crates/outbox/src/relay.rs::Relay::drain",
+        "rust:crates/api/src/main.rs::main",
+    ] {
+        assert!(ids.contains(&expected), "{expected} missing from {ids:?}");
+    }
+    assert!(
+        affected["affected"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|h| h["via"]["derivation"] != "inferred")
+    );
+
+    // path: from the API's main to the outbox table.
+    let path = surveyor(
+        &store,
+        &[
+            "path",
+            "crates/api/src/main.rs::main",
+            "cw_outbox.outbox",
+            "--directed",
+        ],
+    );
+    assert_eq!(path["found"], true, "{path}");
+    let kinds: Vec<&str> = path["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|s| s["edge"]["kind"].as_str())
+        .collect();
+    assert!(
+        kinds.contains(&"CALLS") && (kinds.contains(&"READS") || kinds.contains(&"WRITES")),
+        "{kinds:?}"
+    );
+
+    // TypeScript heritage and relative imports; Python imports; package dependencies.
+    let panel = surveyor(&store, &["explain", "OutboxPanel"]);
+    assert!(
+        relations(&panel, "outgoing", "EXTENDS")
+            .iter()
+            .any(|r| r["node"]["name"] == "HttpClient")
+    );
+    assert!(
+        relations(&panel, "outgoing", "IMPLEMENTS")
+            .iter()
+            .any(|r| r["node"]["name"] == "Handler")
+    );
+    let outbox_ts = surveyor(&store, &["explain", "file:web/src/outbox.ts"]);
+    let imports: Vec<&str> = relations(&outbox_ts, "outgoing", "IMPORTS")
+        .iter()
+        .map(|r| r["node"]["id"].as_str().unwrap())
+        .collect();
+    assert!(
+        imports.contains(&"file:web/src/client.ts") && imports.contains(&"pkg:npm/react"),
+        "{imports:?}"
+    );
+    let api = surveyor(&store, &["explain", "pkg:cargo/api"]);
+    let deps: Vec<&str> = relations(&api, "outgoing", "DEPENDS_ON")
+        .iter()
+        .map(|r| r["node"]["id"].as_str().unwrap())
+        .collect();
+    assert!(
+        deps.contains(&"pkg:cargo/outbox") && deps.contains(&"pkg:cargo/axum"),
+        "{deps:?}"
+    );
+    let main_py = surveyor(&store, &["explain", "file:svc/main.py"]);
+    assert!(
+        relations(&main_py, "outgoing", "IMPORTS")
+            .iter()
+            .any(|r| r["node"]["id"] == "file:svc/db.py")
+    );
+
+    // docs: the RFD covers the relay file; the runbook covers the drain script.
+    let relay_file = surveyor(&store, &["explain", "file:crates/outbox/src/relay.rs"]);
+    assert!(
+        relations(&relay_file, "outgoing", "DESIGNED_BY")
+            .iter()
+            .any(|r| r["node"]["id"] == "doc:docs/rfd/0001-outbox.md")
+    );
+    assert!(
+        relations(&relay_file, "outgoing", "DOCUMENTED_BY")
+            .iter()
+            .any(|r| r["node"]["id"] == "doc:docs/runbooks/stuck-outbox.md")
+    );
+
+    // shell and rhai.
+    let drain_sh = surveyor(&store, &["explain", "file:scripts/drain.sh"]);
+    assert!(
+        relations(&drain_sh, "outgoing", "IMPORTS")
+            .iter()
+            .any(|r| r["node"]["id"] == "file:scripts/lib.sh")
+    );
+    let deploy = surveyor(&store, &["explain", "rhai:scripts/deploy.rhai::deploy"]);
+    assert_eq!(deploy["node"]["kind"], "Function");
+
+    // source: the cited window exists and shows the declaration.
+    let src = surveyor(
+        &store,
+        &[
+            "source",
+            "rust:crates/outbox/src/relay.rs::Relay::drain",
+            "--context",
+            "0",
+        ],
+    );
+    assert!(
+        src["lines"][0].as_str().unwrap().contains("fn drain"),
+        "{src}"
+    );
+
+    // stats and unresolved are available; a second index replaces, not duplicates.
+    let again = surveyor(&store, &["index"]);
+    assert_eq!(again["nodes"], indexed["nodes"]);
+    let stats = surveyor(&store, &["stats"]);
+    assert_eq!(stats["nodes"], indexed["nodes"]);
+    let unresolved = surveyor(&store, &["unresolved"]);
+    assert!(
+        unresolved
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|u| u["name"] != "publish")
+    );
+}
