@@ -35,6 +35,8 @@ tree-sitter-bash       = "0.25"
 sqlparser              = { version = "0.63", features = ["visitor"] }
 streaming-iterator     = "0.1"
 rhai                   = { version = "1.27", default-features = false, features = ["std", "internals", "sync", "no_custom_syntax"] }
+scip                   = "0.10"
+protobuf               = "3.7"
 
 # source access
 ignore  = "0.4"

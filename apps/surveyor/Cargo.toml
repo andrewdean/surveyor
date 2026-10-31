@@ -28,6 +28,8 @@ mimalloc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+scip.workspace = true
+protobuf.workspace = true
 
 [lints]
 workspace = true

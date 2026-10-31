@@ -15,6 +15,14 @@ for now). This checkout implements Phase 0 of that plan.
   Rhai through the `rhai` crate's AST; `Cargo.toml`, `package.json` and `pyproject.toml`;
   Markdown design documents and runbooks. Rust macro arguments are re-parsed so calls
   inside `assert_eq!` and friends are seen.
+- **Precise tier.** `surveyor index --scip index.scip` (or `[scip] indexes` in the
+  profile) merges a SCIP index written by `rust-analyzer scip`, `scip-typescript` or
+  `scip-python`. Each reference occurrence the index resolved becomes a `Resolved`
+  fact that names the file and line of the declaration; the linker pairs it with the
+  Tree-sitter reference at the same site, so the covered `CALLS`, `USES_TYPE` and
+  `IMPLEMENTS` edges carry `resolved` provenance at confidence 1 while the uncovered
+  ones keep their name-matched edges. A reference the index attributes to a dependency
+  or a local binding is neither an edge nor a gap. No index, no change.
 - **Linking.** Declarations become nodes with stable identifiers such as
   `rust:crates/outbox/src/relay.rs::Relay::drain` or `sql:cw_outbox.outbox`. References
   resolve by name within the same file, then package, then repository; a reference with
@@ -72,6 +80,27 @@ and append; the rest is extraction and relinking of the listed files. After the 
 updates in sequence the dataset was compared node by node and edge by edge, including
 citations, with a fresh index of the final tree: identical.
 
+Cairn with and without a SCIP index from `rust-analyzer scip` (15 s to generate, 3.8 MB,
+74 Rust documents; the checkout also holds a TypeScript extension and shell scripts the
+index does not cover):
+
+| | Tree-sitter only | with SCIP |
+|---|---:|---:|
+| `CALLS` edges, syntactic | 6,199 | 142 (8 Rust, 26 shell, 108 TypeScript) |
+| `CALLS` edges, resolved | 0 | 2,383 |
+| `CALLS` edges at confidence below 1 | 3,402 at 780 sites | 10 at 5 sites |
+| `USES_TYPE` edges, syntactic / resolved | 1,017 / 0 | 178 / 831 |
+| unresolved references | 1,276 | 155 (all in TypeScript) |
+| index time | 0.7 s | 1.0 s |
+
+The ambiguous method calls collapse to one target each: `run` in
+`cairn-cli/src/commands/resolve.rs` called `as_str` on several receivers, name
+matching drew every one of those edges to `FeedbackType::as_str` (the only `as_str` in
+the same package, so at confidence 1), and the index draws them to `CommitSha::as_str`
+and `SkillId::as_str` in `cairn-domain`. Calls into dependencies, previously 1,078
+`no-declaration` gaps such as `create_dir_all` and `from_utf8_lossy`, are recognized
+as external and reported as neither edges nor gaps.
+
 ## Use
 
 ```bash
@@ -82,6 +111,14 @@ Index a checkout (the dataset lands in `<repo>/.surveyor`, or wherever `--store`
 
 ```bash
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway index
+```
+
+With a SCIP index from the language's own tooling, calls and type uses resolve
+precisely where the index covers them:
+
+```bash
+rust-analyzer scip ~/dev/cairn --output /tmp/cairn.scip
+surveyor --repo-root ~/dev/cairn --store ~/.surveyor/cairn index --scip /tmp/cairn.scip
 ```
 
 After a commit, or while editing, bring the dataset up to date without a full index:
@@ -114,14 +151,15 @@ Every command takes `--json`. Serve the same answers to an agent over MCP on std
 ```
 
 A repository can carry a `surveyor.toml` to name itself, choose the SQL dialect and
-default schema, and point at migration and documentation directories; every field has a
+default schema, point at migration and documentation directories, and list SCIP
+indexes to merge when they exist (`[scip] indexes = ["index.scip"]`); every field has a
 default. See `tests/fixtures/mini/surveyor.toml`.
 
 ## Layout
 
 ```
 crates/surveyor-model     nodes, edges, provenance, evidence, facts (no I/O)
-crates/surveyor-extract   Tree-sitter host, query packs, sqlparser, rhai, manifests, Markdown, walker
+crates/surveyor-extract   Tree-sitter host, query packs, sqlparser, rhai, manifests, Markdown, SCIP, walker
 crates/surveyor-link      facts to nodes and edges; name resolution; unresolved gaps
 crates/surveyor-store     Lance dataset behind LanceStore
 crates/surveyor-graph     petgraph compute: neighbors, affected, paths, PageRank, communities
@@ -143,8 +181,9 @@ cargo fmt --all
 
 ## Not yet
 
-SCIP ingest, cards and embeddings, context packs, Rhai invariants, the Causeway
-adapter, `serve` with streamable HTTP, personas and runtime connectors are the following
-phases of the RFD. Incremental update does not watch the file system yet (`notify` is
-Phase 1 too) and treats a `surveyor.toml` edit like any other file: run `index` after
-changing the profile.
+Cards and embeddings, context packs, Rhai invariants, the Causeway adapter, `serve`
+with streamable HTTP, personas and runtime connectors are the following phases of the
+RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too),
+treats a `surveyor.toml` edit like any other file (run `index` after changing the
+profile), and relinks changed files syntactically: rerun `index --scip` when a fresh
+SCIP index arrives, which the RFD expects to happen in CI on a slower cadence.

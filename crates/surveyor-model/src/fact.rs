@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ByteSpan, CommitId, ContentHash, DeclaredSource, EdgeKind, Evidence, ExtractorId, GrammarId,
-    Language, LineSpan, NodeKind, RepoId, RepoPath, RuleId, SourceLocation, TextSpan,
+    Language, LineSpan, NodeKind, RepoId, RepoPath, ResolverId, RuleId, SourceLocation, TextSpan,
 };
 
 /// One file's bytes plus the coordinates needed to cite it.
@@ -288,6 +288,42 @@ pub struct DeclaredRelation {
     pub hash: ContentHash,
 }
 
+/// Where a precise resolver says a reference points.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "target", rename_all = "kebab-case")]
+pub enum SymbolTarget {
+    /// A declaration in this repository: the file and the one-based line of its name,
+    /// plus the name, which together pick out one Tree-sitter declaration.
+    Declared {
+        file: RepoPath,
+        line: u32,
+        name: String,
+    },
+    /// A symbol outside the repository (the standard library, a dependency), as the
+    /// resolver spells it.
+    External { symbol: String },
+    /// A local binding (a variable or parameter); never a node.
+    Local,
+}
+
+/// A reference site a precise resolver has bound to its target.
+///
+/// The linker pairs it with the Tree-sitter reference at the same site, so the edge
+/// kind comes from syntax and the target from the resolver.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolvedReference {
+    /// Short name of the symbol at the site, such as `drain`.
+    pub name: String,
+    /// The reference token.
+    pub span: TextSpan,
+    /// What it refers to.
+    pub target: SymbolTarget,
+    /// The resolver that said so, such as `scip/rust-analyzer`.
+    pub resolver: ResolverId,
+    /// Hash of the referenced text, for evidence.
+    pub hash: ContentHash,
+}
+
 /// One extracted fact.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "fact", rename_all = "kebab-case")]
@@ -296,6 +332,7 @@ pub enum Fact {
     Reference(ReferenceFact),
     Literal(LiteralFact),
     Relation(DeclaredRelation),
+    Resolved(ResolvedReference),
 }
 
 /// Everything one extractor found in one source unit.
@@ -363,6 +400,14 @@ impl FactSet {
     pub fn relations(&self) -> impl Iterator<Item = &DeclaredRelation> {
         self.facts.iter().filter_map(|f| match f {
             Fact::Relation(r) => Some(r),
+            _ => None,
+        })
+    }
+
+    /// Iterates over the precisely resolved references only.
+    pub fn resolved(&self) -> impl Iterator<Item = &ResolvedReference> {
+        self.facts.iter().filter_map(|f| match f {
+            Fact::Resolved(r) => Some(r),
             _ => None,
         })
     }

@@ -90,6 +90,7 @@ fn print_fact(fact: &Fact) {
             r.role, r.name, r.path, r.scope, r.span.lines
         ),
         Fact::Literal(l) => println!("LIT  {:?} {:?} lines={}", l.role, l.value, l.span.lines),
+        Fact::Resolved(r) => println!("RES  {} lines={} -> {:?}", r.name, r.span.lines, r.target),
         Fact::Relation(r) => println!(
             "REL  {} {} -> {} lines={}",
             r.kind, r.src_name, r.dst_name, r.span.lines

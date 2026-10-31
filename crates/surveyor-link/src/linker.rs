@@ -9,8 +9,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use surveyor_model::{
     ByteSpan, Confidence, ContentHash, DeclarationFact, DeclaredRelation, DeclaredSource, Edge,
     EdgeId, EdgeKind, Evidence, FactSet, GrammarId, GraphDelta, Language, LiteralRole, Node,
-    NodeId, NodeKind, Provenance, ReferenceFact, ReferenceRole, RepoPath, ResolverId, RuleId,
-    SourceLocation, TextSpan, Unresolved, UnresolvedReason,
+    NodeId, NodeKind, Provenance, ReferenceFact, ReferenceRole, RepoPath, ResolvedReference,
+    ResolverId, RuleId, SourceLocation, SymbolTarget, TextSpan, Unresolved, UnresolvedReason,
 };
 
 use crate::ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id};
@@ -100,10 +100,22 @@ struct Builder<'a> {
     seed_count: usize,
     /// Seed nodes a pass changed.
     dirty_seeds: BTreeSet<usize>,
+    /// Precisely resolved reference sites per file, sorted by start offset.
+    bindings: HashMap<RepoPath, Vec<&'a ResolvedReference>>,
 }
 
 impl<'a> Builder<'a> {
     fn new(input: &'a LinkInput) -> Self {
+        let mut bindings: HashMap<RepoPath, Vec<&'a ResolvedReference>> = HashMap::new();
+        for set in &input.fact_sets {
+            let found: Vec<&'a ResolvedReference> = set.resolved().collect();
+            if !found.is_empty() {
+                bindings.entry(set.path.clone()).or_default().extend(found);
+            }
+        }
+        for sites in bindings.values_mut() {
+            sites.sort_by_key(|b| (b.span.start(), b.span.end()));
+        }
         Self {
             input,
             nodes: Vec::new(),
@@ -120,6 +132,7 @@ impl<'a> Builder<'a> {
             decls_by_file: HashMap::new(),
             seed_count: 0,
             dirty_seeds: BTreeSet::new(),
+            bindings,
         }
     }
 
@@ -781,6 +794,79 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// The resolved reference a precise index recorded inside `r`'s span, by name.
+    ///
+    /// A method call's span is the name token itself; a path call's span covers the
+    /// whole path, in which case the rightmost occurrence of the name is the target.
+    fn binding_at(&self, file: &RepoPath, r: &ReferenceFact) -> Option<&'a ResolvedReference> {
+        let sites = self.bindings.get(file)?;
+        let from = sites.partition_point(|b| b.span.start() < r.span.start());
+        sites[from..]
+            .iter()
+            .take_while(|b| b.span.start() < r.span.end())
+            .filter(|b| b.span.end() <= r.span.end() && b.name == r.name)
+            .last()
+            .copied()
+    }
+
+    /// The innermost declaration called `name` whose span covers `line` in `file`.
+    fn declared_at(&self, file: &RepoPath, line: u32, name: &str) -> Option<usize> {
+        // Declarations are sorted by start, so the last match is the innermost.
+        self.decls_by_file
+            .get(file)?
+            .iter()
+            .rev()
+            .filter(|d| d.span.lines.start <= line && line <= d.span.lines.end)
+            .map(|d| d.node)
+            .find(|&n| self.nodes[n].name == name)
+    }
+
+    /// Links `r` through a precise binding when one covers the site.
+    ///
+    /// Returns `true` when the binding settled the reference: an edge was drawn to the
+    /// declaration it names, or the target is outside the repository or a local
+    /// binding and so is neither an edge nor a gap. Returns `false` when no index
+    /// covers the site, or the named declaration is not in the graph, so name
+    /// matching proceeds as usual.
+    fn link_resolved(
+        &mut self,
+        src: usize,
+        r: &ReferenceFact,
+        file: &RepoPath,
+        accept: &impl Fn(&NodeKind) -> bool,
+    ) -> bool {
+        let Some(binding) = self.binding_at(file, r) else {
+            return false;
+        };
+        let SymbolTarget::Declared {
+            file: declared_in,
+            line,
+            name,
+        } = &binding.target
+        else {
+            return true;
+        };
+        let Some(dst) = self.declared_at(declared_in, *line, name).filter(|&d| {
+            d != src
+                && (accept(&self.nodes[d].kind)
+                    || (r.role.is_call() && self.nodes[d].kind.is_type()))
+        }) else {
+            return false;
+        };
+        let prov = Provenance::resolved(
+            binding.resolver.clone(),
+            self.evidence(file, r.span, r.hash),
+        );
+        let against = vec![self.node_id(dst)];
+        let kind = r.role.edge_kind();
+        if r.role == ReferenceRole::TypeUse {
+            self.push_edge_once(src, kind, dst, prov, against);
+        } else {
+            self.push_edge(src, kind, dst, prov, against);
+        }
+        true
+    }
+
     fn link_named(
         &mut self,
         si: usize,
@@ -792,6 +878,9 @@ impl<'a> Builder<'a> {
     ) {
         let set = &self.input.fact_sets[si];
         let file = set.path.clone();
+        if self.link_resolved(src, r, &file, &accept) {
+            return;
+        }
         let language = set.language.clone();
         let same_language = |n: &Node| match (&language, &n.language) {
             (Some(a), Some(b)) => same_family(a, b),
@@ -1666,7 +1755,7 @@ mod tests {
     use surveyor_extract::{
         Extractors, ManifestExtractor, SqlDialect, SqlExtractor, TreeSitterExtractor, extract_units,
     };
-    use surveyor_model::{CommitId, DerivationKind, LineSpan, RepoId, SourceUnit};
+    use surveyor_model::{CommitId, DerivationKind, Fact, LineSpan, RepoId, SourceUnit};
 
     use super::*;
     use crate::input::FileEntry;
@@ -1894,6 +1983,155 @@ mod tests {
                 .iter()
                 .all(|e| !e.provenance.evidence.is_empty()),
             "every edge cites evidence"
+        );
+    }
+
+    /// Builds a resolved fact for the occurrence of `token` on `line` (one-based) of `unit`.
+    fn resolved(unit: &SourceUnit, line: u32, token: &str, target: SymbolTarget) -> Fact {
+        let text = unit.text().expect("utf8");
+        let start: usize = text
+            .lines()
+            .take(line as usize - 1)
+            .map(|l| l.len() + 1)
+            .sum();
+        let col = text
+            .lines()
+            .nth(line as usize - 1)
+            .expect("line")
+            .find(token)
+            .expect("token");
+        let bytes = ByteSpan::new((start + col) as u64, (start + col + token.len()) as u64);
+        Fact::Resolved(ResolvedReference {
+            name: token.to_owned(),
+            span: unit.text_span(bytes),
+            target,
+            resolver: ResolverId::new("scip/test"),
+            hash: ContentHash::of(token),
+        })
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture linked twice, with and without the index"
+    )]
+    fn precise_bindings_replace_name_matching_and_silence_externals() {
+        let units = vec![
+            unit(
+                "src/a.rs",
+                "pub struct Relay;\nimpl Relay {\n    pub fn drain(&self) -> usize { 1 }\n}\npub fn other() {}\n",
+            ),
+            unit(
+                "src/b.rs",
+                "pub struct Sink;\nimpl Sink {\n    pub fn drain(&self) -> usize { 2 }\n}\n",
+            ),
+            unit(
+                "src/c.rs",
+                "fn run(r: &Relay, v: Vec<u8>) -> usize { r.drain() + sqlx::query(\"x\") + other() }\n",
+            ),
+        ];
+        // Without an index: `r.drain()` matches two declarations at 0.5 each and
+        // `sqlx::query` is a gap.
+        let (plain, _) = linked(&units);
+        let drains = |d: &GraphDelta| {
+            d.edges
+                .iter()
+                .filter(|e| {
+                    e.src.as_str() == "rust:src/c.rs::run" && e.dst.as_str().ends_with("::drain")
+                })
+                .map(|e| {
+                    (
+                        e.dst.to_string(),
+                        e.provenance.derivation.kind(),
+                        e.provenance.confidence.get(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(drains(&plain).len(), 2);
+        assert!(plain.unresolved.iter().any(|u| u.name == "query"));
+
+        // With an index covering c.rs: one certain resolved edge, no gap for the
+        // external call, and the uncovered call to `other` stays syntactic.
+        let extractors = Extractors::new().with(TreeSitterExtractor::new());
+        let extraction = extract_units(&extractors, &units, SqlDialect::PostgreSql);
+        let c = &units[2];
+        let scip = FactSet {
+            facts: vec![
+                resolved(
+                    c,
+                    1,
+                    "drain",
+                    SymbolTarget::Declared {
+                        file: RepoPath::new("src/a.rs"),
+                        line: 3,
+                        name: "drain".into(),
+                    },
+                ),
+                resolved(
+                    c,
+                    1,
+                    "query",
+                    SymbolTarget::External {
+                        symbol: "rust-analyzer cargo sqlx 0.8.0 query/query().".into(),
+                    },
+                ),
+                resolved(
+                    c,
+                    1,
+                    "Vec",
+                    SymbolTarget::External {
+                        symbol: "rust-analyzer cargo alloc 1.0 vec/Vec#".into(),
+                    },
+                ),
+            ],
+            ..FactSet::empty(surveyor_model::ExtractorId::new("scip/test"), c)
+        };
+        let files = extraction.units.iter().map(|u| FileEntry {
+            path: u.path.clone(),
+            language: u.language.clone(),
+            content_hash: u.content_hash,
+            bytes: u.bytes,
+        });
+        let input = LinkInput::new(RepoId::new("demo"), CommitId::new("c0"))
+            .with_files(files)
+            .with_fact_sets(extraction.fact_sets)
+            .with_fact_sets([scip]);
+        let precise = link(&input);
+        let found = drains(&precise);
+        assert_eq!(
+            found,
+            vec![(
+                "rust:src/a.rs::Relay::drain".to_owned(),
+                DerivationKind::Resolved,
+                1.0
+            )]
+        );
+        assert!(precise.unresolved.iter().all(|u| u.name != "query"));
+        let other = edge(
+            &precise,
+            "rust:src/c.rs::run",
+            &EdgeKind::Calls,
+            "rust:src/a.rs::other",
+        )
+        .expect("uncovered call stays");
+        assert_eq!(
+            other.provenance.derivation.kind(),
+            DerivationKind::Syntactic
+        );
+        let drain_edge = precise
+            .edges
+            .iter()
+            .find(|e| e.dst.as_str() == "rust:src/a.rs::Relay::drain" && e.kind == EdgeKind::Calls)
+            .expect("resolved edge");
+        assert_eq!(drain_edge.provenance.evidence[0].citation(), "src/c.rs:1");
+        assert!(matches!(
+            &drain_edge.provenance.derivation,
+            surveyor_model::Derivation::Resolved { resolver } if resolver.as_str() == "scip/test"
+        ));
+        assert_eq!(
+            drain_edge.resolved_against,
+            vec![NodeId::new("rust:src/a.rs::Relay::drain")]
         );
     }
 

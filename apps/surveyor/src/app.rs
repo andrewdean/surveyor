@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
-use surveyor_extract::{Extraction, Profile, Repository, extract_paths, extract_repository};
+use surveyor_extract::{Extraction, Profile, Repository, extract_paths, extract_repository_with};
 use surveyor_graph::{CodeGraph, EdgeFilter};
 use surveyor_link::{ChangedFiles, FileEntry, LinkInput, link, plan_update, relink};
 use surveyor_model::{EdgeKind, Fact, GraphStats, LiteralRole, NodeKind, RepoId, RepoPath};
@@ -43,7 +43,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Index the repository into the dataset.
-    Index,
+    Index(IndexArgs),
     /// Reindex only what changed since the dataset's recorded commit.
     Update(UpdateArgs),
     /// Show dataset and repository counts.
@@ -66,6 +66,14 @@ pub enum Command {
     Source(SourceArgs),
     /// Serve the graph over MCP on stdio.
     Mcp,
+}
+
+#[derive(Debug, Args)]
+pub struct IndexArgs {
+    /// A SCIP index to merge as the precise tier (repeatable), besides any the
+    /// profile's `[scip] indexes` names.
+    #[arg(long, value_name = "index.scip")]
+    pub scip: Vec<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -220,7 +228,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     let p = paths(&cli)?;
     let out = if cli.json { Output::Json } else { Output::Text };
     match &cli.command {
-        Command::Index => run_index(&cli, &p, &out).await,
+        Command::Index(a) => run_index(&cli, &p, &a.scip, &out).await,
         Command::Update(a) => update(&cli, &p, a, &out).await,
         Command::Stats => {
             let store = LanceStore::open(&p.store).await.context("open dataset")?;
@@ -375,9 +383,34 @@ fn referenced_names(extraction: &Extraction) -> BTreeMap<RepoPath, Vec<String>> 
         .collect()
 }
 
-async fn run_index(cli: &Cli, p: &Paths, out: &Output) -> anyhow::Result<()> {
+/// The SCIP indexes to merge: the profile's that exist, plus `extra`, which must.
+fn scip_indexes(
+    profile: &Profile,
+    root: &std::path::Path,
+    extra: &[PathBuf],
+) -> anyhow::Result<Vec<PathBuf>> {
+    let from_profile = profile.scip.indexes.iter().filter_map(|rel| {
+        let path = root.join(rel);
+        if path.is_file() {
+            Some(path)
+        } else {
+            tracing::info!(index = %path.display(), "profile names a SCIP index that is absent; skipping");
+            None
+        }
+    });
+    let mut all: Vec<PathBuf> = from_profile.collect();
+    for path in extra {
+        if !path.is_file() {
+            bail!("SCIP index {} does not exist", path.display());
+        }
+        all.push(path.clone());
+    }
+    Ok(all)
+}
+
+async fn run_index(cli: &Cli, p: &Paths, scip: &[PathBuf], out: &Output) -> anyhow::Result<()> {
     let started = Instant::now();
-    let indexed = index(cli, p).await?;
+    let indexed = index(cli, p, scip).await?;
     out.indexed(
         &indexed.snapshot,
         &indexed.stats,
@@ -388,14 +421,15 @@ async fn run_index(cli: &Cli, p: &Paths, out: &Output) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn index(cli: &Cli, p: &Paths) -> anyhow::Result<Indexed> {
+async fn index(cli: &Cli, p: &Paths, scip: &[PathBuf]) -> anyhow::Result<Indexed> {
     let started = Instant::now();
     let repo = Repository::open(&p.root, cli.repo_id.as_deref().map(RepoId::new))
         .context("open repository")?;
     let profile = Profile::load(&p.root).context("load surveyor.toml")?;
-    tracing::info!(repo = %repo.id(), commit = %repo.commit(), root = %p.root.display(), "indexing");
+    let indexes = scip_indexes(&profile, &p.root, scip)?;
+    tracing::info!(repo = %repo.id(), commit = %repo.commit(), root = %p.root.display(), scip = indexes.len(), "indexing");
 
-    let extraction = extract_repository(&repo, &profile).context("extract")?;
+    let extraction = extract_repository_with(&repo, &profile, &indexes).context("extract")?;
     let extracted_at = started.elapsed();
     tracing::info!(
         files = extraction.units.len(),
@@ -635,7 +669,7 @@ async fn full(
     started: Instant,
 ) -> anyhow::Result<()> {
     tracing::info!(reason, "updating with a full index");
-    let indexed = index(cli, p).await?;
+    let indexed = index(cli, p, &[]).await?;
     out.updated(
         &Updated {
             snapshot: indexed.snapshot,

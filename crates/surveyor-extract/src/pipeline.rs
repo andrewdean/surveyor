@@ -5,6 +5,7 @@
 //! into `Query` declarations with table references through `sqlparser`.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use rayon::prelude::*;
 use surveyor_model::{
@@ -16,7 +17,7 @@ use crate::profile::SqlDialect;
 use crate::sql::{StatementSummary, summarize_sql};
 use crate::{
     ExtractError, Extractors, ManifestExtractor, MarkdownExtractor, Profile, Repository,
-    RhaiExtractor, SqlExtractor, TreeSitterExtractor,
+    RhaiExtractor, ScipExtractor, SqlExtractor, TreeSitterExtractor,
 };
 
 /// One file the walk visited, whether or not it produced facts.
@@ -87,7 +88,23 @@ pub fn extract_repository(
     repo: &Repository,
     profile: &Profile,
 ) -> Result<Extraction, ExtractError> {
-    let extractors = default_extractors(profile)?;
+    extract_repository_with(repo, profile, &[] as &[&Path])
+}
+
+/// Like [`extract_repository`], with the precise tier from the SCIP indexes at `scip`.
+///
+/// # Errors
+/// Returns an error when an index cannot be read, besides the failures of
+/// [`extract_repository`].
+pub fn extract_repository_with(
+    repo: &Repository,
+    profile: &Profile,
+    scip: &[impl AsRef<Path>],
+) -> Result<Extraction, ExtractError> {
+    let mut extractors = default_extractors(profile)?;
+    for path in scip {
+        extractors.push(Box::new(ScipExtractor::load(path)?));
+    }
     let units = repo.units(profile)?;
     Ok(Extraction {
         commit: Some(repo.commit().clone()),

@@ -8,6 +8,12 @@
 //! crate's own AST for Rhai, typed deserialization for package manifests, and a small
 //! Markdown reader for design documents and runbooks.
 //!
+//! The precise tier is SCIP: [`ScipExtractor`] reads an index an external indexer
+//! wrote (`rust-analyzer scip`, `scip-typescript`, `scip-python`) and emits
+//! [`Fact::Resolved`](surveyor_model::Fact::Resolved) facts that bind reference sites
+//! to the file and line of their declaration, which the linker pairs with the
+//! Tree-sitter references at the same sites. Without an index nothing changes.
+//!
 //! [`extract_repository`] walks a checkout, runs every accepting extractor over each
 //! file in parallel and returns the fact sets the linker consumes.
 //!
@@ -38,6 +44,7 @@ mod markdown;
 mod pipeline;
 mod profile;
 mod rhai_lang;
+mod scip_index;
 mod sql;
 mod treesitter;
 mod walk;
@@ -52,12 +59,15 @@ pub use manifest::ManifestExtractor;
 pub use markdown::MarkdownExtractor;
 #[doc(inline)]
 pub use pipeline::{
-    Extraction, UnitRecord, default_extractors, extract_paths, extract_repository, extract_units,
+    Extraction, UnitRecord, default_extractors, extract_paths, extract_repository,
+    extract_repository_with, extract_units,
 };
 #[doc(inline)]
-pub use profile::{DocsProfile, Profile, SqlDialect, SqlProfile, WalkProfile};
+pub use profile::{DocsProfile, Profile, ScipProfile, SqlDialect, SqlProfile, WalkProfile};
 #[doc(inline)]
 pub use rhai_lang::RhaiExtractor;
+#[doc(inline)]
+pub use scip_index::ScipExtractor;
 #[doc(inline)]
 pub use sql::{SqlExtractor, StatementSummary, summarize_sql};
 #[doc(inline)]

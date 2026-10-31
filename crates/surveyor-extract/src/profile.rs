@@ -18,6 +18,9 @@
 //! [docs]
 //! designs = ["docs/rfd/**/*.md", "docs/adr/**/*.md"]
 //! runbooks = ["docs/runbooks/**/*.md"]
+//!
+//! [scip]
+//! indexes = ["index.scip"]
 //! ```
 
 use std::path::Path;
@@ -130,6 +133,15 @@ impl Default for DocsProfile {
     }
 }
 
+/// Precise indexes to merge when they exist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ScipProfile {
+    /// SCIP index files, relative to the repository root. A missing file is skipped,
+    /// so a checkout without the toolchain indexes exactly as before.
+    pub indexes: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 struct RepositorySection {
@@ -153,6 +165,8 @@ pub struct Profile {
     pub sql: SqlProfile,
     /// Documentation settings.
     pub docs: DocsProfile,
+    /// Precise index settings.
+    pub scip: ScipProfile,
     adapter: AdapterSection,
 }
 
@@ -239,5 +253,7 @@ mod tests {
                 .is_match("docs/rfd/0001-x.md")
         );
         assert!(Profile::from_toml("[sql]\ndialect = \"nope\"").is_err());
+        let p = Profile::from_toml("[scip]\nindexes = [\"index.scip\"]\n").expect("parses");
+        assert_eq!(p.scip.indexes, vec!["index.scip".to_owned()]);
     }
 }

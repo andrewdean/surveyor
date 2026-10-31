@@ -40,7 +40,7 @@ pub use error::ModelError;
 #[doc(inline)]
 pub use fact::{
     CallForm, DeclarationFact, DeclaredRelation, Fact, FactSet, LiteralFact, LiteralRole,
-    ReferenceFact, ReferenceRole, SourceUnit,
+    ReferenceFact, ReferenceRole, ResolvedReference, SourceUnit, SymbolTarget,
 };
 #[doc(inline)]
 pub use graph::{GraphDelta, GraphStats, Unresolved, UnresolvedReason};
