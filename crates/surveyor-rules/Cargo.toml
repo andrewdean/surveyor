@@ -1,0 +1,17 @@
+[package]
+name = "surveyor-rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Surveyor rules: architectural invariants as Rhai scripts over the graph"
+
+[dependencies]
+surveyor-model.workspace = true
+surveyor-graph.workspace = true
+rhai.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -50,10 +50,16 @@ for now). This checkout implements Phase 0 of that plan.
   into the bodies that run and `affected` on an implementation climbs to the callers of
   its contract. Enum variants are `Variant` nodes; a path used as a value or in a
   pattern is a `REFERENCES` edge.
+- **Rules.** Architectural intent as Rhai scripts over the graph: `surveyor check` runs
+  every `*.rhai` under the profile's `[rules] dirs` (default `surveyor-rules/`), each a
+  `fn check(g)` returning violations with citations, judged as `fail`, `warn` or a
+  `budget` to burn down. Surveyor's own rules live in `surveyor-rules/`: crate
+  layering, a pure model crate, Lance named only by the store, no crate cycles, and a
+  budget of public functions without tests.
 - **Interfaces.** A CLI and an MCP server whose first tools keep the names graphicle and
   Graphify publish (`query_graph`, `get_node`, `get_neighbors`, `shortest_path`,
-  `god_nodes`, `get_community`, `read_project_source`) plus `affected`, `find_nodes`
-  and `graph_stats`.
+  `god_nodes`, `get_community`, `read_project_source`) plus `affected`, `find_nodes`,
+  `graph_stats` and `check_invariants`.
 
 ## Numbers
 
@@ -148,6 +154,33 @@ surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway nodes --kind Fu
 `nodes` lists nodes by kind and location and by the edges they have or lack, which is
 how to ask set questions such as "which functions in this crate have no test".
 
+Check the repository's rules, or extra ones, and exit 1 on a failure:
+
+```bash
+surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway check --rules ./my-rules
+```
+
+A rule is a Rhai file:
+
+```rhai
+const ID = "outbox-written-only-by-outbox";
+const DESC = "only code under crates/outbox/ writes cw_outbox.outbox";
+
+fn check(g) {
+    let out = [];
+    for e in g.edges_to("sql:cw_outbox.outbox", "WRITES") {
+        if e.file == () || !e.file.starts_with("crates/outbox/") {
+            out.push(violation(e, "writes the outbox table from outside the outbox crate"));
+        }
+    }
+    out
+}
+```
+
+`g` offers `nodes`, `nodes_under`, `node`, `edges`, `edges_from`, `edges_to`, `out`,
+`inn`, `package_of`, `reaches`, `cycles` and `count`; `const SEVERITY` is `fail`
+(default), `warn` or `budget` with `const BUDGET`. Scripts run sandboxed.
+
 `nodes` lists nodes by kind and location and by the edges they have or lack, which is
 how to ask set questions such as "which functions in this crate have no test".
 
@@ -182,6 +215,7 @@ crates/surveyor-extract   Tree-sitter host, query packs, sqlparser, rhai, manife
 crates/surveyor-link      facts to nodes and edges; name resolution; unresolved gaps
 crates/surveyor-store     Lance dataset behind LanceStore
 crates/surveyor-graph     petgraph compute: neighbors, affected, paths, PageRank, communities
+crates/surveyor-rules     Rhai rule engine: invariants over the graph, with citations
 crates/surveyor-mcp       rmcp server
 apps/surveyor             the CLI
 languages/<name>/surveyor.scm   query packs
@@ -200,9 +234,8 @@ cargo fmt --all
 
 ## Not yet
 
-Cards and embeddings, context packs, Rhai invariants, the Causeway adapter, `serve`
-with streamable HTTP, personas and runtime connectors are the following phases of the
-RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too),
+Cards and embeddings, context packs, the Causeway adapter, `serve` with streamable
+HTTP, personas and runtime connectors are the following phases of the RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too),
 treats a `surveyor.toml` edit like any other file (run `index` after changing the
 profile), and relinks changed files syntactically: rerun `index --scip` when a fresh
 SCIP index arrives, which the RFD expects to happen in CI on a slower cadence.

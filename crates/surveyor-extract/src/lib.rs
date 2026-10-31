@@ -63,7 +63,9 @@ pub use pipeline::{
     extract_repository_with, extract_units,
 };
 #[doc(inline)]
-pub use profile::{DocsProfile, Profile, ScipProfile, SqlDialect, SqlProfile, WalkProfile};
+pub use profile::{
+    DocsProfile, Profile, RulesProfile, ScipProfile, SqlDialect, SqlProfile, WalkProfile,
+};
 #[doc(inline)]
 pub use rhai_lang::RhaiExtractor;
 #[doc(inline)]

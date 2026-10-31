@@ -6590,6 +6590,7 @@ dependencies = [
  "surveyor-link",
  "surveyor-mcp",
  "surveyor-model",
+ "surveyor-rules",
  "surveyor-store",
  "tempfile",
  "tokio",
@@ -6652,6 +6653,7 @@ dependencies = [
  "serde_json",
  "surveyor-graph",
  "surveyor-model",
+ "surveyor-rules",
  "surveyor-store",
 ]
 
@@ -6662,6 +6664,17 @@ dependencies = [
  "blake3",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "surveyor-rules"
+version = "0.1.0"
+dependencies = [
+ "rhai",
+ "serde",
+ "serde_json",
+ "surveyor-graph",
+ "surveyor-model",
 ]
 
 [[package]]

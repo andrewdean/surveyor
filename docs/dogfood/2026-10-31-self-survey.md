@@ -66,6 +66,36 @@ surveyor index                                             # profile in surveyor
 - `surveyor update` with 32 of 56 files affected fell back to a full index on its own,
   which is the right call at that ratio; a one-file change relinks in under a second.
 
+## Invariants over the self graph
+
+The Rhai rule engine (`surveyor-rules`, `surveyor check`, the `check_invariants` MCP
+tool) landed with Surveyor's own rules as its first user, in `surveyor-rules/`:
+
+- `crate-layering`: a crate depends only on crates in lower layers
+  (model < extract, link, graph < store < rules < mcp < app).
+- `model-has-no-io`: `surveyor-model` depends on nothing that performs I/O or links a
+  runtime.
+- `only-store-names-lance`: `lancedb` and `arrow` are dependencies of `surveyor-store`
+  alone.
+- `no-crate-cycles`: the workspace crates form no dependency cycle.
+- `public-functions-have-tests`: a budget rule; public functions in `crates/` with no
+  `TESTED_BY` edge may number at most 20.
+
+All five pass on the current graph (1,506 nodes, 7,284 edges, 64 files). The budget
+rule reports 14, mostly `surveyor-link/src/ids.rs` and the `pipeline.rs` entry points
+that the CLI tests exercise through `main` rather than directly; the budget starts at
+20 and comes down as tests land.
+
+Two things the engine taught while being written:
+
+- Rhai script functions cannot see a script's top-level `let` bindings, and the first
+  draft put the layer map in a `const` that `check` then could not find. The engine now
+  evaluates the script once at load, keeps the resulting scope, and passes it to every
+  `check` call, so top-level `const` values act as the rule's configuration.
+- `set_max_expr_depths` at Rhai's default refused a fifteen-entry map literal
+  ("expression exceeds maximum complexity"); 256 is enough for any rule configuration
+  that should still be read by a person.
+
 ## Still open
 
 - Changing Surveyor's own extractors or linker invalidated stored facts for files that

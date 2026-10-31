@@ -12,6 +12,7 @@ use surveyor_graph::{
     Affected, CodeGraph, Community, Direction, EdgeFilter, Hub, Neighbor, PathStep, PathTier,
 };
 use surveyor_model::{Edge, EdgeKind, GraphStats, Node, NodeKind, Unresolved};
+use surveyor_rules::{Report, Severity};
 use surveyor_store::{RepositorySnapshot, StoreStats};
 
 /// The shape answers are rendered in.
@@ -660,6 +661,34 @@ impl Output {
         for ((reason, name), count) in rows.into_iter().take(top) {
             println!("  {count:>6}  {reason:<18} {name}");
         }
+    }
+
+    pub fn check(self, report: &Report) {
+        if self == Self::Json {
+            print_json(report);
+            return;
+        }
+        for o in &report.outcomes {
+            let verdict = if o.passed { "ok  " } else { "FAIL" };
+            let judged = match (o.severity, o.budget) {
+                (Severity::Budget, Some(b)) => format!("{} of {b} allowed", o.violations.len()),
+                (Severity::Warn, _) => format!("{} (warning)", o.violations.len()),
+                _ => o.violations.len().to_string(),
+            };
+            println!("{verdict} [{}] {} — {judged}", o.id, o.desc);
+            for v in &o.violations {
+                match &v.citation {
+                    Some(c) => println!("      {c}  {}  ({})", v.message, v.subject),
+                    None => println!("      {}  ({})", v.message, v.subject),
+                }
+            }
+        }
+        let failed = report.outcomes.iter().filter(|o| !o.passed).count();
+        println!(
+            "{} rules, {} violations, {failed} failed",
+            report.outcomes.len(),
+            report.violation_count()
+        );
     }
 
     pub fn source(self, window: &SourceWindow) {

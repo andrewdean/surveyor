@@ -342,6 +342,41 @@ fn index_and_answer_phase_zero_questions() {
         "{src}"
     );
 
+    // check: the fixture's own rule passes; a failing rule from --rules exits 1 with citations.
+    let check = surveyor(&store, &["check"]);
+    assert_eq!(check["outcomes"][0]["id"], "outbox-written-only-by-outbox");
+    assert_eq!(check["outcomes"][0]["passed"], true, "{check}");
+    let failing = dir.path().join("no-sql-in-api.rhai");
+    std::fs::write(
+        &failing,
+        "const ID = \"api-has-no-sql\";\nconst DESC = \"the api crate issues no SQL\";\nfn check(g) { let out = []; for e in g.edges(\"READS\") { if e.file != () && e.file.starts_with(\"crates/api/\") { out.push(violation(e, \"reads a table from the api crate\")); } } out }\n",
+    )
+    .expect("write rule");
+    let output = Command::new(env!("CARGO_BIN_EXE_surveyor"))
+        .arg("--repo-root")
+        .arg(fixture())
+        .arg("--store")
+        .arg(&store)
+        .arg("--json")
+        .args(["check", "--rules"])
+        .arg(&failing)
+        .output()
+        .expect("runs");
+    assert_eq!(output.status.code(), Some(1), "a failing rule exits 1");
+    let report: Value = serde_json::from_slice(&output.stdout).expect("json report");
+    let api = report["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["id"] == "api-has-no-sql")
+        .expect("rule ran");
+    assert_eq!(api["passed"], false);
+    let citation = api["violations"][0]["citation"].as_str().expect("citation");
+    assert!(
+        cited_text(citation).contains("cw_users.users"),
+        "{citation}"
+    );
+
     // stats and unresolved are available; a second index replaces, not duplicates.
     let again = surveyor(&store, &["index"]);
     assert_eq!(again["nodes"], indexed["nodes"]);

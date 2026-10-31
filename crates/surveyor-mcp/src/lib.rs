@@ -24,6 +24,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use surveyor_graph::{CodeGraph, Direction, EdgeFilter, PathTier};
 use surveyor_model::{Edge, EdgeKind, Node, NodeId, NodeKind, RepoId};
+use surveyor_rules::RuleSet;
 use surveyor_store::LanceStore;
 
 /// Shared state behind the tool handlers.
@@ -33,6 +34,7 @@ pub struct Surveyor {
     graph: Arc<CodeGraph>,
     repo: RepoId,
     root: PathBuf,
+    rules: RuleSet,
     #[expect(dead_code, reason = "the tool_handler macro reads the router field")]
     tool_router: ToolRouter<Self>,
 }
@@ -243,12 +245,19 @@ pub struct FindParams {
 impl Surveyor {
     /// Creates the server state over a loaded graph.
     #[must_use]
-    pub fn new(store: LanceStore, graph: CodeGraph, repo: RepoId, root: PathBuf) -> Self {
+    pub fn new(
+        store: LanceStore,
+        graph: CodeGraph,
+        repo: RepoId,
+        root: PathBuf,
+        rules: RuleSet,
+    ) -> Self {
         Self {
             store,
             graph: Arc::new(graph),
             repo,
             root,
+            rules,
             tool_router: Self::tool_router(),
         }
     }
@@ -653,6 +662,29 @@ impl Surveyor {
     }
 
     #[tool(
+        description = "Run the repository's architectural rules (Rhai scripts over the graph) and report every violation with its citation; passed is false when a fail or over-budget rule fired. Call before opening a change."
+    )]
+    async fn check_invariants(&self) -> Result<CallToolResult, McpError> {
+        let report = self
+            .rules
+            .run(Arc::clone(&self.graph))
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        #[derive(Serialize)]
+        struct View<'a> {
+            passed: bool,
+            rules: usize,
+            violations: usize,
+            report: &'a surveyor_rules::Report,
+        }
+        json_result(&View {
+            passed: report.passed(),
+            rules: report.outcomes.len(),
+            violations: report.violation_count(),
+            report: &report,
+        })
+    }
+
+    #[tool(
         description = "Counts of nodes and edges by kind and derivation for the indexed repository, plus the commit it was indexed at."
     )]
     async fn graph_stats(&self) -> Result<CallToolResult, McpError> {
@@ -689,7 +721,7 @@ impl ServerHandler for Surveyor {
             .with_server_info(Implementation::from_build_env())
             .with_instructions(format!(
                 "Surveyor code graph for repository {}. Start with query_graph or find_nodes to locate symbols, \
-                 get_neighbors for relations, affected before changing anything, and read_project_source to verify \
+                 get_neighbors for relations, affected and check_invariants before changing anything, and read_project_source to verify \
                  any citation before relying on it. Every relation carries derivation and confidence; prefer \
                  deterministic edges for decisions.",
                 self.repo
@@ -735,8 +767,9 @@ pub async fn serve_stdio(
     graph: CodeGraph,
     repo: RepoId,
     root: PathBuf,
+    rules: RuleSet,
 ) -> Result<(), ServeError> {
-    let server = Surveyor::new(store, graph, repo, root);
+    let server = Surveyor::new(store, graph, repo, root, rules);
     let service = server
         .serve(rmcp::transport::stdio())
         .await

@@ -17,6 +17,7 @@ surveyor-link.workspace = true
 surveyor-store.workspace = true
 surveyor-graph.workspace = true
 surveyor-mcp.workspace = true
+surveyor-rules.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true

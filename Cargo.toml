@@ -17,6 +17,7 @@ surveyor-link    = { path = "crates/surveyor-link" }
 surveyor-store   = { path = "crates/surveyor-store" }
 surveyor-graph   = { path = "crates/surveyor-graph" }
 surveyor-mcp     = { path = "crates/surveyor-mcp" }
+surveyor-rules   = { path = "crates/surveyor-rules" }
 
 # serialization and errors
 serde      = { version = "1", features = ["derive"] }

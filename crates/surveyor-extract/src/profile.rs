@@ -142,6 +142,22 @@ pub struct ScipProfile {
     pub indexes: Vec<String>,
 }
 
+/// Where the repository keeps its architectural rules.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RulesProfile {
+    /// Directories of `*.rhai` rule files, relative to the repository root.
+    pub dirs: Vec<String>,
+}
+
+impl Default for RulesProfile {
+    fn default() -> Self {
+        Self {
+            dirs: vec!["surveyor-rules".into()],
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 struct RepositorySection {
@@ -167,6 +183,8 @@ pub struct Profile {
     pub docs: DocsProfile,
     /// Precise index settings.
     pub scip: ScipProfile,
+    /// Rule settings.
+    pub rules: RulesProfile,
     adapter: AdapterSection,
 }
 

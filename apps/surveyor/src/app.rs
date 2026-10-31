@@ -103,6 +103,8 @@ pub enum Command {
     Unresolved(TopArgs),
     /// Print the source window a node or citation points at.
     Source(SourceArgs),
+    /// Run the repository's architectural rules against the graph.
+    Check(CheckArgs),
     /// Serve the graph over MCP on stdio.
     Mcp,
 }
@@ -209,6 +211,21 @@ fn list_nodes<'a>(graph: &'a CodeGraph, a: &NodesArgs) -> Vec<&'a surveyor_model
     found.sort_by(|x, y| x.id.cmp(&y.id));
     found.truncate(a.limit);
     found
+}
+
+#[derive(Debug, Args)]
+pub struct CheckArgs {
+    /// Extra rule files or directories, besides the profile's `[rules] dirs`.
+    #[arg(long = "rules", value_name = "PATH")]
+    pub rules: Vec<PathBuf>,
+}
+
+/// Rule directories from the profile plus the extra paths, split into dirs and files.
+fn rule_sources(root: &Path, profile: &Profile, extra: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let (dirs, files): (Vec<PathBuf>, Vec<PathBuf>) =
+        extra.iter().cloned().partition(|p| p.is_dir());
+    let profile_dirs = profile.rules.dirs.iter().map(|d| root.join(d));
+    (profile_dirs.chain(dirs).collect(), files)
 }
 
 #[derive(Debug, Args)]
@@ -405,9 +422,45 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             out.source(&window);
             Ok(())
         }
+        Command::Check(a) => {
+            let (_, graph, _) = open_graph(&cli, &p).await?;
+            let profile = Profile::load(&p.root).context("load surveyor.toml")?;
+            let (dirs, files) = rule_sources(&p.root, &profile, &a.rules);
+            let rules = match surveyor_rules::RuleSet::load(&dirs, &files) {
+                Ok(rules) => rules,
+                Err(e) => {
+                    eprintln!("surveyor check: {e}");
+                    std::process::exit(2);
+                }
+            };
+            if rules.rules().is_empty() {
+                bail!(
+                    "no rules found under {} (profile `[rules] dirs`) or --rules",
+                    dirs.iter()
+                        .map(|d| d.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            let report = match rules.run(std::sync::Arc::new(graph)) {
+                Ok(report) => report,
+                Err(e) => {
+                    eprintln!("surveyor check: {e}");
+                    std::process::exit(2);
+                }
+            };
+            out.check(&report);
+            if !report.passed() {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
         Command::Mcp => {
             let (store, graph, repo) = open_graph(&cli, &p).await?;
-            surveyor_mcp::serve_stdio(store, graph, repo, p.root.clone())
+            let profile = Profile::load(&p.root).context("load surveyor.toml")?;
+            let (dirs, files) = rule_sources(&p.root, &profile, &[]);
+            let rules = surveyor_rules::RuleSet::load(&dirs, &files).context("load rules")?;
+            surveyor_mcp::serve_stdio(store, graph, repo, p.root.clone(), rules)
                 .await
                 .context("mcp server")?;
             Ok(())
