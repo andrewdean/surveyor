@@ -1,0 +1,426 @@
+
+######## Q1 explain LoginOrigin
+Enum LoginOrigin
+  id        rust:apps/causeway-server/src/browser_auth/handlers.rs::LoginOrigin
+  location  apps/causeway-server/src/browser_auth/handlers.rs:51-56
+  signature enum LoginOrigin
+  doc       Where a sign-in starts.
+members (3):
+  Variant Here                                     apps/causeway-server/src/browser_auth/handlers.rs:53
+  Variant Move                                     apps/causeway-server/src/browser_auth/handlers.rs:55
+  Method of                                       apps/causeway-server/src/browser_auth/handlers.rs:65-83
+outgoing:
+  -> DEFINES (2)
+     Variant LoginOrigin::Here                            apps/causeway-server/src/browser_auth/handlers.rs:53
+     Variant LoginOrigin::Move                            apps/causeway-server/src/browser_auth/handlers.rs:55
+incoming:
+  <- CONTAINS (1)
+     File apps/causeway-server/src/browser_auth/handl… apps/causeway-server/src/browser_auth/handlers.rs:51-56
+  <- USES_TYPE (1)
+     Impl LoginOrigin#impl                             apps/causeway-server/src/browser_auth/handlers.rs:58-84
+
+######## Q2 affected complete_scan
+affected by a change to Method PgPolicyRepo::complete_scan (depth 3): 10 nodes
+depth 1 (7):
+  Test identity_tests::database_tests::a_scan_that_fai… via CALLS component/governance/policy/src/repo.rs:2207 [syntactic 0.33]
+  Test memory::tests::scanner_lease_token_fences_recla… via CALLS component/governance/policy/src/repo.rs:3255 [syntactic 0.33]
+  Test memory::tests::scanner_allows_only_one_active_f… via CALLS component/governance/policy/src/repo.rs:3422 [syntactic 0.33]
+  Method PolicyScanner::process_lease                     via CALLS apps/causeway-policy-scan/src/main.rs:908 [syntactic 0.33]
+  Test identity_tests::database_tests::a_sweep_runs_fi… via CALLS component/governance/policy/src/repo.rs:2357 [syntactic 0.33]
+  Method PolicyScanRepo::complete_scan                    via DISPATCHES_TO component/governance/policy/src/repo.rs:1328-1392 [resolved]
+  Test memory::tests::a_sweep_is_claimed_first_and_clo… via CALLS component/governance/policy/src/repo.rs:3374 [syntactic 0.33]
+depth 2 (1):
+  Method PolicyScanner::process_claimed_lease             via CALLS apps/causeway-policy-scan/src/main.rs:607
+depth 3 (2):
+  Method PolicyScanner::run_queue                         via CALLS apps/causeway-policy-scan/src/main.rs:584
+  Method PolicyScanner::run_once                          via CALLS apps/causeway-policy-scan/src/main.rs:541
+
+######## Q3 explain TmpfsSize
+Struct TmpfsSize
+  id        rust:crates/causeway-testkit/src/scratch.rs::TmpfsSize
+  location  crates/causeway-testkit/src/scratch.rs:36
+  signature pub struct TmpfsSize
+  doc       A tmpfs mount's cap, in whole mebibytes, never zero: a zero cap is
+members (4):
+  Method mebibytes                                crates/causeway-testkit/src/scratch.rs:41-43
+  Method as_mebibytes                             crates/causeway-testkit/src/scratch.rs:47-49
+  Method as_bytes                                 crates/causeway-testkit/src/scratch.rs:53-55
+  Method as_api_bytes                             crates/causeway-testkit/src/scratch.rs:59-61
+incoming:
+  <- CONTAINS (1)
+     File crates/causeway-testkit/src/scratch.rs       crates/causeway-testkit/src/scratch.rs:36
+  <- IMPORTS (1)
+     File crates/causeway-testkit/src/lib.rs           crates/causeway-testkit/src/lib.rs:91
+  <- USES_TYPE (5)
+     Struct DeclaredVolume                               crates/causeway-testkit/src/scratch.rs:69
+     Method DeclaredVolume::size                         crates/causeway-testkit/src/scratch.rs:87
+     Method DeclaredVolume::tmpfs                        crates/causeway-testkit/src/scratch.rs:75
+     Impl TmpfsSize#impl                               crates/causeway-testkit/src/scratch.rs:38-62
+     Function mib                                          crates/causeway-testkit/src/scratch.rs:113
+
+######## Q4 affected markStoryReady
+affected by a change to Function markStoryReady (depth 3): 1 nodes
+depth 1 (1):
+  Function Viewer                                           via CALLS apps-web/showcase/src/shell/Viewer.tsx:28
+
+######## Q6 explain AdvisoryLockKey
+Struct AdvisoryLockKey
+  id        rust:torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs::AdvisoryLockKey
+  location  torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs:118
+  signature pub struct AdvisoryLockKey
+  doc       The key of one workspace's advisory lock for one purpose.
+members (3):
+  Method for_workspace                            torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs:124-133
+  Method as_i64                                   torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs:137-139
+  Method fmt                                      torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs:143-145
+incoming:
+  <- CONTAINS (1)
+     File torrentfx/crates/causeway-workspace-scope/s… torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs:118
+  <- IMPORTS (4)
+     File crates/causeway-db-core/src/lib.rs           crates/causeway-db-core/src/lib.rs:13-15 [syntactic 0.50]
+     File crates/causeway-testkit/tests/postgres.rs    crates/causeway-testkit/tests/postgres.rs:14 [syntactic 0.50]
+     File torrentfx/crates/causeway-workspace-scope/s… torrentfx/crates/causeway-workspace-scope/src/lib.rs:39
+     Module tests                                        torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs:152
+  <- USES_TYPE (7)
+     Function sweep_lock                                   component/platform/supervision/src/store.rs:18
+     Function advisory_lock_key                            crates/causeway-db-core/src/lib.rs:109
+     Function try_session_lock                             crates/causeway-testkit/tests/postgres.rs:502
+     Function try_transaction_lock                         crates/causeway-testkit/tests/postgres.rs:513
+     Function unlock                                       crates/causeway-testkit/tests/postgres.rs:524
+     Impl AdvisoryLockKey#impl                         torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs:120-140
+     Impl AdvisoryLockKey#impl(Display)                torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs:142-146
+
+######## Q7 affected advisory_lock_key
+affected by a change to Function advisory_lock_key (depth 3): 122 nodes
+depth 1 (5):
+  Method PgPolicyRepo::claim_scans                        via CALLS component/governance/policy/src/repo.rs:1236
+  Function refresh_effective_governance                     via CALLS component/catalog/core/src/ingest.rs:2061
+  Function sweep_lock                                       via CALLS component/platform/supervision/src/store.rs:19
+  Method PgTermsRepo::sync_in_transaction                 via CALLS component/governance/terms/src/lib.rs:238
+  Test tests::an_advisory_lock_key_is_scoped_by_the_wo… via CALLS crates/causeway-db-core/src/lib.rs:337
+depth 2 (19):
+  Method PolicyScanner::run_queue                         via CALLS apps/causeway-policy-scan/src/main.rs:570 [syntactic 0.33]
+  Test memory::tests::scanner_allows_only_one_active_f… via CALLS component/governance/policy/src/repo.rs:3431 [syntactic 0.33]
+  Method PolicyScanRepo::claim_scans                      via DISPATCHES_TO component/governance/policy/src/repo.rs:1212-1278 [resolved]
+  Test memory::tests::scanner_lease_token_fences_recla… via CALLS component/governance/policy/src/repo.rs:3230 [syntactic 0.33]
+  Test memory::tests::a_sweep_is_claimed_first_and_clo… via CALLS component/governance/policy/src/repo.rs:3359 [syntactic 0.33]
+  Method PolicyScanner::run_once                          via CALLS apps/causeway-policy-scan/src/main.rs:528 [syntactic 0.33]
+  Function database_tests::scan_in_review                   via CALLS component/governance/policy/src/stuck_work.rs:843 [syntactic 0.33]
+  Function identity_tests::database_tests::claim_ours       via CALLS component/governance/policy/src/repo.rs:2153 [syntactic 0.33]
+  Function identity_tests::database_tests::claim_next       via CALLS component/governance/policy/src/repo.rs:2260 [syntactic 0.33]
+  File component/catalog/core/src/lib.rs                via IMPORTS component/catalog/core/src/lib.rs:95-104
+  Method PgCatalogProjectionRepo::refresh_effective_gove… via CALLS component/catalog/core/src/projection.rs:635
+  Function seed_lineage                                     via CALLS jobs/causeway-seed/src/main.rs:1030 [syntactic 0.20]
+  Function refresh_effective_governance                     via CALLS crates/causeway-metadata-ops/src/projector.rs:461 [syntactic 0.25]
+  File jobs/causeway-seed/src/main.rs                   via IMPORTS jobs/causeway-seed/src/main.rs:42-47 [syntactic 0.50]
+  Method PgSweepPasses::take_lock                         via CALLS component/platform/supervision/src/store.rs:151
+  Method PgSweepPasses::release_lock                      via CALLS component/platform/supervision/src/store.rs:187
+  Test tests::attachment_failure_rolls_back_normalized… via CALLS crates/causeway-metadata-ops/src/terms_attachment.rs:590
+  Function sync_terms_attachment                            via CALLS crates/causeway-metadata-ops/src/terms_attachment.rs:132
+  Method PgTermsRepo::sync                                via CALLS component/governance/terms/src/lib.rs:211
+depth 3 (98):
+  Function run                                              via CALLS apps/causeway-policy-scan/src/main.rs:363
+  Test database_tests::a_correction_replaces_the_trigg… via CALLS component/governance/policy/src/stuck_work.rs:744
+  Test identity_tests::database_tests::a_scan_that_fai… via CALLS component/governance/policy/src/repo.rs:2206
+  Function identity_tests::database_tests::enqueue_and_rev… via CALLS component/governance/policy/src/repo.rs:2244
+  Test identity_tests::database_tests::a_sweep_runs_fi… via CALLS component/governance/policy/src/repo.rs:2379
+  Method CatalogProjectionWriter::refresh_effective_gove… via DISPATCHES_TO component/catalog/core/src/projection.rs:632-639 [resolved]
+  Function run                                              via CALLS jobs/causeway-seed/src/main.rs:467
+  Function resolve_and_project_term_governance              via CALLS crates/causeway-metadata-ops/src/term_governance_decisions.rs:433
+  Function execute                                          via CALLS tools/causeway-metadata/src/main.rs:224
+  Function project_resolved_metadata                        via CALLS crates/causeway-metadata-ops/src/projector.rs:549
+  Method PgSweepPasses::begin                             via CALLS component/platform/supervision/src/store.rs:197
+  Method PgSweepPasses::finish                            via CALLS component/platform/supervision/src/store.rs:232
+  Method MetadataOpsContext::contracts_read               via REFERENCES crates/causeway-metadata-ops/src/repos.rs:70
+  Struct DirectorySeats                                   via REFERENCES crates/causeway-metadata-ops/src/authority.rs:110
+  Method MetadataOpsContext::catalog_review_tasks         via REFERENCES crates/causeway-metadata-ops/src/repos.rs:144
+  Struct TermsIdentityWrite                               via REFERENCES component/governance/terms/src/lib.rs:131
+  Function embedded                                         via REFERENCES component/orchestration/workflows/src/lib.rs:32 [syntactic 0.50]
+  Function run_unity_catalog_sync_until_ready               via REFERENCES crates/causeway-metadata-ops/src/unity_catalog_sync.rs:419
+  Struct GovernanceService                                via REFERENCES component/governance/core/src/rpc.rs:25 [syntactic 0.50]
+  Const environment_reads::READ                          via REFERENCES bootstrap/cw-vsa/src/checks.rs:479 [syntactic 0.50]
+  Const ensure_present::ONE_PULL_AT_A_TIME               via REFERENCES crates/causeway-testkit/src/images.rs:228 [syntactic 0.50]
+  Method MetadataOpsContext::content_usage_policy         via REFERENCES crates/causeway-metadata-ops/src/repos.rs:166
+  Method MetadataOperatorRepos::contract_source_evidence  via REFERENCES crates/causeway-metadata-ops/src/repos.rs:22
+  Struct tests::RecordingIdentityWrite                    via REFERENCES component/semantic/pure/src/elements.rs:1219 [syntactic 0.50]
+  Test tests::database_tests::terms_sync_is_idempotent… via CALLS component/governance/terms/src/lib.rs:1145
+  Function embedded                                         via REFERENCES component/people/core/src/lib.rs:39 [syntactic 0.50]
+  Method PgPolicyRepo::writer                             via REFERENCES component/governance/policy/src/repo.rs:646 [syntactic 0.50]
+  Function tests::policy_context                            via REFERENCES apps/causeway-catalog-host/src/access.rs:313 [syntactic 0.50]
+  Function spawn_registry_listener                          via REFERENCES services/flightdeck/src/startup.rs:1178 [syntactic 0.50]
+  Function lock_capture                                     via REFERENCES ffi/wasm-dbt-demo/crates/dbt-demo-core/src/lib.rs:361 [syntactic 0.50]
+  Struct SemanticPresentation                             via REFERENCES component/semantic/graph/src/presentation.rs:35 [syntactic 0.50]
+  Method MetadataOpsContext::contract_drift_store         via REFERENCES crates/causeway-metadata-ops/src/repos.rs:74
+
+######## Q9 affected SearchSyncPass
+affected by a change to Enum SearchSyncPass (depth 3): 7 nodes
+depth 1 (3):
+  Function search_sync_pass                                 via USES_TYPE component/discovery/search/core/src/lib.rs:2258
+  Function run_search_sync_pass                             via USES_TYPE component/discovery/search/core/src/lib.rs:2381
+  File jobs/causeway-search-sync-worker/tests/search_i… via IMPORTS jobs/causeway-search-sync-worker/tests/search_indexing.rs:33 [syntactic 0.50]
+depth 2 (2):
+  Function run_search_sync_worker                           via CALLS component/discovery/search/core/src/lib.rs:2430
+  Test the_sync_worker_indexes_a_published_entry_and_a… via CALLS jobs/causeway-search-sync-worker/tests/search_indexing.rs:214
+depth 3 (2):
+  File apps/causeway-server/src/search.rs               via IMPORTS apps/causeway-server/src/search.rs:12-20 [syntactic 0.50]
+  Function run                                              via CALLS jobs/causeway-search-sync-worker/src/main.rs:83
+
+######## Q10 path worker main -> SearchSyncPass
+path from main to SearchSyncPass (5 hops, every hop certain):
+  Function main  (jobs/causeway-search-sync-worker/src/main.rs:42-45)
+  -> CALLS Function install_crypto_provider  (jobs/causeway-search-sync-worker/src/main.rs:43)
+  <- CALLS Function main  (apps/causeway-server-tools/src/bin/sync_teams.rs:21)
+  -> CALLS Method KafkaClientAuthProperties::iter  (apps/causeway-server-tools/src/bin/sync_teams.rs:53)
+  <- CALLS Function search_sync_pass  (component/discovery/search/core/src/lib.rs:2321)
+  -> USES_TYPE Enum SearchSyncPass  (component/discovery/search/core/src/lib.rs:2258)
+
+######## Q11 affected batch_get_parties
+affected by a change to Method PeopleRepo::batch_get_parties (depth 3): 2 nodes
+depth 1 (1):
+  Method PeopleService::batch_get_parties                 via CALLS component/people/core/src/rpc.rs:68 [syntactic 0.33]
+depth 2 (1):
+  Test tests::batch_resolves_refs_to_display_attributes via CALLS component/people/core/src/rpc.rs:243
+
+######## Q12 explain reconcile_in_transaction (catalog ingest)
+Method ResourceIdentityWrite::reconcile_in_transaction
+  id        rust:crates/resource-identity/src/lib.rs::ResourceIdentityWrite::reconcile_in_transaction
+  location  crates/resource-identity/src/lib.rs:38-43
+  signature async fn reconcile_in_transaction( &self, connection: &mut Connection, workspace_id: WorkspaceId, registrations: &[ResourceIdentityRegistration], ) -> Result<
+  doc       Reconciles canonical resources and aliases through `connection`.
+outgoing:
+  -> DISPATCHES_TO (12)
+     Method tests::database::RecordIdentityWrite::recon… component/catalog/core/src/ingest.rs:2502-2530 [resolved]
+     Method tests::database::RejectIdentityWrite::recon… component/catalog/core/src/ingest.rs:2566-2573 [resolved]
+     Method tests::database::RejectLifecycleWrite::reco… component/catalog/core/src/ingest.rs:2578-2589 [resolved]
+     Method tests::database_tests::RecordIdentityWrite:… component/governance/contracts/src/canonical_contract_repo.rs:2545-2573 [resolved]
+     Method tests::database_tests::RejectIdentityWrite:… component/governance/contracts/src/canonical_contract_repo.rs:2533-2540 [resolved]
+     Method tests::AcceptIdentityWrite::reconcile_in_tr… component/governance/contracts/src/semantic_read.rs:88-100 [resolved]
+     Method identity_tests::database_tests::RecordIdent… component/governance/policy/src/repo.rs:2112-2142 [resolved]
+     Method identity_tests::database_tests::RejectIdent… component/governance/policy/src/repo.rs:2100-2107 [resolved]
+     Method tests::database_tests::RecordIdentityWrite:… component/governance/terms/src/lib.rs:1015-1044 [resolved]
+     Method tests::database_tests::RejectIdentityWrite:… component/governance/terms/src/lib.rs:1003-1010 [resolved]
+     Method PgResourceIdentityRegistry::reconcile_in_tr… component/semantic/graph/src/lib.rs:373-403 [resolved]
+     Method tests::RecordingIdentityWrite::reconcile_in… component/semantic/pure/src/elements.rs:1224-1233 [resolved]
+  -> USES_TYPE (4)
+     Struct IdentityWriteError                           crates/resource-identity/src/lib.rs:43
+     Struct IdentityWriteReport                          crates/resource-identity/src/lib.rs:43
+     Struct ResourceIdentityRegistration                 crates/resource-identity/src/lib.rs:42
+     Struct WorkspaceId                                  crates/resource-identity/src/lib.rs:41
+incoming:
+  <- DEFINES (1)
+     Trait ResourceIdentityWrite                        crates/resource-identity/src/lib.rs:38-43
+
+######## Q13 affected workflow_reports
+affected by a change to Function workflow_reports (depth 3): 22 nodes
+depth 1 (2):
+  Test the_workflow_reporter_is_the_client_the_topolog… via CALLS apps/causeway-server/src/routes/access/tests.rs:240
+  Method RouteAccess::from_config                         via CALLS apps/causeway-server/src/routes/access.rs:113
+depth 2 (4):
+  Method ValkeyCache::connect                             via CALLS apps/causeway-server/src/cache.rs:262
+  Function client                                           via CALLS crates/causeway-testkit/tests/valkey.rs:37 [syntactic 0.33]
+  Method ValkeyConfig::connect_client                     via CALLS crates/causeway-runtime/src/resource.rs:1322 [syntactic 0.33]
+  Method Server::configure                                via CALLS apps/causeway-server/src/startup.rs:89
+depth 3 (16):
+  Function connect_raw                                      via CALLS apps/causeway-server/src/query_flight.rs:127 [syntactic 0.33]
+  Function connect_sql                                      via CALLS apps/causeway-server/src/query_flight.rs:57 [syntactic 0.33]
+  Function reconnect_after_backoff                          via CALLS apps/causeway-server/src/search.rs:614 [syntactic 0.33]
+  Function attach_cache                                     via CALLS apps/causeway-server/src/startup/runtime.rs:321
+  Function check_valkey                                     via CALLS apps/causeway-server/src/resource.rs:126
+  Test tests::every_class_of_stuck_work_reaches_one_su… via CALLS apps/causeway-server/src/metadata_admin/stuck_work.rs:427 [syntactic 0.33]
+  Method tests::HumanAuthenticator::authenticate          via CALLS component/catalog/core/src/approval.rs:618 [syntactic 0.25]
+  Test the_server_is_the_pinned_release                 via CALLS crates/causeway-testkit/tests/valkey.rs:45
+  Test two_workspaces_share_the_server_and_nothing_else via CALLS crates/causeway-testkit/tests/valkey.rs:82
+  Test a_test_process_finds_the_server_its_topology_na… via CALLS crates/causeway-testkit/tests/valkey.rs:162
+  Method tests::TestAuthenticator::authenticate           via CALLS component/governance/contracts/src/unity_catalog.rs:583 [syntactic 0.25]
+  Test a_value_set_from_the_host_is_read_from_the_host  via CALLS crates/causeway-testkit/tests/valkey.rs:64
+  Method tests::HumanAuthenticator::authenticate          via CALLS component/catalog/core/src/review.rs:1407 [syntactic 0.25]
+  Method ValkeyOutboxEventSink::from_topology_env         via CALLS crates/causeway-metadata-ops/src/event_outbox.rs:335
+  Function wait_for_valkey_event                            via CALLS crates/causeway-metadata-ops/src/outbox_smoke.rs:513
+  Function main                                             via CALLS apps/causeway-server/src/main.rs:20
+
+######## Q14 affected table taxonomy_placement_proposals
+affected by a change to Table public.taxonomy_placement_proposals (depth 3): 0 nodes
+
+######## Q15 explain ImageSource
+Enum ImageSource
+  id        rust:apps/causeway-server-web/src/views/external_article/images.rs::ImageSource
+  location  apps/causeway-server-web/src/views/external_article/images.rs:20-28
+  signature pub(super) enum ImageSource
+  doc       What an `<img>`'s `src` (or the absence of one) makes of the element.
+members (3):
+  Variant Loadable                                 apps/causeway-server-web/src/views/external_article/images.rs:23
+  Variant External                                 apps/causeway-server-web/src/views/external_article/images.rs:25
+  Variant Refused                                  apps/causeway-server-web/src/views/external_article/images.rs:27
+outgoing:
+  -> DEFINES (3)
+     Variant ImageSource::External                        apps/causeway-server-web/src/views/external_article/images.rs:25
+     Variant ImageSource::Loadable                        apps/causeway-server-web/src/views/external_article/images.rs:23
+     Variant ImageSource::Refused                         apps/causeway-server-web/src/views/external_article/images.rs:27
+incoming:
+  <- CONTAINS (1)
+     File apps/causeway-server-web/src/views/external… apps/causeway-server-web/src/views/external_article/images.rs:20-28
+  <- IMPORTS (1)
+     File apps/causeway-server-web/src/views/external… apps/causeway-server-web/src/views/external_article/content.rs:6
+  <- USES_TYPE (1)
+     Function classify                                     apps/causeway-server-web/src/views/external_article/images.rs:31
+
+######## Q17 explain S3Credentials
+Struct S3Credentials
+  id        rust:crates/causeway-testkit/src/garage.rs::S3Credentials
+  location  crates/causeway-testkit/src/garage.rs:132-135
+  signature pub struct S3Credentials
+  doc       The access key the testkit created, which every workspace's bucket is
+members (3):
+  Method access_key_id                            crates/causeway-testkit/src/garage.rs:140-142
+  Method secret_access_key                        crates/causeway-testkit/src/garage.rs:146-148
+  Method fmt                                      crates/causeway-testkit/src/garage.rs:152-157
+incoming:
+  <- CONTAINS (1)
+     File crates/causeway-testkit/src/garage.rs        crates/causeway-testkit/src/garage.rs:132-135
+  <- IMPORTS (2)
+     File crates/causeway-testkit/src/lib.rs           crates/causeway-testkit/src/lib.rs:67-70
+     File crates/causeway-testkit/src/topology.rs      crates/causeway-testkit/src/topology.rs:10
+  <- USES_TYPE (12)
+     Method Admin::bootstrap                             crates/causeway-testkit/src/garage.rs:235
+     Method Admin::create_bucket                         crates/causeway-testkit/src/garage.rs:279
+     Struct EphemeralObjectStore                         crates/causeway-testkit/src/garage.rs:314
+     Method EphemeralObjectStore::credentials            crates/causeway-testkit/src/garage.rs:438
+     Struct ObjectStoreWorkspace                         crates/causeway-testkit/src/garage.rs:511
+     Method ObjectStoreWorkspace::credentials            crates/causeway-testkit/src/garage.rs:541
+     Method ObjectStoreWorkspace::from_env               crates/causeway-testkit/src/garage.rs:591
+     Impl S3Credentials#impl                           crates/causeway-testkit/src/garage.rs:137-149
+     Impl S3Credentials#impl(Debug)                    crates/causeway-testkit/src/garage.rs:151-158
+     Test tests::a_workspace_bucket_is_the_cluster_bu… crates/causeway-testkit/src/garage.rs:632
+     Variant TopologyFragment::ObjectStore                crates/causeway-testkit/src/topology.rs:61
+     Test tests::every_fragment_points_its_service_at… crates/causeway-testkit/src/topology.rs:424
+
+######## Q18 affected PrefixedSettings
+affected by a change to Class PrefixedSettings (depth 3): 28 nodes
+depth 1 (5):
+  Class RelayWorkerSettings                              via EXTENDS torrentfx/packages-py/causeway-relay/src/causeway_relay/app.py:103
+  Class test_settings_without_a_prefix_cannot_be_declar… via EXTENDS torrentfx/packages-py/causeway-platform/tests/test_settings.py:175
+  Class ExampleSettings                                  via EXTENDS torrentfx/packages-py/causeway-platform/tests/test_settings.py:50
+  Class DatabricksSettings                               via EXTENDS services-py/unity-catalog-relay/src/config.py:59
+  Class SnowflakeConnection                              via EXTENDS services-py/snowflake-relay/src/config.py:52
+depth 2 (5):
+  Test test_settings_ignore_every_name_outside_their_p… via CALLS torrentfx/packages-py/causeway-platform/tests/test_settings.py:145
+  Test test_settings_are_read_under_their_prefix        via CALLS torrentfx/packages-py/causeway-platform/tests/test_settings.py:133
+  Test test_settings_are_frozen                         via CALLS torrentfx/packages-py/causeway-platform/tests/test_settings.py:180
+  Class UnityCatalogConfig                               via USES_TYPE services-py/unity-catalog-relay/src/config.py:97
+  Class SnowflakeConfig                                  via USES_TYPE services-py/snowflake-relay/src/config.py:79
+depth 3 (18):
+  Const app                                              via USES_TYPE services-py/unity-catalog-relay/src/server.py:31
+  Function list_schemas                                     via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:101
+  Function read_observed_entitlements                       via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:209
+  Function UnityCatalogConfig::from_env                     via USES_TYPE services-py/unity-catalog-relay/src/config.py:109
+  Function read_legacy_observed_entitlements                via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:233
+  Function _get_client                                      via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:35
+  Function apply_entitlement_plan                           via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:201
+  Function get_catalog_overview                             via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:80
+  Function apply_legacy_entitlement_plan                    via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:217
+  Class DatabricksUnityCatalogClient                     via USES_TYPE services-py/unity-catalog-relay/src/client.py:15
+  Function list_tables                                      via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:122
+  Function _catalog_name                                    via USES_TYPE services-py/unity-catalog-relay/src/unity_catalog.py:44
+  Class SnowflakeWarehouseClient                         via USES_TYPE services-py/snowflake-relay/src/client.py:16
+  Function read_observed_entitlements                       via USES_TYPE services-py/snowflake-relay/src/entitlements.py:358
+  Function SnowflakeConfig::from_env                        via USES_TYPE services-py/snowflake-relay/src/config.py:83
+  Function apply_entitlement_plan                           via USES_TYPE services-py/snowflake-relay/src/entitlements.py:350
+  Function _get_client                                      via USES_TYPE services-py/snowflake-relay/src/entitlements.py:30
+  Const app                                              via USES_TYPE services-py/snowflake-relay/src/server.py:21
+
+######## Q19 explain relayGrpcConfigFromEnv
+Function relayGrpcConfigFromEnv
+  id        typescript:services-node/relay-grpc/src/config.ts::relayGrpcConfigFromEnv
+  location  services-node/relay-grpc/src/config.ts:25-27
+  signature function relayGrpcConfigFromEnv(): RelayGrpcConfig
+outgoing:
+  -> CALLS (1)
+     Function serviceSettingsFromEnv                       services-node/relay-grpc/src/config.ts:26
+  -> TESTED_BY (1)
+     Test relayGrpcConfigFromEnv                       services-node/relay-grpc/tests/config.test.ts:70
+  -> USES_TYPE (1)
+     Interface RelayGrpcConfig                              services-node/relay-grpc/src/config.ts:25
+incoming:
+  <- CALLS (4)
+     File services-node/relay-grpc/src/server.ts       services-node/relay-grpc/src/server.ts:22 [syntactic 0.50]
+     Test relayGrpcConfigFromEnv                       services-node/relay-grpc/tests/config.test.ts:81
+     Test relayGrpcConfigFromEnv                       services-node/relay-grpc/tests/config.test.ts:78
+     Test relayGrpcConfigFromEnv                       services-node/relay-grpc/tests/config.test.ts:70
+  <- CONTAINS (1)
+     File services-node/relay-grpc/src/config.ts       services-node/relay-grpc/src/config.ts:25-27
+
+######## Q20 affected CspNonce
+affected by a change to Struct CspNonce (depth 3): 60 nodes
+depth 1 (7):
+  Method Source::write                                    via USES_TYPE apps/causeway-server/src/routes/security_headers.rs:103
+  File apps/causeway-server/src/routes/security_header… via IMPORTS apps/causeway-server/src/routes/security_headers.rs:28 [syntactic 0.50]
+  Method SecurityHeaders::add                             via USES_TYPE apps/causeway-server/src/routes/security_headers.rs:265
+  Method ContentSecurityPolicy::header_value              via USES_TYPE apps/causeway-server/src/routes/security_headers.rs:171
+  Impl CspNonce#impl                                    via USES_TYPE apps/causeway-server-web/src/csp.rs:35-64
+  Impl CspNonce#impl(Render)                            via USES_TYPE apps/causeway-server-web/src/csp.rs:72-76
+  Impl CspNonce#impl(Display)                           via USES_TYPE apps/causeway-server-web/src/csp.rs:66-70
+depth 2 (23):
+  Method RpcForwardError::fmt                             via CALLS apps/causeway-server/src/transport/rpc_forward.rs:98
+  Method FlightError::fmt                                 via CALLS apps/causeway-server/src/composition/flight_client.rs:27
+  Method AtlasError::fmt                                  via CALLS apps/causeway-server/src/atlas.rs:73
+  Function catalog_to_arrow_ipc                             via CALLS apps/causeway-server/src/ws/catalog/arrow.rs:82
+  Method DcatError::fmt                                   via CALLS apps/causeway-server/src/semantic_catalog.rs:70
+  Function tests::without_references                        via CALLS apps/causeway-server/src/startup/secrets.rs:139
+  Method MetadataAdminStartupError::fmt                   via CALLS apps/causeway-server/src/metadata_admin/service.rs:76
+  Method ObjectRefusal::fmt                               via CALLS apps/causeway-server/src/explorer/entry_object.rs:263
+  Method SocketRefusal::fmt                               via CALLS apps/causeway-server/src/socket_grant.rs:127
+  Function batch_to_ipc                                     via CALLS apps/causeway-server/src/query_flight.rs:181
+  Test tests::a_mounted_reference_is_the_secret_outsid… via CALLS apps/causeway-server/src/startup/secrets.rs:167
+  Method UnderReportingStore::fmt                         via CALLS apps/causeway-server/src/testing.rs:162
+  Method ExplorerDatasets::record                         via CALLS apps/causeway-server/src/explorer/governed.rs:477
+  Method ExplorerDatasets::forget                         via CALLS apps/causeway-server/src/explorer/governed.rs:499
+  Method CacheError::fmt                                  via CALLS apps/causeway-server/src/cache.rs:85
+  Method CountingStore::fmt                               via CALLS apps/causeway-server/src/testing.rs:57
+  Method RemoteClientConfigError::fmt                     via CALLS apps/causeway-server/src/composition/remote_services/config.rs:152
+  Function tests::with_references_under                     via CALLS apps/causeway-server/src/startup/secrets.rs:118
+  Method SecretFile::new                                  via CALLS apps/causeway-server/src/ws/tests/explorer.rs:179
+  Method SessionCookies::set_session                      via CALLS apps/causeway-server/src/browser_auth/session.rs:108
+  Function send                                             via CALLS apps/causeway-server/src/routes/security_headers.rs:315
+  Method SessionCookies::set_pending_login                via CALLS apps/causeway-server/src/browser_auth/session.rs:118
+  Test the_policy_evaluates_no_string_and_names_no_wil… via CALLS apps/causeway-server/src/routes/security_headers/tests.rs:171 [syntactic 0.50]
+depth 3 (30):
+  Function handle_catalog_block                             via CALLS apps/causeway-server/src/ws/catalog.rs:101
+  Test tests::the_block_carries_every_column_the_grid_… via CALLS apps/causeway-server/src/ws/catalog/arrow.rs:119
+  Test tests::neither_the_block_nor_the_prefetched_row… via CALLS apps/causeway-server/src/ws/catalog/arrow.rs:151
+  Module tests                                            via IMPORTS apps/causeway-server/src/ws/catalog/arrow.rs:94
+  Test tests::in_local_the_inline_token_is_the_fallbac… via CALLS apps/causeway-server/src/startup/secrets.rs:221
+  Test tests::outside_local_an_inline_token_with_no_re… via CALLS apps/causeway-server/src/startup/secrets.rs:179
+  Function send_query_batch                                 via CALLS apps/causeway-server/src/query_session/batch.rs:15
+  File apps/causeway-server/src/query_session/batch.rs  via IMPORTS apps/causeway-server/src/query_session/batch.rs:4
+  Function handle_frame                                     via CALLS apps/causeway-server/src/ws/router.rs:76 [syntactic 0.50]
+  Function record_search_feedback                           via CALLS apps/causeway-server/src/search.rs:166 [syntactic 0.50]
+  Function tests::seed_one_of_each                          via CALLS apps/causeway-server/src/metadata_admin/stuck_work.rs:618 [syntactic 0.50]
+  Method DecidedSession::load                             via CALLS apps/causeway-server/src/explorer/governed.rs:564
+  Method RunningInfra::detach                             via CALLS crates/causeway-testkit/src/infra.rs:382
+  Function make_observer                                    via CALLS ffi/wasm-ws-mock/tests/web.rs:50 [syntactic 0.50]
+  Function register_globals                                 via CALLS ffi/wasm-prism/src/lib.rs:247 [syntactic 0.50]
+  Function tests::registry_with_routes                      via CALLS torrentfx/crates/island-registry/src/lib.rs:547
+  Function destroy_session                                  via CALLS apps/causeway-server/src/explorer.rs:62
+  Test tests::a_deployment_that_mounts_nothing_starts_… via CALLS apps/causeway-server/src/startup/secrets.rs:153
+  Test tests::outside_local_an_inline_token_is_no_fall… via CALLS apps/causeway-server/src/startup/secrets.rs:201
+  Method Shell::start                                     via CALLS apps/causeway-server/src/ws/tests/explorer.rs:226
+  Method Shell::assert_nothing_reached                    via CALLS apps/causeway-server/src/ws/tests/explorer.rs:282
+  Method wire::Command::encode                            via CALLS apps/causeway-server/src/ws/tests/explorer.rs:105
+  Function every_command                                    via CALLS apps/causeway-server/src/ws/tests/explorer.rs:340
+  Test a_dataset_load_naming_storage_is_refused_before… via CALLS apps/causeway-server/src/ws/tests/explorer.rs:401
+  Test tests::a_session_round_trips_through_the_privat… via CALLS apps/causeway-server/src/browser_auth/session.rs:170
+  Function callback                                         via CALLS apps/causeway-server/src/browser_auth/handlers.rs:191 [syntactic 0.50]
+
+######## Q21 path security_headers -> CspNonce::generate
+path from security_headers to CspNonce::generate (4 hops, every hop certain):
+  Module security_headers  (apps/causeway-server/src/routes/mod.rs:15)
+  <- REFERENCES Method RouteAccess::with_security_headers  (apps/causeway-server/src/routes/access.rs:157)
+  -> USES_TYPE Struct SecurityHeaders  (apps/causeway-server/src/routes/access.rs:157)
+  <- USES_TYPE Function send  (apps/causeway-server/src/routes/security_headers.rs:309)
+  -> CALLS Method CspNonce::generate  (apps/causeway-server/src/routes/security_headers.rs:313)
+
+######## Q22 explain resolve_otel
+Error: no node matches "resolve_otel"
+
+######## Q23 affected register_restate_handlers
+Error: no node matches "register_restate_handlers"
