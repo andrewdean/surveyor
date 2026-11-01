@@ -1,5 +1,6 @@
 //! Edges: typed, provenance-bearing relationships between nodes.
 
+use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
 use serde::{Deserialize, Serialize};
@@ -260,6 +261,10 @@ pub struct Edge {
     pub provenance: Provenance,
     /// Declaration nodes this edge was resolved against; a change to any invalidates it.
     pub resolved_against: Vec<NodeId>,
+    /// Open-ended facts about the relationship itself, such as a manifest dependency's
+    /// section or whether it is optional. Empty for most edges.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, String>,
 }
 
 impl Edge {
@@ -286,7 +291,15 @@ impl Edge {
             kind,
             provenance,
             resolved_against: Vec::new(),
+            attributes: BTreeMap::new(),
         }
+    }
+
+    /// Attaches `attributes` to the edge and returns it.
+    #[must_use]
+    pub fn with_attributes(mut self, attributes: BTreeMap<String, String>) -> Self {
+        self.attributes.extend(attributes);
+        self
     }
 
     /// Records the declarations the edge was resolved against and returns the edge.

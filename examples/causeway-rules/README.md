@@ -32,8 +32,8 @@ checkout; "Surveyor" is what `surveyor check` printed from the dataset.
 | `runtime_env_resource_ctors` | `04-runtime-env-resource-ctors.rhai` | pass | pass | Agree. The graph knows which type a method belongs to; cw-vsa counts braces to find the impl block. |
 | `relay_restate_staging_order` | none | pass | — | **Blocked**: the check is the order of two lines in one task script. |
 | `component_cross_deps` | `06-component-cross-deps.rhai` | pass | pass | Agree, with one difference explained: the graph resolves component/Cargo.toml's `[patch]` of `fastembed` to `vendor/fastembed`, which `cargo metadata --no-deps` reports as a registry crate. The rule allows `vendor/` beside `crates/` and `services/`. |
-| `crypto_provider_installs` | `07-crypto-provider-installs.rhai` | failures only under `.claude/worktrees/`; main tree passes | pass | Agree on the main tree (see below). **Partial**: the graph has no resolved cargo features, so which workspaces link both rustls backends is a constant in the rule (from `cargo metadata` on this commit), and "reaches rustls" follows first-party manifests only, so a binary reaching rustls through a registry crate alone is not seen. |
-| `cargo_feature_isolation` (×2: `causeway-sniffer`, `parquet`) | none | pass | — | **Blocked**: DEPENDS_ON edges carry no `optional` or feature facts. The graph says causeway-server reaches `parquet` (an optional dependency) and `causeway-sniffer` (behind causeway-metadata-ops' `sniffer` feature, which the server turns off); `cargo tree --no-default-features` says neither is reachable. A rule over the graph would fail wrongly. |
+| `crypto_provider_installs` | `07-crypto-provider-installs.rhai` | failures only under `.claude/worktrees/`; main tree passes | pass | Agree on the main tree (see below). **Partial**: which workspaces link both rustls backends is decided by registry crates' features (tonic, reqwest), which the graph does not hold, so the list is a constant in the rule (from `cargo metadata` on this commit). "Reaches rustls" is now what a default build of the binary's package pulls in (`cargo_build`), so dev-only and disabled optional paths do not count; on this commit that judges the same 48 binaries as plain reachability did. A binary reaching rustls through a registry crate alone is still not seen. |
+| `cargo_feature_isolation` (×2: `causeway-sniffer`, `parquet`) | `09-cargo-feature-isolation.rhai` | pass | pass | Agree. DEPENDS_ON edges carry the entry's `section`, `optional`, `default_features` and `features`, Package nodes their `[features]` table, and `g.cargo_build(root, default_features)` resolves them as cargo does: the minimal build of causeway-server reaches neither crate, the default build reaches `parquet` (through the `tabular-explorer` default feature; the rule fires when run with defaults on), and `cargo tree` says the same for both. Registry crates are leaves, so a path through a registry crate's own dependencies would be missed; `workspace = true` entries are taken as written, without the `[workspace.dependencies]` definition. |
 | `facade_size_budget` | `02-facade-size-budget.rhai` | pass (largest 219 of 220 lines) | pass (ws.rs 219, agent.rs 185) | Agree. File nodes carry a `lines` attribute beside `bytes`; the graph counts every newline plus an unterminated last line, cw-vsa drops trailing blank lines first, and the two agree on any rustfmt-formatted file. |
 | `server_rpc_deps` | `10-server-rpc-deps.rhai` | 0 (budget 0) | 0 of 0 | Agree: the four orchestrator `*-rpc` crates and nothing else. |
 | `server_service_impls` | `11-server-service-impls.rhai` | 0 (budget 0) | 0 of 0 | Agree. The graph names the trait an impl is for; cw-vsa's second regex (`impl pb::.*Service`) would also match an inherent impl of a generated type, which is not an implementation. |
@@ -48,11 +48,13 @@ checkout; "Surveyor" is what `surveyor check` printed from the dataset.
 | `prefixed_settings` | none | pass | — | **Blocked**: as above, for `process.env.X` and `os.environ[...]` reads in Node and Python. |
 | `image_copy_modes` | none | pass | — | **Blocked**: the `--chmod` of each `COPY` per Dockerfile stage; the graph has no Dockerfile nodes for Causeway. |
 
-Totals: 21 named checks (22 rule instances). 10 ported with agreement, 2 ported partially
-(`crypto_provider_installs`, `cross-slice-schema-refs`), 9 blocked on facts the graph does
-not hold. No new `GraphHandle` API was needed: every gap is an extraction fact (task bodies,
-TOML content, Dockerfile flags, environment reads, resolved cargo features), not a missing
-graph query. `facade_size_budget` was blocked until File nodes gained a `lines` attribute.
+Totals: 21 named checks (22 rule instances). 11 ported with agreement, 2 ported partially
+(`crypto_provider_installs`, `cross-slice-schema-refs`), 8 blocked on facts the graph does
+not hold (task bodies, TOML content, Dockerfile flags, environment reads). Two checks were
+blocked until the graph gained facts: `facade_size_budget` needed a `lines` attribute on File
+nodes, and `cargo_feature_isolation` needed the optional, default-features and feature facts
+on Cargo `DEPENDS_ON` edges and Package nodes, plus `g.cargo_build`, the one `GraphHandle`
+addition, which resolves them the way cargo unifies features.
 
 ## The cw-vsa run itself
 
@@ -65,7 +67,7 @@ so its dataset holds only the main tree, where every named check passes in both 
 
 ## Each rule fires
 
-With all twelve rules passing on the real tree, each was also run against a scratch clone of
+With all thirteen rules passing on the real tree, each was also run against a scratch clone of
 Causeway with one violation planted per rule (a deleted required path, a `pub fn from_env`
 on `KafkaBrokers`, a component depending on a sibling area, `apps/drive` without the crypto
 provider call, a fifth `*-rpc` dependency in the server shell, an `impl pb::SearchService`
@@ -74,5 +76,7 @@ alone, an `INSERT INTO catalog_assets` from the articles slice, and `crates/caus
 restored with a dependent). All ten enforced rules failed on exactly the planted finding, with
 a citation to its line; the warn rule kept reporting its three orchestrators. The facade rule
 was shown to fire by lowering its budget to 150 lines in a scratch copy, which reported
-`ws.rs` (219) and `agent.rs` (185) and nothing else.
+`ws.rs` (219) and `agent.rs` (185) and nothing else. The feature-isolation rule was shown to
+fire by resolving the default build instead of the minimal one in a scratch copy, which
+reported parquet and not the sniffer, as `cargo tree -p causeway-server -i parquet` does.
 `check` over the 58,550-node, 327,286-edge dataset takes about 0.6 s.

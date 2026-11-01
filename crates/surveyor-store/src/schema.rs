@@ -64,6 +64,7 @@ pub(crate) fn edges_schema() -> SchemaRef {
         Field::new("observed_at", DataType::Int64, false),
         utf8("provenance", false),
         utf8("resolved_against", false),
+        utf8("attributes", false),
     ]))
 }
 
@@ -205,6 +206,7 @@ pub(crate) fn edges_batch(repo: &RepoId, edges: &[Edge]) -> Result<RecordBatch, 
     let mut observed = Int64Builder::new();
     let mut provenance = StringBuilder::new();
     let mut against = StringBuilder::new();
+    let mut attributes = StringBuilder::new();
     for e in edges {
         id.append_value(e.id.as_str());
         repo_b.append_value(repo.as_str());
@@ -222,6 +224,7 @@ pub(crate) fn edges_batch(repo: &RepoId, edges: &[Edge]) -> Result<RecordBatch, 
         observed.append_value(e.provenance.observed_at.as_unix_millis());
         provenance.append_value(serde_json::to_string(&e.provenance)?);
         against.append_value(serde_json::to_string(&e.resolved_against)?);
+        attributes.append_value(serde_json::to_string(&e.attributes)?);
     }
     finish(
         vec![
@@ -236,6 +239,7 @@ pub(crate) fn edges_batch(repo: &RepoId, edges: &[Edge]) -> Result<RecordBatch, 
             Arc::new(observed.finish()),
             Arc::new(provenance.finish()),
             Arc::new(against.finish()),
+            Arc::new(attributes.finish()),
         ],
         edges_schema(),
     )
@@ -492,6 +496,9 @@ pub(crate) fn edges_from_batch(batch: &RecordBatch) -> Result<Vec<Edge>, StoreEr
             kind: c.parsed::<EdgeKind>("kind", row)?,
             provenance: serde_json::from_str::<Provenance>(c.req("provenance", row)?)?,
             resolved_against: serde_json::from_str::<Vec<NodeId>>(c.req("resolved_against", row)?)?,
+            attributes: serde_json::from_str::<BTreeMap<String, String>>(
+                c.req("attributes", row)?,
+            )?,
         })
     })
 }

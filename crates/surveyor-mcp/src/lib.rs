@@ -84,6 +84,8 @@ struct EdgeView {
     derivation: String,
     confidence: f32,
     evidence: Vec<String>,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    attributes: std::collections::BTreeMap<String, String>,
 }
 
 impl EdgeView {
@@ -100,6 +102,7 @@ impl EdgeView {
                 .iter()
                 .map(surveyor_model::Evidence::citation)
                 .collect(),
+            attributes: e.attributes.clone(),
         }
     }
 }

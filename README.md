@@ -184,8 +184,10 @@ fn check(g) {
 ```
 
 `g` offers `nodes`, `nodes_under`, `node`, `edges`, `edges_from`, `edges_to`, `out`,
-`inn`, `package_of`, `reaches`, `cycles` and `count`; `const SEVERITY` is `fail`
-(default), `warn` or `budget` with `const BUDGET`. Scripts run sandboxed.
+`inn`, `package_of`, `reaches`, `cycles`, `count` and `cargo_build` (what a build of a
+Cargo package pulls in, from the optional, default-features and feature facts on its
+manifest edges); `const SEVERITY` is `fail` (default), `warn` or `budget` with
+`const BUDGET`. Scripts run sandboxed.
 
 `examples/causeway-rules/` ports the named checks of Causeway's VSA gate to rules over
 the graph, with the comparison against the original and the checks the graph cannot answer.

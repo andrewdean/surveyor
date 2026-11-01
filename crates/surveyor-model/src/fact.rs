@@ -286,6 +286,10 @@ pub struct DeclaredRelation {
     pub span: TextSpan,
     /// Hash of the declaring text, for evidence.
     pub hash: ContentHash,
+    /// Facts about the relationship the declaration states beyond its endpoints, such as
+    /// a dependency's section or optionality; they become the edge's attributes.
+    #[serde(default)]
+    pub attributes: BTreeMap<String, String>,
 }
 
 /// Where a precise resolver says a reference points.

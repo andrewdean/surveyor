@@ -26,12 +26,19 @@
 //! every edge carries its `citation`, so a violation points at a line. `violation(at,
 //! message)` builds one from a node or an edge.
 //!
+//! `cargo_build(package, default_features)` resolves what a build of a Cargo package
+//! pulls in from the manifest facts on `DEPENDS_ON` edges and Package nodes (see
+//! [`cargo`]): a map with `packages` (each package reached, to the features enabled on
+//! it) and `via` (each reached package, to the one it was first reached from).
+//!
 //! Severity `fail` fails the check on any violation; `warn` reports without failing;
 //! `budget` fails when the count exceeds `const BUDGET`, which is how a known debt is
 //! held and burned down. Scripts run sandboxed: no imports, no file access, bounded
 //! operations.
 
 // Rust guideline compliant 2026-02-21
+
+pub mod cargo;
 
 use std::backtrace::Backtrace;
 use std::fmt::{self, Display, Formatter};
@@ -258,6 +265,12 @@ fn edge_map(e: &Edge) -> Map {
             Dynamic::from(ev.location.file.to_string())
         }),
     );
+    let attrs: Map = e
+        .attributes
+        .iter()
+        .map(|(k, v)| (k.as_str().into(), Dynamic::from(v.clone())))
+        .collect();
+    m.insert("attributes".into(), Dynamic::from_map(attrs));
     m
 }
 
@@ -440,6 +453,43 @@ impl GraphHandle {
     fn count(&mut self, kind: &str) -> i64 {
         i64::try_from(self.nodes(kind).len()).unwrap_or(i64::MAX)
     }
+
+    /// What a build of the Cargo package `root` pulls in, as `#{ packages, via }`.
+    fn cargo_build(&mut self, root: &str, default_features: bool) -> Map {
+        let graph = &self.0;
+        let depends_on = EdgeFilter::default().with_kinds(vec![EdgeKind::DependsOn]);
+        let features_of = |id: &str| {
+            graph
+                .node(&NodeId::new(id))
+                .map(cargo::feature_table)
+                .unwrap_or_default()
+        };
+        let dependencies_of = |id: &str| {
+            graph
+                .neighbors(&NodeId::new(id), Direction::Outgoing, &depends_on)
+                .into_iter()
+                .map(|n| cargo::Dependency::from_edge(n.edge, n.node))
+                .collect()
+        };
+        let build = cargo::resolve(root, default_features, features_of, dependencies_of);
+        let packages: Map = build
+            .features
+            .iter()
+            .map(|(package, features)| {
+                let list: Array = features.iter().map(|f| Dynamic::from(f.clone())).collect();
+                (package.as_str().into(), Dynamic::from_array(list))
+            })
+            .collect();
+        let via: Map = build
+            .via
+            .iter()
+            .map(|(package, from)| (package.as_str().into(), Dynamic::from(from.clone())))
+            .collect();
+        let mut m = Map::new();
+        m.insert("packages".into(), Dynamic::from_map(packages));
+        m.insert("via".into(), Dynamic::from_map(via));
+        m
+    }
 }
 
 /// `violation(at, message)`: a finding about a node map or an edge map.
@@ -484,6 +534,7 @@ fn engine() -> Engine {
         .register_fn("reaches", GraphHandle::reaches)
         .register_fn("cycles", GraphHandle::cycles)
         .register_fn("count", GraphHandle::count)
+        .register_fn("cargo_build", GraphHandle::cargo_build)
         .register_fn("violation", violation);
     engine
 }
@@ -721,6 +772,33 @@ mod tests {
     }
 
     #[test]
+    fn cargo_build_follows_dependency_facts() {
+        let rules = RuleSet::from_sources(&[(
+            "build.rhai",
+            r#"
+                fn check(g) {
+                    let out = [];
+                    let build = g.cargo_build("pkg:cargo/a", true);
+                    for p in ["pkg:cargo/a", "pkg:cargo/b", "pkg:cargo/lancedb"] {
+                        if !build.packages.contains(p) { out.push(#{ message: "missing " + p }); }
+                    }
+                    if build.via["pkg:cargo/lancedb"] != "pkg:cargo/a" { out.push(#{ message: "via" }); }
+                    if build.packages["pkg:cargo/b"] != ["default"] { out.push(#{ message: "features" }); }
+                    if g.cargo_build("pkg:cargo/nowhere", false).packages.len() != 1 { out.push(#{ message: "unknown root" }); }
+                    out
+                }
+            "#,
+        )])
+        .expect("compiles");
+        let report = rules.run(graph()).expect("runs");
+        assert!(
+            report.outcomes[0].violations.is_empty(),
+            "{:?}",
+            report.outcomes[0]
+        );
+    }
+
+    #[test]
     fn rules_run_with_severities_and_citations() {
         let rules = RuleSet::from_sources(&[
             ("lance.rhai", r#"
@@ -818,6 +896,7 @@ mod tests {
                 "runtime-env-resource-ctors",
                 "component-cross-deps",
                 "crypto-provider-installs",
+                "cargo-feature-isolation",
                 "server-rpc-contract-deps",
                 "server-rpc-service-impls",
                 "server-orchestrators",

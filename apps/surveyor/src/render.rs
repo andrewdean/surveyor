@@ -127,6 +127,14 @@ fn cite(e: &Edge) -> String {
     } else if d != surveyor_model::DerivationKind::Syntactic {
         s = format!("{s} [{d}]");
     }
+    if !e.attributes.is_empty() {
+        let attrs: Vec<String> = e
+            .attributes
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        s = format!("{s} {{{}}}", attrs.join(", "));
+    }
     s
 }
 

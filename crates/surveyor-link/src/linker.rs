@@ -4,7 +4,7 @@
 //! helpers in `resolve`, and appends nodes or edges. The builder is the one place
 //! that mutates; everything it consults returns values.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use surveyor_model::{
     ByteSpan, Confidence, ContentHash, DeclarationFact, DeclaredRelation, DeclaredSource, Edge,
@@ -266,8 +266,22 @@ impl<'a> Builder<'a> {
         provenance: Provenance,
         against: Vec<NodeId>,
     ) {
+        self.push_edge_with(src, kind, dst, provenance, against, BTreeMap::new());
+    }
+
+    /// Like [`Self::push_edge`], with facts about the relationship itself.
+    fn push_edge_with(
+        &mut self,
+        src: usize,
+        kind: EdgeKind,
+        dst: usize,
+        provenance: Provenance,
+        against: Vec<NodeId>,
+        attributes: BTreeMap<String, String>,
+    ) {
         let edge = Edge::new(self.node_id(src), kind, self.node_id(dst), provenance)
-            .resolved_against(against);
+            .resolved_against(against)
+            .with_attributes(attributes);
         if self.edge_ids.insert(edge.id.clone()) {
             self.edges.push(edge);
         }
@@ -711,7 +725,7 @@ impl<'a> Builder<'a> {
                     .insert(to);
             }
             let prov = self.declared(r.source.clone(), &set.path, r.span, r.hash);
-            self.push_edge(src, r.kind.clone(), dst, prov, Vec::new());
+            self.push_edge_with(src, r.kind.clone(), dst, prov, Vec::new(), r.attributes);
         }
     }
 
@@ -1824,7 +1838,6 @@ fn same_family(a: &Language, b: &Language) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
 
     use surveyor_extract::{
         Extractors, ManifestExtractor, SqlDialect, SqlExtractor, TreeSitterExtractor, extract_units,

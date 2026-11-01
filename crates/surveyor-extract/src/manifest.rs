@@ -4,6 +4,14 @@
 //! relation per dependency. Dependencies are named by registry coordinate so a shared
 //! library links its consumers across repositories. Evidence points at the line that
 //! names the dependency.
+//!
+//! A Cargo dependency also carries what its entry says, as attributes of the relation:
+//! `section` (`normal`, `dev` or `build`), `key` (the name the entry uses, which is what
+//! `dep:key` and `key/feature` refer to), `optional`, `default_features`, the requested
+//! `features` (comma-separated, when any) and `workspace = "true"` when the entry
+//! inherits a `[workspace.dependencies]` definition this extractor does not see. The
+//! package's `[features]` table becomes one `feature.<name>` attribute per feature,
+//! holding the comma-separated list it enables.
 
 use std::collections::BTreeMap;
 
@@ -103,7 +111,13 @@ fn package_decl(
     })
 }
 
-fn depends_on(unit: &SourceUnit, src: &str, dst: &str, bytes: ByteSpan) -> Fact {
+fn depends_on(
+    unit: &SourceUnit,
+    src: &str,
+    dst: &str,
+    bytes: ByteSpan,
+    attributes: BTreeMap<String, String>,
+) -> Fact {
     Fact::Relation(DeclaredRelation {
         kind: EdgeKind::DependsOn,
         src_kind: NodeKind::Package,
@@ -113,7 +127,92 @@ fn depends_on(unit: &SourceUnit, src: &str, dst: &str, bytes: ByteSpan) -> Fact 
         source: DeclaredSource::Manifest,
         span: unit.text_span(bytes),
         hash: unit.hash_of(bytes),
+        attributes,
     })
+}
+
+/// Which Cargo manifest section names a dependency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CargoSection {
+    Normal,
+    Dev,
+    Build,
+}
+
+impl CargoSection {
+    const ALL: [Self; 3] = [Self::Normal, Self::Dev, Self::Build];
+
+    /// The table name in the manifest.
+    fn table(self) -> &'static str {
+        match self {
+            Self::Normal => "dependencies",
+            Self::Dev => "dev-dependencies",
+            Self::Build => "build-dependencies",
+        }
+    }
+
+    /// The value of the relation's `section` attribute.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Dev => "dev",
+            Self::Build => "build",
+        }
+    }
+}
+
+/// Comma-separated string values of a TOML array; empty when `value` is not one.
+fn joined_strings(value: Option<&toml::Value>) -> String {
+    value
+        .and_then(toml::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_default()
+}
+
+/// What one Cargo dependency entry states, as relation attributes.
+///
+/// A plain version string (`tempfile = "3"`) has no table keys, so it is a required,
+/// default-features dependency with no requested features.
+fn cargo_dependency_attributes(
+    section: CargoSection,
+    key: &str,
+    value: &toml::Value,
+) -> BTreeMap<String, String> {
+    let flag = |name: &str| value.get(name).and_then(toml::Value::as_bool);
+    let mut attrs = BTreeMap::new();
+    attrs.insert("section".to_owned(), section.as_str().to_owned());
+    attrs.insert("key".to_owned(), key.to_owned());
+    attrs.insert(
+        "optional".to_owned(),
+        flag("optional").unwrap_or(false).to_string(),
+    );
+    attrs.insert(
+        "default_features".to_owned(),
+        flag("default-features").unwrap_or(true).to_string(),
+    );
+    if flag("workspace") == Some(true) {
+        attrs.insert("workspace".to_owned(), "true".to_owned());
+    }
+    let features = joined_strings(value.get("features"));
+    if !features.is_empty() {
+        attrs.insert("features".to_owned(), features);
+    }
+    attrs
+}
+
+/// The package's `[features]` table as `feature.<name>` attributes.
+fn cargo_feature_attributes(doc: &toml::Table) -> impl Iterator<Item = (String, String)> + '_ {
+    doc.get("features")
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flat_map(|features| features.iter())
+        .map(|(name, enables)| (format!("feature.{name}"), joined_strings(Some(enables))))
 }
 
 /// Span of the first line matching `predicate`, searched after `after` (a byte offset).
@@ -186,6 +285,7 @@ fn cargo_facts(text: &str, unit: &SourceUnit, set: &mut FactSet) -> Result<(), E
             {
                 attrs.insert("version".to_owned(), v.to_owned());
             }
+            attrs.extend(cargo_feature_attributes(&doc));
             set.facts.push(package_decl(
                 unit,
                 NodeKind::Package,
@@ -224,24 +324,31 @@ fn cargo_facts(text: &str, unit: &SourceUnit, set: &mut FactSet) -> Result<(), E
     };
 
     let Some(src) = src else { return Ok(()) };
-    let sections = ["dependencies", "dev-dependencies", "build-dependencies"];
-    set.facts.extend(sections.iter().flat_map(|section| {
-        let after = section_offset(text, &format!("[{section}]")).unwrap_or(0);
-        doc.get(*section)
-            .and_then(toml::Value::as_table)
-            .into_iter()
-            .flat_map(|deps| deps.iter())
-            .map(|(key, value)| {
-                // `foo = { package = "bar" }` renames the crate; the registry name is `bar`.
-                let crate_name = value
-                    .get("package")
-                    .and_then(toml::Value::as_str)
-                    .unwrap_or(key.as_str());
-                let span = key_line(text, after, key).unwrap_or_else(|| whole(unit));
-                depends_on(unit, &src, &Registry::Cargo.coordinate(crate_name), span)
-            })
-            .collect::<Vec<_>>()
-    }));
+    let src = src.as_str();
+    set.facts
+        .extend(CargoSection::ALL.iter().flat_map(|&section| {
+            let after = section_offset(text, &format!("[{}]", section.table())).unwrap_or(0);
+            doc.get(section.table())
+                .and_then(toml::Value::as_table)
+                .into_iter()
+                .flat_map(|deps| deps.iter())
+                .map(move |(key, value)| {
+                    // `foo = { package = "bar" }` renames the crate; the registry name is `bar`.
+                    let crate_name = value
+                        .get("package")
+                        .and_then(toml::Value::as_str)
+                        .unwrap_or(key.as_str());
+                    let span = key_line(text, after, key).unwrap_or_else(|| whole(unit));
+                    depends_on(
+                        unit,
+                        src,
+                        &Registry::Cargo.coordinate(crate_name),
+                        span,
+                        cargo_dependency_attributes(section, key, value),
+                    )
+                })
+                .collect::<Vec<_>>()
+        }));
     Ok(())
 }
 
@@ -279,6 +386,7 @@ fn npm_facts(text: &str, unit: &SourceUnit, set: &mut FactSet) -> Result<(), Ext
                 &coord,
                 &Registry::Npm.coordinate(key),
                 span,
+                BTreeMap::new(),
             ));
         }
     }
@@ -329,6 +437,7 @@ fn pyproject_facts(text: &str, unit: &SourceUnit, set: &mut FactSet) -> Result<(
                 &coord,
                 &Registry::PyPi.coordinate(&dep_name),
                 span,
+                BTreeMap::new(),
             ));
         }
     }
@@ -376,6 +485,48 @@ mod tests {
             .find(|r| r.dst_name == "cargo/tokio")
             .expect("tokio");
         assert_eq!(u.slice(tokio.span.bytes), "tokio = { version = \"1\" }");
+    }
+
+    #[test]
+    fn cargo_dependency_and_feature_facts() {
+        let text = "[package]\nname = \"server\"\nversion = \"0.1.0\"\n\n[features]\ndefault = [\"sniff\"]\nsniff = [\"dep:sniffer\"]\n\n[dependencies]\ntokio = { workspace = true, features = [\"rt\", \"macros\"] }\nsniffer = { path = \"../sniffer\", optional = true }\nops = { path = \"../ops\", default-features = false }\n\n[dev-dependencies]\ntempfile = \"3\"\n\n[build-dependencies]\ncc = \"1\"\n";
+        let u = unit("apps/server/Cargo.toml", text);
+        let facts = ManifestExtractor::new().extract(&u).expect("parses");
+        let pkg = facts.declarations().next().expect("package");
+        assert_eq!(
+            pkg.attributes.get("feature.default").map(String::as_str),
+            Some("sniff")
+        );
+        assert_eq!(
+            pkg.attributes.get("feature.sniff").map(String::as_str),
+            Some("dep:sniffer")
+        );
+
+        let attrs = |dst: &str| {
+            facts
+                .relations()
+                .find(|r| r.dst_name == dst)
+                .map_or_else(|| panic!("relation to {dst}"), |r| r.attributes.clone())
+        };
+        let get = |m: &BTreeMap<String, String>, k: &str| m.get(k).cloned();
+        let tokio = attrs("cargo/tokio");
+        assert_eq!(get(&tokio, "section").as_deref(), Some("normal"));
+        assert_eq!(get(&tokio, "key").as_deref(), Some("tokio"));
+        assert_eq!(get(&tokio, "optional").as_deref(), Some("false"));
+        assert_eq!(get(&tokio, "default_features").as_deref(), Some("true"));
+        assert_eq!(get(&tokio, "workspace").as_deref(), Some("true"));
+        assert_eq!(get(&tokio, "features").as_deref(), Some("rt,macros"));
+        let sniffer = attrs("cargo/sniffer");
+        assert_eq!(get(&sniffer, "optional").as_deref(), Some("true"));
+        assert_eq!(get(&sniffer, "features"), None);
+        assert_eq!(get(&sniffer, "workspace"), None);
+        let ops = attrs("cargo/ops");
+        assert_eq!(get(&ops, "default_features").as_deref(), Some("false"));
+        assert_eq!(
+            get(&attrs("cargo/tempfile"), "section").as_deref(),
+            Some("dev")
+        );
+        assert_eq!(get(&attrs("cargo/cc"), "section").as_deref(), Some("build"));
     }
 
     #[test]
