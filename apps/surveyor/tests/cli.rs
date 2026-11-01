@@ -416,3 +416,50 @@ fn index_and_answer_phase_zero_questions() {
             .all(|u| u["name"] != "publish")
     );
 }
+
+#[test]
+fn an_external_profile_includes_hidden_directories() {
+    // The fixture's `.mise/` is hidden, so the default walk never sees it: without a
+    // node, `explain rollout` is an error.
+    let plain = tempfile::tempdir().expect("tempdir");
+    let plain_store = plain.path().join("db");
+    surveyor(&plain_store, &["index"]);
+    let output = Command::new(env!("CARGO_BIN_EXE_surveyor"))
+        .args(["--repo-root"])
+        .arg(fixture())
+        .arg("--store")
+        .arg(&plain_store)
+        .args(["explain", "rollout"])
+        .output()
+        .expect("runs");
+    assert!(
+        !output.status.success(),
+        "hidden task is not indexed by default"
+    );
+
+    // A profile outside the repository (Causeway cannot carry one) includes it.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let profile = dir.path().join("mini.toml");
+    let text = std::fs::read_to_string(fixture().join("surveyor.toml")).expect("fixture profile");
+    std::fs::write(&profile, format!("{text}\n[walk]\ninclude = [\".mise\"]\n")).expect("write");
+    let store = dir.path().join("db");
+    let profile = profile.to_string_lossy().into_owned();
+    surveyor(&store, &["--profile", &profile, "index"]);
+    let explain = surveyor(&store, &["--profile", &profile, "explain", "rollout"]);
+    assert_eq!(explain["node"]["file"], ".mise/tasks/rollout.rhai");
+    let callers: Vec<&str> = relations(&explain, "incoming", "CALLS")
+        .iter()
+        .map(|r| r["node"]["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(callers, vec!["rhai:.mise/tasks/ship.rhai::ship"]);
+    // The same tree without the include lists the hidden file as gone on update.
+    let updated = surveyor(&store, &["update"]);
+    assert!(
+        updated["deleted"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p == ".mise/tasks/rollout.rhai"),
+        "{updated}"
+    );
+}

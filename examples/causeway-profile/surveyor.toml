@@ -1,0 +1,22 @@
+# Surveyor profile for the Causeway checkout, kept here because Causeway does not
+# carry one yet. Use it with `--profile examples/causeway-profile/surveyor.toml`.
+
+[repository]
+id = "causeway"
+
+[walk]
+# Hidden directories to walk: the mise task and library scripts (159 Rhai files)
+# are the automation that the exit test's Rhai questions ask about. Every other
+# dot-directory (`.claude/` with its stale worktrees, `.idea/`, `.jj/`) stays out.
+include = [".mise"]
+
+[sql]
+dialect = "postgresql"
+default_schema = "public"
+
+[docs]
+designs = ["docs/rfd/**/*.md", "docs/rfds/**/*.md", "docs/adr/**/*.md", "docs/design/**/*.md"]
+runbooks = ["docs/runbooks/**/*.md", "runbooks/**/*.md"]
+
+[rules]
+dirs = ["surveyor-rules"]

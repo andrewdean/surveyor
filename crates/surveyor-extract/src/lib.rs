@@ -77,6 +77,13 @@ pub use treesitter::TreeSitterExtractor;
 #[doc(inline)]
 pub use walk::{ChangeSource, FileChanges, Repository};
 
+/// Bumped whenever an extractor produces different facts for the same file without a
+/// query pack changing: a span computed differently, a new reference form.
+///
+/// Part of the engine fingerprint a dataset records, with [`query_pack_fingerprint`],
+/// so `surveyor update` re-indexes in full rather than mixing old and new facts.
+pub const EXTRACT_REVISION: u32 = 1;
+
 /// A hash of the embedded query packs: part of the engine fingerprint a dataset records.
 ///
 /// Two builds with the same version but different packs produce different facts for the

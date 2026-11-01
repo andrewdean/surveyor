@@ -17,8 +17,8 @@ use crate::render::{self, Output, Updated};
 /// Directory under the repository root that holds the dataset.
 const STORE_DIR: &str = ".surveyor";
 
-/// The engine that writes a dataset: crate version, query packs, linker revision and
-/// the precise indexes it merges.
+/// The engine that writes a dataset: crate version, query packs, extractor and linker
+/// revisions and the precise indexes it merges.
 ///
 /// A dataset written by a different engine, or from different SCIP indexes, is
 /// re-indexed in full on `update`, because facts from two engines or two indexes
@@ -34,6 +34,9 @@ fn engine_version(inputs: &[PathBuf]) -> String {
         })
         .collect();
     let parts = std::iter::once(surveyor_extract::query_pack_fingerprint().to_hex())
+        .chain(std::iter::once(
+            surveyor_extract::EXTRACT_REVISION.to_string(),
+        ))
         .chain(std::iter::once(surveyor_link::LINK_REVISION.to_string()))
         .chain(index_hashes)
         .collect::<Vec<_>>();
@@ -67,6 +70,10 @@ pub struct Cli {
     /// Repository identifier inside the dataset (defaults to the profile or directory name).
     #[arg(long, global = true, env = "SURVEYOR_REPO_ID")]
     pub repo_id: Option<String>,
+    /// Profile file to use instead of `<repo-root>/surveyor.toml`, for a repository
+    /// that cannot carry one.
+    #[arg(long, global = true, env = "SURVEYOR_PROFILE")]
+    pub profile: Option<PathBuf>,
     /// Emit JSON instead of text.
     #[arg(long, global = true)]
     pub json: bool,
@@ -259,6 +266,16 @@ struct Paths {
     store: PathBuf,
 }
 
+/// The profile: `--profile` when given, else `<repo-root>/surveyor.toml` or the defaults.
+fn load_profile(cli: &Cli, p: &Paths) -> anyhow::Result<Profile> {
+    match &cli.profile {
+        Some(file) => {
+            Profile::load_file(file).with_context(|| format!("load profile {}", file.display()))
+        }
+        None => Profile::load(&p.root).context("load surveyor.toml"),
+    }
+}
+
 fn paths(cli: &Cli) -> anyhow::Result<Paths> {
     let root = match &cli.repo_root {
         Some(r) => r.clone(),
@@ -287,7 +304,10 @@ async fn open_graph(cli: &Cli, p: &Paths) -> anyhow::Result<(LanceStore, CodeGra
             0 => bail!("dataset at {} has no indexed repository", p.store.display()),
             1 => snapshots[0].repo.clone(),
             _ => {
-                let guess = Repository::open(&p.root, None).map(|r| r.id().clone()).ok();
+                let guess = load_profile(cli, p)
+                    .and_then(|profile| Ok(Repository::open_with(&p.root, None, &profile)?))
+                    .map(|r| r.id().clone())
+                    .ok();
                 match guess.filter(|g| snapshots.iter().any(|s| &s.repo == g)) {
                     Some(g) => g,
                     None => bail!(
@@ -447,7 +467,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Check(a) => {
             let (_, graph, _) = open_graph(&cli, &p).await?;
-            let profile = Profile::load(&p.root).context("load surveyor.toml")?;
+            let profile = load_profile(&cli, &p)?;
             let (dirs, files) = rule_sources(&p.root, &profile, &a.rules);
             let rules = match surveyor_rules::RuleSet::load(&dirs, &files) {
                 Ok(rules) => rules,
@@ -480,7 +500,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Mcp => {
             let (store, graph, repo) = open_graph(&cli, &p).await?;
-            let profile = Profile::load(&p.root).context("load surveyor.toml")?;
+            let profile = load_profile(&cli, &p)?;
             let (dirs, files) = rule_sources(&p.root, &profile, &[]);
             let rules = surveyor_rules::RuleSet::load(&dirs, &files).context("load rules")?;
             surveyor_mcp::serve_stdio(store, graph, repo, p.root.clone(), rules)
@@ -591,9 +611,9 @@ async fn run_index(cli: &Cli, p: &Paths, scip: &[PathBuf], out: &Output) -> anyh
 
 async fn index(cli: &Cli, p: &Paths, scip: &[PathBuf]) -> anyhow::Result<Indexed> {
     let started = Instant::now();
-    let repo = Repository::open(&p.root, cli.repo_id.as_deref().map(RepoId::new))
+    let profile = load_profile(cli, p)?;
+    let repo = Repository::open_with(&p.root, cli.repo_id.as_deref().map(RepoId::new), &profile)
         .context("open repository")?;
-    let profile = Profile::load(&p.root).context("load surveyor.toml")?;
     let indexes = scip_indexes(&profile, &p.root, scip)?;
     tracing::info!(repo = %repo.id(), commit = %repo.commit(), root = %p.root.display(), scip = indexes.len(), "indexing");
 
@@ -645,9 +665,9 @@ async fn index(cli: &Cli, p: &Paths, scip: &[PathBuf]) -> anyhow::Result<Indexed
 /// when the plan would relink more than `--full-threshold` of the files.
 async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow::Result<()> {
     let started = Instant::now();
-    let repo = Repository::open(&p.root, cli.repo_id.as_deref().map(RepoId::new))
+    let profile = load_profile(cli, p)?;
+    let repo = Repository::open_with(&p.root, cli.repo_id.as_deref().map(RepoId::new), &profile)
         .context("open repository")?;
-    let profile = Profile::load(&p.root).context("load surveyor.toml")?;
     if !p.store.exists() {
         return full(cli, p, out, "no dataset", started).await;
     }

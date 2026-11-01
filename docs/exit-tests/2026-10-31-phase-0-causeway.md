@@ -62,8 +62,8 @@ A tool that reports an ambiguous name honestly is not penalized for asking.
 | 16 | 981 | explain `relayGrpcConfigFromEnv` (TypeScript) | calls `serviceSettingsFromEnv`; `TESTED_BY`; four callers (`server.ts:22`, three test calls) | calls `serviceSettingsFromEnv`; one test, two imports | Surveyor |
 | 17 | 980 | affected `CspNonce` | depth 1: `Source::write`, `ContentSecurityPolicy::header_value`, `SecurityHeaders::add`, the import, three impls | methods, `Render`, the same three users and the import | match at depth 1; Surveyor's depth 2 is wrong (D3) |
 | 18 | 980 | path `security_headers` to `CspNonce::generate` | four certain hops ending at the call in `send` (`security_headers.rs:313`) | two hops: file imports `CspNonce`, which has method `generate` | match |
-| 19 | 1007 | explain Rhai `resolve_otel` | no node | no node | both fail: `.mise/` is a hidden directory (D4) |
-| 20 | 998 | affected Rhai `register_restate_handlers` | no node | no node | both fail (D4) |
+| 19 | 1007 | explain Rhai `resolve_otel` | no node | no node | both fail: `.mise/` is a hidden directory (D4). After the fix: refuses the bare name because `cluster.rhai` overloads it (1116-1118 and 1120-1140); the two-parameter identifier shows its four callees and its callers, `dev/run.rhai:66` among them |
+| 20 | 998 | affected Rhai `register_restate_handlers` | no node | no node | both fail (D4). After the fix: exactly the two task scripts that call it, `deploy/relay.rhai:130` and `deploy/deploy-service.rhai:332` |
 
 Tally: Surveyor 9, match 8, both fail 3, graphicle 0.
 
@@ -143,7 +143,19 @@ Ranked by how much they would mislead an agent:
 - **D4. Hidden directories are skipped.** `walk.rs` sets `.hidden(true)`, so Causeway's
   161 Rhai files under `.mise/` are not indexed and the two Rhai questions could not be
   asked. The profile needs a `[walk] include = [".mise/**"]` list, and Causeway's profile
-  needs the entry.
+  needs the entry. **Fixed** on 2026-11-01: `[walk] include` lists hidden paths to walk
+  (`.mise`, `.github/workflows`), and every other dot-directory still stays out, so the
+  stale worktree under Causeway's `.claude/` never counts as code. Causeway cannot carry
+  a profile, so `--profile <file>` (or `SURVEYOR_PROFILE`) takes one from outside;
+  Causeway's lives at `examples/causeway-profile/surveyor.toml` in the Surveyor
+  repository. `update` now walks the tree on every run, so the first update with the new
+  profile brought the 282 files under `.mise/` (159 of them Rhai, 1,356 functions) in as
+  additions without a full index. Two Rhai defects surfaced once the files were read:
+  overloaded functions (`resolve_otel` has a one- and a two-parameter form) all took the
+  first declaration's span because the AST lists functions in no order, and one task
+  script exceeded rhai's default expression depth. Both are fixed, and the walker now
+  checks files itself because the `ignore` crate skips its entry filter for files once a
+  size limit is set, which had let `.ashlar.toml` and `.mcp.json` through.
 - **D5. Runtime SQL with a schema placeholder is not resolved.** `placements.rs` names
   its table as `{schema}.taxonomy_placement_proposals` inside `format!`; the placeholder
   becomes `__p.taxonomy_placement_proposals` and the resolver, finding no schema `__p`,

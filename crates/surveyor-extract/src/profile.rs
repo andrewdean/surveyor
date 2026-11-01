@@ -10,6 +10,7 @@
 //!
 //! [walk]
 //! exclude = ["vendor/**"]
+//! include = [".mise", ".github/workflows"]
 //!
 //! [sql]
 //! dialect = "postgresql"
@@ -55,6 +56,11 @@ pub enum SqlDialect {
 pub struct WalkProfile {
     /// Glob patterns to skip, relative to the repository root.
     pub exclude: Vec<String>,
+    /// Hidden files or directories to walk although hidden, as repository-relative
+    /// paths (`.mise`, `.github/workflows`). Everything else under a dot-directory is
+    /// skipped, so a stale worktree under `.claude/` or an IDE's `.idea/` never counts
+    /// as code.
+    pub include: Vec<String>,
     /// Files larger than this are skipped.
     pub max_file_bytes: u64,
     /// Whether to honor `.gitignore` files.
@@ -77,6 +83,7 @@ impl Default for WalkProfile {
                 "**/*.lock".into(),
                 "**/package-lock.json".into(),
             ],
+            include: Vec::new(),
             // Generated bundles and data dumps above this size are noise, not code.
             max_file_bytes: 2 * 1024 * 1024,
             respect_gitignore: true,
@@ -204,6 +211,19 @@ impl Profile {
         }
     }
 
+    /// Loads a profile from an explicit file, for a repository that cannot carry one.
+    ///
+    /// # Errors
+    /// Returns an error when the file is missing or does not parse; unlike [`load`],
+    /// a named file is never silently replaced by the defaults.
+    ///
+    /// [`load`]: Self::load
+    pub fn load_file(path: impl AsRef<Path>) -> Result<Self, ExtractError> {
+        let path = path.as_ref();
+        let text = std::fs::read_to_string(path).map_err(|e| ExtractError::io(e).at(path))?;
+        Self::from_toml(&text).map_err(|e| e.at(path))
+    }
+
     /// The repository identifier the profile declares, if any.
     #[must_use]
     pub fn repository_id(&self) -> Option<&str> {
@@ -273,5 +293,27 @@ mod tests {
         assert!(Profile::from_toml("[sql]\ndialect = \"nope\"").is_err());
         let p = Profile::from_toml("[scip]\nindexes = [\"index.scip\"]\n").expect("parses");
         assert_eq!(p.scip.indexes, vec!["index.scip".to_owned()]);
+        let p = Profile::from_toml("[walk]\ninclude = [\".mise\"]\n").expect("parses");
+        assert_eq!(p.walk.include, vec![".mise".to_owned()]);
+        assert!(
+            !p.walk.exclude.is_empty(),
+            "include leaves the default excludes"
+        );
+    }
+
+    #[test]
+    fn a_named_profile_file_must_exist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(
+            Profile::load(dir.path()).is_ok(),
+            "absent root profile is the default"
+        );
+        assert!(Profile::load_file(dir.path().join("none.toml")).is_err());
+        let file = dir.path().join("p.toml");
+        std::fs::write(&file, "[repository]\nid = \"named\"\n").expect("write");
+        assert_eq!(
+            Profile::load_file(&file).expect("loads").repository_id(),
+            Some("named")
+        );
     }
 }

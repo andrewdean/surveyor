@@ -218,11 +218,14 @@ Every command takes `--json`. Serve the same answers to an agent over MCP on std
 ```
 
 A repository can carry a `surveyor.toml` to name itself, choose the SQL dialect and
-default schema, point at migration and documentation directories, exclude paths, and
-list SCIP indexes to merge when they exist (`[scip] indexes = ["index.scip"]`); every
-field has a default. Exclude fixture trees, or their tables and symbols appear as the
-repository's own. See `tests/fixtures/mini/surveyor.toml` and Surveyor's own
-`surveyor.toml`.
+default schema, point at migration and documentation directories, exclude paths,
+include hidden directories that hold code (`[walk] include = [".mise"]`; every other
+dot-directory stays out), and list SCIP indexes to merge when they exist (`[scip]
+indexes = ["index.scip"]`); every field has a default. Exclude fixture trees, or their
+tables and symbols appear as the repository's own. A repository that cannot carry a
+profile takes one from outside with `--profile <file>` (or `SURVEYOR_PROFILE`). See
+`tests/fixtures/mini/surveyor.toml`, Surveyor's own `surveyor.toml` and
+`examples/causeway-profile/surveyor.toml`.
 
 Surveyor surveys itself: `docs/dogfood/` records what the graph said about the tool and
 what changed because of it.
@@ -255,7 +258,8 @@ cargo fmt --all
 ## Not yet
 
 Cards and embeddings, context packs, the Causeway adapter, `serve` with streamable
-HTTP, personas and runtime connectors are the following phases of the RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too),
-treats a `surveyor.toml` edit like any other file (run `index` after changing the
-profile), and relinks changed files syntactically: rerun `index --scip` when a fresh
-SCIP index arrives, which the RFD expects to happen in CI on a slower cadence.
+HTTP, personas and runtime connectors are the following phases of the RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too).
+It walks the tree on every run, so files a changed profile includes or excludes
+arrive and leave as added and deleted files, but a changed dialect or default schema
+still needs `index`. It relinks changed files syntactically: rerun `index --scip` when
+a fresh SCIP index arrives, which the RFD expects to happen in CI on a slower cadence.

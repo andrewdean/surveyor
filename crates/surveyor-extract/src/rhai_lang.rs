@@ -48,7 +48,9 @@ impl RhaiExtractor {
         } else {
             text
         };
-        let engine = Engine::new_raw();
+        let mut engine = Engine::new_raw();
+        // Task scripts nest closures and maps deeper than the default limit of 64.
+        engine.set_max_expr_depths(256, 256);
         let ast = engine
             .compile(text)
             .map_err(|e| ExtractError::parse(e.to_string()))?;
@@ -56,18 +58,17 @@ impl RhaiExtractor {
         let mut set = FactSet::empty(ExtractorId::new(EXTRACTOR_ID), unit);
 
         // Function definitions: rhai keeps no declaration span, so find `fn <name>(`
-        // in the text and take the brace block that follows.
+        // with the same arity in the text and take the brace block that follows. The
+        // AST lists functions in no particular order, so each declaration found is
+        // claimed and never handed to an overload of the same arity twice.
         let mut fn_spans: Vec<(ByteSpan, String)> = Vec::new();
-        let mut search_from = 0usize;
         for fn_def in ast.iter_fn_def() {
             let name = fn_def.name.to_string();
-            let Some(decl_start) =
-                find_fn_decl(text, &name, search_from).or_else(|| find_fn_decl(text, &name, 0))
-            else {
+            let claimed = |at: usize| fn_spans.iter().any(|(s, _)| s.start as usize == at);
+            let Some(decl_start) = find_fn_decl(text, &name, fn_def.params.len(), &claimed) else {
                 continue;
             };
             let end = block_end(text, decl_start);
-            search_from = end;
             let bytes = ByteSpan::new(decl_start as u64, end as u64);
             let span = unit.text_span(bytes);
             let signature = format!(
@@ -241,26 +242,37 @@ impl LineIndex {
     }
 }
 
-/// Offset of `fn <name>(` at or after `from`, or `None`.
-fn find_fn_decl(text: &str, name: &str, from: usize) -> Option<usize> {
-    let mut search = from;
+/// Offset of the first `fn <name>(<arity params>)` not yet `claimed`, or `None`.
+fn find_fn_decl(
+    text: &str,
+    name: &str,
+    arity: usize,
+    claimed: &dyn Fn(usize) -> bool,
+) -> Option<usize> {
+    let mut search = 0usize;
     while let Some(rel) = text.get(search..)?.find("fn ") {
         let at = search + rel;
         let after = &text[at + 3..];
         let candidate = after.trim_start();
-        if let Some(rest) = candidate.strip_prefix(name)
-            && rest.trim_start().starts_with('(')
-        {
-            let preceded_ok = at == 0
-                || !text.as_bytes()[at - 1].is_ascii_alphanumeric()
-                    && text.as_bytes()[at - 1] != b'_';
-            if preceded_ok {
-                return Some(at);
-            }
+        let params = candidate
+            .strip_prefix(name)
+            .map(str::trim_start)
+            .and_then(|rest| rest.strip_prefix('('))
+            .and_then(|rest| rest.split_once(')'))
+            .map(|(params, _)| params);
+        let preceded_ok = at == 0
+            || !text.as_bytes()[at - 1].is_ascii_alphanumeric() && text.as_bytes()[at - 1] != b'_';
+        if preceded_ok && params.is_some_and(|p| param_count(p) == arity) && !claimed(at) {
+            return Some(at);
         }
         search = at + 3;
     }
     None
+}
+
+/// Number of parameters in the text between a declaration's parentheses.
+fn param_count(params: &str) -> usize {
+    params.split(',').filter(|p| !p.trim().is_empty()).count()
 }
 
 /// End of the brace block that starts at or after `from`.
@@ -330,6 +342,37 @@ mod tests {
         assert!(
             refs.iter()
                 .any(|r| r.role == ReferenceRole::Import && r.path == vec!["host", "fs"])
+        );
+    }
+
+    #[test]
+    fn overloads_keep_their_own_declarations() {
+        let text =
+            "fn resolve(c) {\n    resolve(c, #{})\n}\n\nfn resolve(c, opts) {\n    opts\n}\n";
+        let unit = SourceUnit::new(
+            RepoId::new("r"),
+            RepoPath::new("cluster.rhai"),
+            CommitId::new("c"),
+            text.as_bytes().to_vec(),
+        );
+        let facts = RhaiExtractor::new().extract(&unit).expect("parses");
+        let mut decls: Vec<(String, u64, u32)> = facts
+            .declarations()
+            .map(|d| {
+                (
+                    d.signature.clone().unwrap_or_default(),
+                    d.span.bytes.start,
+                    d.span.lines.start,
+                )
+            })
+            .collect();
+        decls.sort_by_key(|(_, start, _)| *start);
+        assert_eq!(
+            decls,
+            vec![
+                ("fn resolve(c)".to_owned(), 0, 1),
+                ("fn resolve(c, opts)".to_owned(), 39, 5),
+            ]
         );
     }
 }
