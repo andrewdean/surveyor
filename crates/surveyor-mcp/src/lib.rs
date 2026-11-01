@@ -22,7 +22,9 @@ use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabiliti
 use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use surveyor_graph::{CodeGraph, Direction, EdgeFilter, Lookup, PathDirection, PathMode, PathTier};
+use surveyor_graph::{
+    CodeGraph, Direction, EdgeFilter, Lookup, PathDirection, PathMode, PathTier, Reach,
+};
 use surveyor_model::{Edge, EdgeKind, Node, NodeId, NodeKind, RepoId};
 use surveyor_rules::RuleSet;
 use surveyor_store::LanceStore;
@@ -233,6 +235,9 @@ pub struct AffectedParams {
     /// Hops to follow backwards (default 3).
     #[serde(default)]
     pub depth: Option<usize>,
+    /// Smallest path confidence still reported (default 0.25; 0 keeps every path).
+    #[serde(default)]
+    pub min_confidence: Option<f32>,
     /// Edge kinds to follow; default is the impact set (CALLS, READS, WRITES, IMPLEMENTS, ...).
     #[serde(default)]
     pub kinds: Vec<String>,
@@ -635,7 +640,7 @@ impl Surveyor {
     }
 
     #[tool(
-        description = "Reverse impact: everything that may break when a symbol, table, file or package changes, to a depth, following only deterministic edges unless asked otherwise."
+        description = "Reverse impact: everything that may break when a symbol, table, file or package changes, to a depth, following only deterministic edges unless asked otherwise. Each hit carries the confidence product along its path; paths below min_confidence (default 0.25) are dropped."
     )]
     async fn affected(
         &self,
@@ -650,7 +655,10 @@ impl Surveyor {
             filter.deterministic_only = false;
         }
         let depth = p.depth.unwrap_or(3).clamp(1, 8);
-        let hits = self.graph.affected(&node.id, depth, &filter);
+        let reach = p.min_confidence.map_or(Reach::depth(depth), |floor| {
+            Reach::depth(depth).with_min_confidence(floor.clamp(0.0, 1.0))
+        });
+        let hits = self.graph.affected(&node.id, reach, &filter);
         #[derive(Serialize)]
         struct Hit {
             depth: usize,

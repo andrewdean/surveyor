@@ -7,7 +7,7 @@ use std::time::Instant;
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use surveyor_extract::{Extraction, Profile, Repository, extract_paths, extract_repository_with};
-use surveyor_graph::{CodeGraph, EdgeFilter, Lookup, PathMode};
+use surveyor_graph::{CodeGraph, EdgeFilter, Lookup, PathMode, Reach};
 use surveyor_link::{ChangedFiles, FileEntry, LinkInput, link, plan_update, relink};
 use surveyor_model::{EdgeKind, Fact, GraphStats, LiteralRole, NodeKind, RepoId, RepoPath};
 use surveyor_store::{FileRecord, LanceStore, RepositorySnapshot, StoreUpdate};
@@ -143,6 +143,9 @@ pub struct AffectedArgs {
     /// How many hops to follow backwards.
     #[arg(long, default_value_t = 3)]
     pub depth: usize,
+    /// Drop paths whose confidence product falls below this; 0 keeps every path.
+    #[arg(long, default_value_t = Reach::DEFAULT_MIN_CONFIDENCE)]
+    pub min_confidence: f32,
     /// Comma-separated edge kinds to follow (defaults to the impact kinds).
     #[arg(long, value_delimiter = ',')]
     pub kinds: Vec<EdgeKind>,
@@ -385,7 +388,8 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             if a.all_derivations {
                 filter.deterministic_only = false;
             }
-            let hits = graph.affected(&node.id, a.depth, &filter);
+            let reach = Reach::depth(a.depth).with_min_confidence(a.min_confidence);
+            let hits = graph.affected(&node.id, reach, &filter);
             out.affected(node, &hits, a.depth);
             Ok(())
         }

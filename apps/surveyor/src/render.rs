@@ -497,10 +497,16 @@ impl Output {
         for (d, items) in by_depth {
             println!("depth {d} ({}):", items.len());
             for h in items {
+                let confidence = if h.confidence < 1.0 {
+                    format!("{:.2}", h.confidence)
+                } else {
+                    String::new()
+                };
                 println!(
-                    "  {:<8} {:<48} via {:<12} {}",
+                    "  {:<8} {:<48} {:<4} via {:<12} {}",
                     h.node.kind,
                     truncate(&h.node.qualified_name, 48),
+                    confidence,
                     h.via.kind,
                     cite(h.via)
                 );

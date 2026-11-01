@@ -16,6 +16,8 @@ pub enum UnresolvedReason {
     Ambiguous,
     /// A method call whose receiver type is unknown matched several remote declarations.
     AmbiguousReceiver,
+    /// Declarations with the name exist, but none under the path's qualifier.
+    QualifierMismatch,
     /// No table with that name exists in the declared schema.
     NoTable,
 }
@@ -28,6 +30,7 @@ impl UnresolvedReason {
             Self::NoDeclaration => "no-declaration",
             Self::Ambiguous => "ambiguous",
             Self::AmbiguousReceiver => "ambiguous-receiver",
+            Self::QualifierMismatch => "qualifier-mismatch",
             Self::NoTable => "no-table",
         }
     }
@@ -47,6 +50,7 @@ impl std::str::FromStr for UnresolvedReason {
             "no-declaration" => Ok(Self::NoDeclaration),
             "ambiguous" => Ok(Self::Ambiguous),
             "ambiguous-receiver" => Ok(Self::AmbiguousReceiver),
+            "qualifier-mismatch" => Ok(Self::QualifierMismatch),
             "no-table" => Ok(Self::NoTable),
             other => Err(ModelError::invalid("UnresolvedReason", other)),
         }

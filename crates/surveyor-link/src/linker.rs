@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use surveyor_model::{
-    ByteSpan, Confidence, ContentHash, DeclarationFact, DeclaredRelation, DeclaredSource, Edge,
-    EdgeId, EdgeKind, Evidence, FactSet, GrammarId, GraphDelta, Language, LiteralRole, Node,
+    ByteSpan, CallForm, Confidence, ContentHash, DeclarationFact, DeclaredRelation, DeclaredSource,
+    Edge, EdgeId, EdgeKind, Evidence, FactSet, GrammarId, GraphDelta, Language, LiteralRole, Node,
     NodeId, NodeKind, Provenance, ReferenceFact, ReferenceRole, RepoPath, ResolvedReference,
     ResolverId, RuleId, SourceLocation, SymbolTarget, TextSpan, Unresolved, UnresolvedReason,
 };
@@ -183,13 +183,20 @@ impl<'a> Builder<'a> {
                             .insert(file.clone(), s.id.to_string());
                     }
                 }
-                (EdgeKind::Imports, NodeKind::File, NodeKind::Package) => {
+                (EdgeKind::Imports, NodeKind::File, kind) => {
                     if let Some(file) = s.file() {
                         self.index
-                            .imports_of_file
+                            .imported_by_file
                             .entry(file.clone())
                             .or_default()
                             .insert(d.id.to_string());
+                        if *kind == NodeKind::Package {
+                            self.index
+                                .imports_of_file
+                                .entry(file.clone())
+                                .or_default()
+                                .insert(d.id.to_string());
+                        }
                     }
                 }
                 (EdgeKind::DependsOn, NodeKind::Package, NodeKind::Package) => {
@@ -793,6 +800,11 @@ impl<'a> Builder<'a> {
     fn references(&mut self) {
         for (si, src, r) in self.sites(|role| *role != ReferenceRole::Import) {
             match r.role {
+                // A macro is never a function: `write!` does not call a `write`. Rust
+                // macro declarations are not extracted yet, so a miss is not a gap.
+                ReferenceRole::Call(CallForm::Macro) => {
+                    self.link_named(si, src, &r, false, false, |k| *k == NodeKind::Macro);
+                }
                 ReferenceRole::Call(form) => {
                     self.link_named(si, src, &r, is_method(form), true, NodeKind::is_callable);
                 }
@@ -1043,6 +1055,11 @@ impl<'a> Builder<'a> {
             .entry(file.clone())
             .or_default()
             .extend(imported);
+        self.index
+            .imported_by_file
+            .entry(file.clone())
+            .or_default()
+            .extend(targets.iter().map(|&t| self.nodes[t].id.to_string()));
         let confidence = Confidence::new(1.0 / targets.len() as f32);
         for dst in targets {
             let set = &self.input.fact_sets[si];
@@ -1079,6 +1096,7 @@ impl<'a> Builder<'a> {
                 .filter(|q| !RUST_BUILTIN_ROOTS.contains(&q.as_str()))
                 .cloned();
             let ranked: Vec<usize> = rank(&self.index, file, candidates, qualifier.as_deref())
+                .candidates
                 .into_iter()
                 .filter(|(tier, i)| match package_idx {
                     Some(p) => self.nodes[*i]
@@ -1553,6 +1571,20 @@ const BUILTIN_COMMON: &[&str] = &[
     "replace",
     "cmp",
     "partial_cmp",
+    "add",
+    "sub",
+    "mul",
+    "div",
+    "neg",
+    "not",
+    "index",
+    "index_mut",
+    "deref",
+    "deref_mut",
+    "write_str",
+    "write_fmt",
+    "poll",
+    "call",
     "eq",
     "ne",
     "hash",

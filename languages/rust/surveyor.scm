@@ -49,8 +49,8 @@
 (call_expression function: (field_expression field: (field_identifier) @name)) @reference.call.method
 (call_expression function: (generic_function function: (identifier) @name)) @reference.call
 (call_expression function: (generic_function function: (scoped_identifier) @name)) @reference.call
-(macro_invocation macro: (identifier) @name) @reference.call
-(macro_invocation macro: (scoped_identifier) @name) @reference.call
+(macro_invocation macro: (identifier) @name) @reference.call.macro
+(macro_invocation macro: (scoped_identifier) @name) @reference.call.macro
 
 (impl_item trait: (_) @name) @reference.implements
 

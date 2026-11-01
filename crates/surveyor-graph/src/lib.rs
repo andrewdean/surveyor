@@ -154,6 +154,42 @@ pub struct Neighbor<'a> {
     pub outgoing: bool,
 }
 
+/// How far a reverse impact walk goes, and how weak a path it still reports.
+///
+/// Confidence multiplies along a path, so two name-matched hops at 0.5 reach a node at
+/// 0.25 and a third drops it below the default floor. A node pruned through a weak path
+/// is still reported if a stronger path reaches it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Reach {
+    /// Hops to follow backwards.
+    pub depth: usize,
+    /// Smallest path confidence still reported; `0.0` keeps everything.
+    pub min_confidence: f32,
+}
+
+impl Reach {
+    /// The floor `depth` applies: a path of two guessed hops, no weaker.
+    pub const DEFAULT_MIN_CONFIDENCE: f32 = 0.25;
+
+    /// `depth` hops with the default floor.
+    #[must_use]
+    pub const fn depth(depth: usize) -> Self {
+        Self {
+            depth,
+            min_confidence: Self::DEFAULT_MIN_CONFIDENCE,
+        }
+    }
+
+    /// Reports paths down to `min_confidence` and returns the reach.
+    #[must_use]
+    pub const fn with_min_confidence(self, min_confidence: f32) -> Self {
+        Self {
+            min_confidence,
+            ..self
+        }
+    }
+}
+
 /// A node in the reverse impact set of a change.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Affected<'a> {
@@ -523,13 +559,14 @@ impl CodeGraph {
         out
     }
 
-    /// Nodes that may break when `id` changes: reverse traversal to `depth` hops.
+    /// Nodes that may break when `id` changes: reverse traversal within `reach`.
     ///
     /// Follows the filter's edge kinds backwards (a caller is affected by its callee,
     /// a query by its table), breadth first, reporting each node once at its shortest
-    /// depth with the confidence product along the path found.
+    /// depth with the confidence product along the path found. A path whose product
+    /// falls below the reach's floor is neither reported nor followed further.
     #[must_use]
-    pub fn affected(&self, id: &NodeId, depth: usize, filter: &EdgeFilter) -> Vec<Affected<'_>> {
+    pub fn affected(&self, id: &NodeId, reach: Reach, filter: &EdgeFilter) -> Vec<Affected<'_>> {
         let Some(&start) = self.by_id.get(id) else {
             return Vec::new();
         };
@@ -539,7 +576,7 @@ impl CodeGraph {
         queue.push_back((start, 0, 1.0));
         let mut out: Vec<Affected<'_>> = Vec::new();
         while let Some((ix, d, conf)) = queue.pop_front() {
-            if d == depth {
+            if d == reach.depth {
                 continue;
             }
             let mut incoming: Vec<(EdgeIndex, NodeIndex)> = self
@@ -554,6 +591,9 @@ impl CodeGraph {
                     continue;
                 }
                 let c = conf * edge.provenance.confidence.get();
+                if c < reach.min_confidence {
+                    continue;
+                }
                 seen.insert(src, d + 1);
                 out.push(Affected {
                     node: &self.nodes[self.graph[src]],
@@ -943,7 +983,11 @@ mod tests {
     #[test]
     fn affected_walks_backwards_with_confidence() {
         let g = sample();
-        let hits = g.affected(&NodeId::new("sql:s.t"), 3, &EdgeFilter::impact());
+        let hits = g.affected(
+            &NodeId::new("sql:s.t"),
+            Reach::depth(3),
+            &EdgeFilter::impact(),
+        );
         let ids: Vec<&str> = hits.iter().map(|a| a.node.id.as_str()).collect();
         assert_eq!(
             ids,
@@ -956,10 +1000,70 @@ mod tests {
         assert_eq!(main.depth, 3);
         assert!((main.confidence - 0.5).abs() < 1e-6);
         assert_eq!(
-            g.affected(&NodeId::new("sql:s.t"), 1, &EdgeFilter::impact())
-                .len(),
+            g.affected(
+                &NodeId::new("sql:s.t"),
+                Reach::depth(1),
+                &EdgeFilter::impact()
+            )
+            .len(),
             1
         );
+    }
+
+    #[test]
+    fn affected_prunes_paths_below_the_confidence_floor() {
+        // t <- repo (1.0) <- guess (0.5) <- far (0.4): far sits at 0.2, below the floor,
+        // unless a second, stronger path reaches it.
+        let nodes = vec![
+            node("sql:s.t", NodeKind::Table),
+            node("a::repo", NodeKind::Function),
+            node("a::guess", NodeKind::Function),
+            node("a::far", NodeKind::Function),
+            node("a::direct", NodeKind::Function),
+        ];
+        let weak = CodeGraph::new(
+            nodes.clone(),
+            vec![
+                edge("a::repo", EdgeKind::Reads, "sql:s.t", 1.0),
+                edge("a::guess", EdgeKind::Calls, "a::repo", 0.5),
+                edge("a::far", EdgeKind::Calls, "a::guess", 0.4),
+            ],
+        );
+        let names = |hits: Vec<Affected<'_>>| -> Vec<(String, usize)> {
+            hits.iter()
+                .map(|a| (a.node.name.clone(), a.depth))
+                .collect()
+        };
+        let table = NodeId::new("sql:s.t");
+        assert_eq!(
+            names(weak.affected(&table, Reach::depth(3), &EdgeFilter::impact())),
+            vec![("repo".to_owned(), 1), ("guess".to_owned(), 2)]
+        );
+        let all = weak.affected(
+            &table,
+            Reach::depth(3).with_min_confidence(0.0),
+            &EdgeFilter::impact(),
+        );
+        assert_eq!(all.len(), 3);
+        assert!((all[2].confidence - 0.2).abs() < 1e-6);
+
+        let strong = CodeGraph::new(
+            nodes,
+            vec![
+                edge("a::repo", EdgeKind::Reads, "sql:s.t", 1.0),
+                edge("a::guess", EdgeKind::Calls, "a::repo", 0.5),
+                edge("a::far", EdgeKind::Calls, "a::guess", 0.4),
+                edge("a::direct", EdgeKind::Calls, "a::repo", 1.0),
+                edge("a::far", EdgeKind::Calls, "a::direct", 1.0),
+            ],
+        );
+        let far = strong
+            .affected(&table, Reach::depth(3), &EdgeFilter::impact())
+            .into_iter()
+            .find(|a| a.node.name == "far")
+            .expect("far is reached through direct");
+        assert_eq!(far.depth, 3);
+        assert!((far.confidence - 1.0).abs() < 1e-6);
     }
 
     #[test]

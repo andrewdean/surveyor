@@ -423,13 +423,20 @@ fn relations<'a>(
                     index.package_of_file.insert(file.clone(), s.id.to_string());
                 }
             }
-            (EdgeKind::Imports, NodeKind::File, NodeKind::Package) => {
+            (EdgeKind::Imports, NodeKind::File, kind) => {
                 if let Some(file) = s.file() {
                     index
-                        .imports_of_file
+                        .imported_by_file
                         .entry(file.clone())
                         .or_default()
                         .insert(d.id.to_string());
+                    if *kind == NodeKind::Package {
+                        index
+                            .imports_of_file
+                            .entry(file.clone())
+                            .or_default()
+                            .insert(d.id.to_string());
+                    }
                 }
             }
             (EdgeKind::DependsOn, NodeKind::Package, NodeKind::Package) => {

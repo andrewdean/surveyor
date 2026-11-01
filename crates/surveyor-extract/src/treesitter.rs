@@ -100,6 +100,7 @@ fn reference_role(role: &str) -> Option<ReferenceRole> {
     Some(match role {
         "call" => ReferenceRole::Call(CallForm::Path),
         "call.method" => ReferenceRole::Call(CallForm::Method),
+        "call.macro" => ReferenceRole::Call(CallForm::Macro),
         "import" => ReferenceRole::Import,
         "type" => ReferenceRole::TypeUse,
         "implements" => ReferenceRole::Implements,
@@ -1188,6 +1189,17 @@ mod tests {
             names.contains(&"assert_eq") && names.contains(&"format"),
             "{names:?}"
         );
+        // The macros are calls of their own form; the calls inside them keep theirs.
+        assert!(refs.iter().all(|r| {
+            match r.name.as_str() {
+                "assert_eq" | "println" | "format" => {
+                    r.role == ReferenceRole::Call(CallForm::Macro)
+                }
+                "compute" | "helper" => r.role == ReferenceRole::Call(CallForm::Path),
+                "drain" => r.role == ReferenceRole::Call(CallForm::Method),
+                _ => true,
+            }
+        }));
         let drain = refs.iter().find(|r| r.name == "drain").expect("drain");
         assert_eq!(u.slice(drain.span.bytes), "drain");
         assert_eq!(drain.scope, vec!["t".to_owned()]);

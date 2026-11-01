@@ -120,7 +120,26 @@ Ranked by how much they would mislead an agent:
   3, where a `[syntactic 0.33]` hop is treated like a certain one. Two fixes compound:
   stop walking through trait-standard names (`fmt`, `from`, `new`, `default`, `clone`,
   `eq`, `hash`, `drop`) unless the edge is `Resolved`, and multiply confidence along the
-  walk so a 0.33 hop followed by a 0.5 hop ranks below the threshold.
+  walk so a 0.33 hop followed by a 0.5 hop ranks below the threshold. **Fixed**, at the
+  linker rather than the walk, once the offending edges were read: every `fmt` reached
+  `Source::write` through `write!`, a macro extracted as a call named `write` and linked
+  at confidence 1 to the only `write` in the package; `ValkeyCache::connect` reached
+  `RouteAccess::from_config` through `Builder::from_config`, whose qualifier matched
+  nothing and fell back to every candidate; and `writer.write(&batch)` linked to the
+  same `Source::write` at confidence 1 because the by-name method rule only discounted
+  calls into other packages. Macros are now a call form of their own that never
+  resolves to a function; a qualifier that names no declaration is a
+  `qualifier-mismatch` gap; and a reference is certain only when anchored (same file,
+  matching qualifier, or an import of the file), so a standard-library name resolves
+  only when anchored and a method call by bare name is 0.75 nearby and 0.5 remote.
+  `affected` multiplies confidence along the path, shows it, and drops paths below
+  `--min-confidence` (default 0.25). Re-indexed on 2026-11-01: question 17's depth 2 is
+  down from 23 nodes to the two callers in `security_headers.rs`, question 11's depth 2
+  is exactly `Server::configure`, and question 8's directed chain is unchanged. Across
+  Causeway the change removed 72,168 edges (`CALLS` 141,570 to 84,007) and 6,470 gaps
+  (44,594 to 38,124); 4,748 references are now `qualifier-mismatch`, led by
+  `sqlx::query`, `Utc::now`, `from_str` and `Uuid::new_v4`, each of which had been an
+  edge at confidence 1 to the one local function of that name.
 - **D4. Hidden directories are skipped.** `walk.rs` sets `.hidden(true)`, so Causeway's
   161 Rhai files under `.mise/` are not indexed and the two Rhai questions could not be
   asked. The profile needs a `[walk] include = [".mise/**"]` list, and Causeway's profile

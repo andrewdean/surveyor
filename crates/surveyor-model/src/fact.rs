@@ -121,6 +121,8 @@ pub enum CallForm {
     Path,
     /// `x.f(...)`: the target depends on the receiver's type.
     Method,
+    /// `m!(...)`: a macro invocation, which no function or method can be the target of.
+    Macro,
 }
 
 /// How a reference uses the thing it names.

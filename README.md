@@ -25,10 +25,17 @@ for now). This checkout implements Phase 0 of that plan.
   or a local binding is neither an edge nor a gap. No index, no change.
 - **Linking.** Declarations become nodes with stable identifiers such as
   `rust:crates/outbox/src/relay.rs::Relay::drain` or `sql:cw_outbox.outbox`. References
-  resolve by name within the same file, then package, then repository; a reference with
-  one candidate becomes a certain edge, one with a few becomes one edge per candidate
-  with confidence `1/n`, and one with none or too many is recorded as unresolved, never
-  guessed. SQL references resolve against the schema the migrations declare.
+  resolve by name within the same file, then package, then repository. A reference is
+  certain when something at the site points at its declaration: the declaration is in
+  the same file, or the path's qualifier (`Relay` in `Relay::drain`) or an import of the
+  file names it. A method call matched by bare name elsewhere is a guess about the
+  receiver's type and gets confidence 0.75 in the same or an imported package and 0.5 in
+  an unrelated one; several candidates share the confidence between them. A
+  standard-library name (`write`, `new`, `fmt`) resolves only when anchored, a macro
+  never resolves to a function, a qualifier that names no declaration is a
+  `qualifier-mismatch` gap rather than another file's node, and too many candidates are
+  recorded as unresolved, never guessed. SQL references resolve against the schema the
+  migrations declare.
 - **Provenance.** Every edge carries a derivation (`syntactic`, `resolved`, `declared`,
   later `observed` and `inferred`), a confidence, and evidence: repository, file, byte
   span, lines, commit and a hash of the cited text.
@@ -42,9 +49,11 @@ for now). This checkout implements Phase 0 of that plan.
   declarations changed, and files whose edges lost an endpoint. Everything else stays
   as it was. A manifest change, or a change that would relink more than half the
   files, falls back to a full index. The result equals a fresh index of the same tree.
-- **Compute.** Neighbors by edge kind, reverse impact to a depth, shortest paths with
-  a tier that says how certain the hops are, hubs ranked by how many files depend on a
-  node, label-propagation communities and dependency cycles over `petgraph`.
+- **Compute.** Neighbors by edge kind, reverse impact to a depth with the confidence
+  product along each path (paths below `--min-confidence`, default 0.25, are dropped),
+  shortest paths with a tier that says how certain the hops are, hubs ranked by how
+  many files depend on a node, label-propagation communities and dependency cycles over
+  `petgraph`.
 - **Dispatch.** A trait or interface method carries `DISPATCHES_TO` edges to every
   implementation that defines the same name, so a path through `dyn Trait` continues
   into the bodies that run and `affected` on an implementation climbs to the callers of
