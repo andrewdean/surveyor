@@ -74,6 +74,7 @@ pub(crate) fn files_schema() -> SchemaRef {
         utf8("language", true),
         utf8("content_hash", false),
         Field::new("bytes", DataType::UInt64, false),
+        Field::new("lines", DataType::UInt64, false),
         utf8("commit", false),
         utf8("names", false),
     ]))
@@ -127,6 +128,7 @@ pub struct FileRow {
     pub language: Option<Language>,
     pub content_hash: ContentHash,
     pub bytes: u64,
+    pub lines: u64,
     /// Names the file references, for incremental update.
     pub names: Vec<String>,
 }
@@ -249,6 +251,7 @@ pub(crate) fn files_batch(
     let mut language = StringBuilder::new();
     let mut hash = StringBuilder::new();
     let mut bytes = UInt64Builder::new();
+    let mut lines = UInt64Builder::new();
     let mut commit_b = StringBuilder::new();
     let mut names = StringBuilder::new();
     for f in files {
@@ -257,6 +260,7 @@ pub(crate) fn files_batch(
         language.append_option(f.language.as_ref().map(Language::as_str));
         hash.append_value(f.content_hash.to_hex());
         bytes.append_value(f.bytes);
+        lines.append_value(f.lines);
         commit_b.append_value(commit);
         names.append_value(serde_json::to_string(&f.names)?);
     }
@@ -267,6 +271,7 @@ pub(crate) fn files_batch(
             Arc::new(language.finish()),
             Arc::new(hash.finish()),
             Arc::new(bytes.finish()),
+            Arc::new(lines.finish()),
             Arc::new(commit_b.finish()),
             Arc::new(names.finish()),
         ],
@@ -500,6 +505,7 @@ pub(crate) fn files_from_batch(batch: &RecordBatch) -> Result<Vec<FileRow>, Stor
                 .and_then(|l| l.parse::<Language>().ok()),
             content_hash: c.parsed::<ContentHash>("content_hash", row)?,
             bytes: c.u64("bytes", row)?.unwrap_or(0),
+            lines: c.u64("lines", row)?.unwrap_or(0),
             names: serde_json::from_str::<Vec<String>>(c.req("names", row)?)?,
         })
     })

@@ -31,6 +31,8 @@ pub struct UnitRecord {
     pub content_hash: ContentHash,
     /// Size in bytes.
     pub bytes: u64,
+    /// Number of lines, as an editor counts them (see [`line_count`]).
+    pub lines: u64,
     /// Extractors that produced facts for the file.
     pub extractors: Vec<ExtractorId>,
 }
@@ -161,6 +163,7 @@ fn extract_unit(extractors: &Extractors, unit: &SourceUnit, dialect: SqlDialect)
         language: unit.language.clone(),
         content_hash: unit.content_hash,
         bytes: unit.content.len() as u64,
+        lines: line_count(&unit.content),
         extractors: fact_sets.iter().map(|s| s.extractor.clone()).collect(),
     };
     Extraction {
@@ -169,6 +172,23 @@ fn extract_unit(extractors: &Extractors, unit: &SourceUnit, dialect: SqlDialect)
         fact_sets,
         errors: extracted.errors,
     }
+}
+
+/// Number of lines in `content`, as an editor counts them.
+///
+/// Every newline ends a line and a final unterminated line counts too, so
+/// `"a\nb\n"` and `"a\nb"` both have two lines and an empty file has none. The
+/// count is over bytes, so a binary file gets the number of newline bytes it
+/// happens to contain, which is as meaningful as its line count can be.
+#[must_use]
+pub fn line_count(content: &[u8]) -> u64 {
+    if content.is_empty() {
+        return 0;
+    }
+    // Splitting on newlines yields one segment per line plus an empty tail when the
+    // last line is terminated; the tail is not a line.
+    let segments = content.split(|&b| b == b'\n').count();
+    (segments - usize::from(content.ends_with(b"\n"))) as u64
 }
 
 /// Statement kinds a tagged literal must start with to count as SQL.
@@ -324,6 +344,31 @@ mod tests {
     use surveyor_model::RepoId;
 
     use super::*;
+
+    #[test]
+    fn line_count_counts_as_an_editor_does() {
+        assert_eq!(line_count(b""), 0);
+        assert_eq!(line_count(b"\n"), 1);
+        assert_eq!(line_count(b"a\nb\n"), 2);
+        assert_eq!(line_count(b"a\nb"), 2);
+        assert_eq!(line_count(b"a\r\nb\r\n"), 2);
+        assert_eq!(line_count(b"a\n\n\n"), 3);
+    }
+
+    #[test]
+    fn unit_records_carry_bytes_and_lines() {
+        let unit = SourceUnit::new(
+            RepoId::new("r"),
+            RepoPath::new("a.rs"),
+            CommitId::new("c"),
+            "fn a() {}\nfn b() {}\n".into(),
+        );
+        let extractors = Extractors::new().with(TreeSitterExtractor::new());
+        let extraction = extract_units(&extractors, &[unit], SqlDialect::PostgreSql);
+        let record = &extraction.units[0];
+        assert_eq!(record.bytes, 20);
+        assert_eq!(record.lines, 2);
+    }
 
     fn extract(src: &str) -> FactSet {
         let unit = SourceUnit::new(

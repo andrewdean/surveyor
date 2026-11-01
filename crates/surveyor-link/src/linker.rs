@@ -426,6 +426,7 @@ impl<'a> Builder<'a> {
                 .with_qualified_name(entry.path.as_str())
                 .in_file(entry.path.clone())
                 .with_attribute("bytes", entry.bytes.to_string())
+                .with_attribute("lines", entry.lines.to_string())
             };
             let idx = self.push_node(node);
             self.file_nodes.insert(entry.path.clone(), idx);
@@ -1854,6 +1855,7 @@ mod tests {
             language: u.language.clone(),
             content_hash: u.content_hash,
             bytes: u.bytes,
+            lines: u.lines,
         });
         let input = LinkInput::new(RepoId::new("demo"), CommitId::new("c0"))
             .with_files(files)
@@ -2165,6 +2167,7 @@ mod tests {
             language: u.language.clone(),
             content_hash: u.content_hash,
             bytes: u.bytes,
+            lines: u.lines,
         });
         let input = LinkInput::new(RepoId::new("demo"), CommitId::new("c0"))
             .with_files(files)

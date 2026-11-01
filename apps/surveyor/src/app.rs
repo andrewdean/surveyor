@@ -505,6 +505,7 @@ fn file_entries(extraction: &Extraction) -> (Vec<FileEntry>, Vec<FileRecord>) {
             language: u.language.clone(),
             content_hash: u.content_hash,
             bytes: u.bytes,
+            lines: u.lines,
         })
         .collect();
     let records = files
@@ -514,6 +515,7 @@ fn file_entries(extraction: &Extraction) -> (Vec<FileEntry>, Vec<FileRecord>) {
             language: f.language.clone(),
             content_hash: f.content_hash,
             bytes: f.bytes,
+            lines: f.lines,
             names: names.get(&f.path).cloned().unwrap_or_default(),
         })
         .collect();

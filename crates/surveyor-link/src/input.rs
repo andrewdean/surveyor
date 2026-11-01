@@ -13,6 +13,8 @@ pub struct FileEntry {
     pub content_hash: ContentHash,
     /// Size in bytes.
     pub bytes: u64,
+    /// Number of lines.
+    pub lines: u64,
 }
 
 impl Default for FileEntry {
@@ -22,6 +24,7 @@ impl Default for FileEntry {
             language: None,
             content_hash: ContentHash::of(b""),
             bytes: 0,
+            lines: 0,
         }
     }
 }

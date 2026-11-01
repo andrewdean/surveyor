@@ -496,6 +496,7 @@ mod tests {
                 language: u.language.clone(),
                 content_hash: u.content_hash,
                 bytes: u.bytes,
+                lines: u.lines,
             })
             .collect();
         (files, extraction.fact_sets)

@@ -814,6 +814,7 @@ mod tests {
             ids,
             [
                 "gate-staleness",
+                "facade-size-budget",
                 "runtime-env-resource-ctors",
                 "component-cross-deps",
                 "crypto-provider-installs",

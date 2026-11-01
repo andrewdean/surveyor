@@ -39,6 +39,8 @@ pub struct FileRecord {
     pub content_hash: ContentHash,
     /// Size in bytes.
     pub bytes: u64,
+    /// Number of lines.
+    pub lines: u64,
     /// Names the file references (symbols, tables, cited paths), sorted and distinct.
     ///
     /// Incremental update reads these to find the unchanged files whose resolution a
@@ -217,6 +219,7 @@ impl LanceStore {
                 language: f.language.clone(),
                 content_hash: f.content_hash,
                 bytes: f.bytes,
+                lines: f.lines,
                 names: f.names.clone(),
             })
             .collect()
@@ -422,6 +425,7 @@ impl LanceStore {
                 language: f.language,
                 content_hash: f.content_hash,
                 bytes: f.bytes,
+                lines: f.lines,
                 names: f.names,
             }));
         }
@@ -612,6 +616,7 @@ mod tests {
             language: Some(Language::Rust),
             content_hash: ContentHash::of(b"x"),
             bytes: 1,
+            lines: 1,
             names: vec!["b".into()],
         }];
         store
@@ -758,6 +763,7 @@ mod update_tests {
             language: Some(Language::Rust),
             content_hash: ContentHash::of(path.as_bytes()),
             bytes: 1,
+            lines: 1,
             names: Vec::new(),
         }
     }
