@@ -144,12 +144,18 @@ Ask it questions:
 ```bash
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway explain Relay::drain
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway affected cw_catalog.asset --depth 3
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway path main cw_outbox.outbox --directed
+surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway path crates/api/src/main.rs::main cw_outbox.outbox
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway hubs
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway source rust:crates/a/src/lib.rs::Relay::drain
 surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway nodes --kind Function --in crates/outbox --without TESTED_BY
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway nodes --kind Function --in crates/outbox --without TESTED_BY
 ```
+
+A name that several declarations share is refused with their identifiers rather than
+answered for whichever ranks first, and a qualifier (`path::`, `Type::`, `schema.`)
+that matches no declaration of that name is an error, never another file's node.
+`query` lists the candidates. `path` follows edge direction first and searches
+against it only when no directed path exists; such a result is labeled a lead and
+each reversed hop is marked `<-`. `--directed` and `--undirected` force one search.
 
 `nodes` lists nodes by kind and location and by the edges they have or lack, which is
 how to ask set questions such as "which functions in this crate have no test".

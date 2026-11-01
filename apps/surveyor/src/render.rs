@@ -9,7 +9,8 @@ use surveyor_model::RepoPath;
 use anyhow::{Context, bail};
 use serde::Serialize;
 use surveyor_graph::{
-    Affected, CodeGraph, Community, Direction, EdgeFilter, Hub, Neighbor, PathStep, PathTier,
+    Affected, CodeGraph, Community, Direction, EdgeFilter, FoundPath, Hub, Neighbor, PathDirection,
+    PathTier,
 };
 use surveyor_model::{Edge, EdgeKind, GraphStats, Node, NodeKind, Unresolved};
 use surveyor_rules::{Report, Severity};
@@ -499,7 +500,7 @@ impl Output {
         }
     }
 
-    pub fn path(self, from: &Node, to: &Node, path: Option<(PathTier, &[PathStep<'_>])>) {
+    pub fn path(self, from: &Node, to: &Node, path: Option<&FoundPath<'_>>) {
         if self == Self::Json {
             #[derive(Serialize)]
             struct Step {
@@ -514,15 +515,18 @@ impl Output {
                 found: bool,
                 #[serde(skip_serializing_if = "Option::is_none")]
                 tier: Option<PathTier>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                direction: Option<PathDirection>,
                 steps: Vec<Step>,
             }
             print_json(&View {
                 from: NodeView::of(from),
                 to: NodeView::of(to),
                 found: path.is_some(),
-                tier: path.map(|(tier, _)| tier),
+                tier: path.map(|p| p.tier),
+                direction: path.map(|p| p.direction),
                 steps: path
-                    .map(|(_, steps)| steps)
+                    .map(|p| p.steps.as_slice())
                     .unwrap_or_default()
                     .iter()
                     .map(|s| Step {
@@ -538,19 +542,25 @@ impl Output {
                 "no path from {} to {}",
                 from.qualified_name, to.qualified_name
             ),
-            Some((tier, steps)) => {
-                let note = match tier {
+            Some(found) => {
+                let tier = match found.tier {
                     PathTier::Precise => "every hop certain",
                     PathTier::Loose => "some hops resolved by name; check the confidences",
                     PathTier::Any => "only through containment or test coverage; treat as a lead",
                 };
+                let direction = match found.direction {
+                    PathDirection::Directed => "",
+                    PathDirection::Undirected => {
+                        "; no directed path exists, so hops marked <- run against their edge: a lead, not a dependency chain"
+                    }
+                };
                 println!(
-                    "path from {} to {} ({} hops, {note}):",
+                    "path from {} to {} ({} hops, {tier}{direction}):",
                     from.qualified_name,
                     to.qualified_name,
-                    steps.len().saturating_sub(1)
+                    found.steps.len().saturating_sub(1)
                 );
-                for s in steps {
+                for s in &found.steps {
                     match s.edge {
                         None => println!(
                             "  {} {}  ({})",

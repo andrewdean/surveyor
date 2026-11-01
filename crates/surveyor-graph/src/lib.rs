@@ -188,6 +188,67 @@ pub struct PathStep<'a> {
     pub edge: Option<&'a Edge>,
 }
 
+/// Whether a found path followed edge direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PathDirection {
+    /// Every hop follows its edge's direction: a dependency chain.
+    Directed,
+    /// Some hop runs against its edge's direction: a lead, not a dependency chain.
+    Undirected,
+}
+
+/// How a path search treats edge direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum PathMode {
+    /// Follow edge direction, and search against it only when no directed path exists.
+    #[default]
+    DirectedFirst,
+    /// Follow edge direction only.
+    Directed,
+    /// Ignore edge direction.
+    Undirected,
+}
+
+impl PathMode {
+    /// The directions to try, in order.
+    fn directions(self) -> &'static [PathDirection] {
+        match self {
+            Self::DirectedFirst => &[PathDirection::Directed, PathDirection::Undirected],
+            Self::Directed => &[PathDirection::Directed],
+            Self::Undirected => &[PathDirection::Undirected],
+        }
+    }
+}
+
+/// A path a search found, with how far it can be trusted.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FoundPath<'a> {
+    /// How trustworthy the edges are.
+    pub tier: PathTier,
+    /// Whether every hop followed its edge's direction.
+    pub direction: PathDirection,
+    /// The start node, then one step per hop.
+    pub steps: Vec<PathStep<'a>>,
+}
+
+/// What a name query resolved to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Lookup<'a> {
+    /// The query is a node identifier.
+    Exact(&'a Node),
+    /// One node matches the query better than any other.
+    Unique(&'a Node),
+    /// Several nodes match the query equally well, best first.
+    Ambiguous(Vec<&'a Node>),
+    /// Nothing matches the query; `similar` are nodes of the same name whose
+    /// qualifier differs, when the query carried one.
+    NotFound {
+        /// Same-named nodes the query's qualifier excluded.
+        similar: Vec<&'a Node>,
+    },
+}
+
 /// A node many others depend on.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hub<'a> {
@@ -303,6 +364,67 @@ impl CodeGraph {
     /// that end with the query, then substrings. `kind` restricts the result.
     #[must_use]
     pub fn find(&self, query: &str, kind: Option<&NodeKind>, limit: usize) -> Vec<&Node> {
+        self.scored(query, kind)
+            .into_iter()
+            .map(|(_, n)| n)
+            .take(limit)
+            .collect()
+    }
+
+    /// Resolves a query to one node, or says why it cannot.
+    ///
+    /// An identifier resolves exactly. Otherwise the best-scoring matches are
+    /// compared: one is `Unique`; several equally good are `Ambiguous`, in rank
+    /// order; and a query whose qualifier (`path::`, `Type::`, `schema.`) matches no
+    /// declaration of that name is `NotFound`, with the same-named nodes listed, so a
+    /// mistyped qualifier is never silently answered with another file's node.
+    #[must_use]
+    pub fn lookup(&self, query: &str, kind: Option<&NodeKind>) -> Lookup<'_> {
+        let scored = self.scored(query, kind);
+        let Some(&(best, first)) = scored.first() else {
+            return Lookup::NotFound {
+                similar: Vec::new(),
+            };
+        };
+        if best == 0 {
+            return Lookup::Exact(first);
+        }
+        let qualified = query.contains("::") || query.contains('/') || query.contains('.');
+        if best == 3 && qualified {
+            return Lookup::NotFound {
+                similar: scored.into_iter().map(|(_, n)| n).take(10).collect(),
+            };
+        }
+        let ties: Vec<&Node> = scored
+            .into_iter()
+            .take_while(|(score, _)| *score == best)
+            .map(|(_, n)| n)
+            .collect();
+        // A type's impl blocks and a test named after what it tests
+        // (`describe("OutboxPanel")`) yield to the declaration; only same-named
+        // declarations are ambiguous.
+        let mut declared: Vec<&Node> = ties
+            .iter()
+            .copied()
+            .filter(|n| !matches!(n.kind, NodeKind::Test | NodeKind::Impl))
+            .collect();
+        if let [one] = declared.as_slice() {
+            return Lookup::Unique(one);
+        }
+        if declared.is_empty() && ties.len() == 1 {
+            return Lookup::Unique(first);
+        }
+        if declared.is_empty() {
+            declared = ties;
+        }
+        declared.truncate(10);
+        Lookup::Ambiguous(declared)
+    }
+
+    /// Every match of `query`, ranked: 0 identifier, 1 exact name or qualified
+    /// name, 2 qualified name or identifier ending with the query, 3 same simple
+    /// name, 4 substring.
+    fn scored(&self, query: &str, kind: Option<&NodeKind>) -> Vec<(u8, &Node)> {
         let q = query.trim();
         if q.is_empty() {
             return Vec::new();
@@ -353,7 +475,7 @@ impl CodeGraph {
                 .then_with(|| a.1.qualified_name.len().cmp(&b.1.qualified_name.len()))
                 .then_with(|| a.1.id.cmp(&b.1.id))
         });
-        scored.into_iter().map(|(_, n)| n).take(limit).collect()
+        scored
     }
 
     /// Direct neighbors of `id` in `direction`, through edges the filter accepts.
@@ -618,25 +740,32 @@ impl CodeGraph {
         hubs
     }
 
-    /// The best path from `from` to `to`: precise edges first, then any dependency
-    /// edge, then any edge at all, with the tier that succeeded.
+    /// The best path from `from` to `to`.
+    ///
+    /// Directions are tried in the order `mode` gives, and within a direction the
+    /// tiers in order: precise edges, then any dependency edge, then any edge at all.
+    /// The result says which direction and tier succeeded.
     #[must_use]
-    pub fn best_path(
-        &self,
-        from: &NodeId,
-        to: &NodeId,
-        directed: bool,
-    ) -> Option<(PathTier, Vec<PathStep<'_>>)> {
-        [
-            (PathTier::Precise, EdgeFilter::precise()),
-            (PathTier::Loose, EdgeFilter::loose()),
-            (PathTier::Any, EdgeFilter::default()),
-        ]
-        .into_iter()
-        .find_map(|(tier, filter)| {
-            self.shortest_path(from, to, &filter, directed)
-                .map(|steps| (tier, steps))
-        })
+    pub fn best_path(&self, from: &NodeId, to: &NodeId, mode: PathMode) -> Option<FoundPath<'_>> {
+        mode.directions()
+            .iter()
+            .flat_map(|direction| {
+                [
+                    (PathTier::Precise, EdgeFilter::precise()),
+                    (PathTier::Loose, EdgeFilter::loose()),
+                    (PathTier::Any, EdgeFilter::default()),
+                ]
+                .into_iter()
+                .map(move |(tier, filter)| (*direction, tier, filter))
+            })
+            .find_map(|(direction, tier, filter)| {
+                self.shortest_path(from, to, &filter, direction == PathDirection::Directed)
+                    .map(|steps| FoundPath {
+                        tier,
+                        direction,
+                        steps,
+                    })
+            })
     }
 
     /// Communities by label propagation over the edges the filter accepts.
@@ -834,6 +963,52 @@ mod tests {
     }
 
     #[test]
+    fn lookup_resolves_identifiers_unique_names_and_bad_qualifiers() {
+        let g = sample();
+        assert_eq!(
+            g.lookup("a::service", None),
+            Lookup::Exact(g.node(&NodeId::new("a::service")).unwrap())
+        );
+        assert_eq!(
+            g.lookup("service", None),
+            Lookup::Unique(g.node(&NodeId::new("a::service")).unwrap())
+        );
+        assert!(
+            matches!(g.lookup("nowhere/else.rs::service", None), Lookup::NotFound { similar } if similar.len() == 1)
+        );
+        assert!(
+            matches!(g.lookup("no_such_name", None), Lookup::NotFound { similar } if similar.is_empty())
+        );
+    }
+
+    #[test]
+    fn same_named_declarations_are_ambiguous_until_qualified() {
+        let nodes = vec![
+            node("x/a.rs::run", NodeKind::Function),
+            node("x/b.rs::run", NodeKind::Function),
+        ];
+        let g = CodeGraph::new(nodes, Vec::new());
+        assert!(matches!(g.lookup("run", None), Lookup::Ambiguous(c) if c.len() == 2));
+        let named_test = CodeGraph::new(
+            vec![
+                node("x/a.rs::run", NodeKind::Function),
+                node("x/a.rs::run#2", NodeKind::Test),
+            ],
+            Vec::new(),
+        );
+        assert!(matches!(
+            named_test.lookup("run", None),
+            Lookup::Unique(n) if n.kind == NodeKind::Function
+        ));
+        assert!(
+            matches!(g.lookup("x/b.rs::run", None), Lookup::Exact(n) if n.id.as_str() == "x/b.rs::run")
+        );
+        assert!(
+            matches!(g.lookup("b.rs::run", None), Lookup::Unique(n) if n.id.as_str() == "x/b.rs::run")
+        );
+    }
+
+    #[test]
     fn path_find_rank_and_communities() {
         let g = sample();
         let path = g
@@ -866,15 +1041,48 @@ mod tests {
             .is_some()
         );
 
-        let (tier, steps) = g
-            .best_path(&NodeId::new("a::main"), &NodeId::new("sql:s.t"), true)
+        let found = g
+            .best_path(
+                &NodeId::new("a::main"),
+                &NodeId::new("sql:s.t"),
+                PathMode::Directed,
+            )
             .expect("path");
-        assert_eq!(tier, PathTier::Loose, "the 0.5 call forces the second tier");
-        assert_eq!(steps.len(), 4);
-        let (tier, _) = g
-            .best_path(&NodeId::new("a::main"), &NodeId::new("a::service"), true)
+        assert_eq!(
+            found.tier,
+            PathTier::Loose,
+            "the 0.5 call forces the second tier"
+        );
+        assert_eq!(found.direction, PathDirection::Directed);
+        assert_eq!(found.steps.len(), 4);
+        let found = g
+            .best_path(
+                &NodeId::new("a::main"),
+                &NodeId::new("a::service"),
+                PathMode::DirectedFirst,
+            )
             .expect("path");
-        assert_eq!(tier, PathTier::Precise);
+        assert_eq!(
+            (found.tier, found.direction),
+            (PathTier::Precise, PathDirection::Directed)
+        );
+        // Against the edges there is no directed path; the default falls back and says so.
+        let found = g
+            .best_path(
+                &NodeId::new("sql:s.t"),
+                &NodeId::new("a::main"),
+                PathMode::DirectedFirst,
+            )
+            .expect("undirected fallback");
+        assert_eq!(found.direction, PathDirection::Undirected);
+        assert!(
+            g.best_path(
+                &NodeId::new("sql:s.t"),
+                &NodeId::new("a::main"),
+                PathMode::Directed
+            )
+            .is_none()
+        );
 
         let found = g.find("service", None, 5);
         assert_eq!(found[0].id.as_str(), "a::service");

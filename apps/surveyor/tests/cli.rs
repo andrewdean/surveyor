@@ -363,6 +363,31 @@ fn index_and_answer_phase_zero_questions() {
         .output()
         .expect("runs");
     assert_eq!(output.status.code(), Some(1), "a failing rule exits 1");
+
+    // An ambiguous name is refused with the candidates, never answered silently,
+    // and a qualifier that matches nothing is an error rather than another file's node.
+    let refused = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_surveyor"))
+            .arg("--repo-root")
+            .arg(fixture())
+            .arg("--store")
+            .arg(&store)
+            .args(args)
+            .output()
+            .expect("run surveyor");
+        assert!(!output.status.success(), "{args:?} should fail");
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    let err = refused(&["explain", "handle"]);
+    assert!(err.contains("ambiguous"), "{err}");
+    assert!(
+        err.contains("web/src/outbox.ts::OutboxPanel::handle"),
+        "{err}"
+    );
+    assert!(err.contains("web/src/client.ts::Handler::handle"), "{err}");
+    let err = refused(&["affected", "crates/nowhere/src/lib.rs::main"]);
+    assert!(err.contains("no node matches"), "{err}");
+    assert!(err.contains("crates/api/src/main.rs::main"), "{err}");
     let report: Value = serde_json::from_slice(&output.stdout).expect("json report");
     let api = report["outcomes"]
         .as_array()

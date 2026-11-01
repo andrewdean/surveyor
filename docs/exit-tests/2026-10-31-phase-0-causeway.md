@@ -13,8 +13,9 @@ answer cites spans that exist. This document records the run on 2026-10-31.
 **Result: passed.** Surveyor beat graphicle on nine questions, matched it on eight, and
 both tools failed the same three. Graphicle beat Surveyor on none. All 285 spans
 Surveyor cited exist and contain the text the edge claims. The run also surfaced five
-defects in Surveyor, listed at the end, two of which (undirected paths by default, silent
-choice among same-named declarations) are worth fixing before the next stage.
+defects in Surveyor, listed at the end. The two that mislead an agent most (undirected
+paths by default, silent choice among same-named declarations) were fixed the same day;
+the fix is noted under each.
 
 ## Setup
 
@@ -98,15 +99,20 @@ Ranked by how much they would mislead an agent:
 - **D1. `path` searches undirected by default and reports leads as answers.** Question 8's
   default answer walked from the worker's `main` to `install_crypto_provider`, then
   *backwards* into another binary's `main`, and called every hop certain. `--directed`
-  gave the right chain. `best_path` should try the directed search first, fall back to
-  undirected only when none exists, and label an undirected hop as such.
+  gave the right chain. **Fixed:** `best_path` takes a `PathMode` and returns a
+  `FoundPath` with its `direction`; the default tries the directed search through every
+  tier first and falls back to undirected only when none exists, and the CLI and MCP
+  label such a result a lead with each reversed hop marked `<-`. Question 8's default
+  answer is now the seven-hop directed chain.
 - **D2. A name that matches several declarations is picked silently.** `affected
   batch_get_parties` chose the `PeopleRepo` trait method out of eleven candidates without
   saying so, and `explain nonexistent/file.rs::reconcile_in_transaction` ignored the file
   qualifier and answered for a different file. Graphicle refuses and lists the candidates,
-  which is the right behavior for an agent caller. `explain` and `affected` should refuse
-  on ambiguity unless the argument is a full id, and a qualifier that matches nothing
-  should be an error.
+  which is the right behavior for an agent caller. **Fixed:** `CodeGraph::lookup`
+  returns `Exact`, `Unique`, `Ambiguous` (the tied candidates) or `NotFound` (with the
+  same-named nodes a wrong qualifier excluded), and the CLI and MCP refuse the last two
+  with the identifiers to repeat with. `affected batch_get_parties` now refuses and lists
+  the candidates, and the misqualified `reconcile_in_transaction` is an error.
 - **D3. Transitive `affected` fans out through common method names.** Question 17's depth 2
   listed every `fmt` call in the crate because `CspNonce` has a `Display` impl, and
   question 11's depth 2 reached `ValkeyCache::connect` through an unrelated `from_config`.

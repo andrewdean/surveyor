@@ -22,7 +22,7 @@ use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabiliti
 use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use surveyor_graph::{CodeGraph, Direction, EdgeFilter, PathTier};
+use surveyor_graph::{CodeGraph, Direction, EdgeFilter, Lookup, PathDirection, PathMode, PathTier};
 use surveyor_model::{Edge, EdgeKind, Node, NodeId, NodeKind, RepoId};
 use surveyor_rules::RuleSet;
 use surveyor_store::LanceStore;
@@ -178,9 +178,20 @@ pub struct PathParams {
     pub from: String,
     /// End node identifier or name.
     pub to: String,
-    /// Follow edges in their direction only (default false).
+    /// true: follow edge direction only; false: ignore direction; absent: follow
+    /// direction first and search against it only when no directed path exists.
     #[serde(default)]
-    pub directed: bool,
+    pub directed: Option<bool>,
+}
+
+impl PathParams {
+    fn mode(&self) -> PathMode {
+        match self.directed {
+            Some(true) => PathMode::Directed,
+            Some(false) => PathMode::Undirected,
+            None => PathMode::DirectedFirst,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -263,11 +274,35 @@ impl Surveyor {
     }
 
     fn resolve(&self, query: &str) -> Result<&Node, McpError> {
-        self.graph
-            .find(query, None, 1)
-            .first()
-            .copied()
-            .ok_or_else(|| McpError::invalid_params(format!("no node matches {query:?}"), None))
+        let ids = |nodes: &[&Node]| {
+            nodes
+                .iter()
+                .map(|n| n.id.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        match self.graph.lookup(query, None) {
+            Lookup::Exact(node) | Lookup::Unique(node) => Ok(node),
+            Lookup::Ambiguous(nodes) => Err(McpError::invalid_params(
+                format!(
+                    "{query:?} is ambiguous: {} nodes match it equally well; repeat with one of these identifiers: {}",
+                    nodes.len(),
+                    ids(&nodes)
+                ),
+                None,
+            )),
+            Lookup::NotFound { similar } if similar.is_empty() => Err(McpError::invalid_params(
+                format!("no node matches {query:?}"),
+                None,
+            )),
+            Lookup::NotFound { similar } => Err(McpError::invalid_params(
+                format!(
+                    "no node matches {query:?}; the qualifier matches none of the nodes with that name: {}",
+                    ids(&similar)
+                ),
+                None,
+            )),
+        }
     }
 
     fn relations(
@@ -402,7 +437,7 @@ impl Surveyor {
     }
 
     #[tool(
-        description = "Shortest dependency path between two nodes, with the edge and citation for each hop and a tier: precise (every hop certain), loose (some hops resolved by name) or any (through containment or tests)."
+        description = "Shortest dependency path between two nodes, with the edge and citation for each hop, a tier: precise (every hop certain), loose (some hops resolved by name) or any (through containment or tests), and a direction: directed (a dependency chain) or undirected (no directed path exists; a lead)."
     )]
     async fn shortest_path(
         &self,
@@ -410,7 +445,7 @@ impl Surveyor {
     ) -> Result<CallToolResult, McpError> {
         let from = self.resolve(&p.from)?;
         let to = self.resolve(&p.to)?;
-        let path = self.graph.best_path(&from.id, &to.id, p.directed);
+        let path = self.graph.best_path(&from.id, &to.id, p.mode());
         #[derive(Serialize)]
         struct Step {
             node: NodeView,
@@ -422,14 +457,17 @@ impl Surveyor {
             found: bool,
             #[serde(skip_serializing_if = "Option::is_none")]
             tier: Option<PathTier>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            direction: Option<PathDirection>,
             steps: Vec<Step>,
         }
         json_result(&View {
             found: path.is_some(),
-            tier: path.as_ref().map(|(tier, _)| *tier),
+            tier: path.as_ref().map(|p| p.tier),
+            direction: path.as_ref().map(|p| p.direction),
             steps: path
                 .as_ref()
-                .map(|(_, steps)| steps.as_slice())
+                .map(|p| p.steps.as_slice())
                 .unwrap_or_default()
                 .iter()
                 .map(|s| Step {

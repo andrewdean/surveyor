@@ -7,7 +7,7 @@ use std::time::Instant;
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use surveyor_extract::{Extraction, Profile, Repository, extract_paths, extract_repository_with};
-use surveyor_graph::{CodeGraph, EdgeFilter};
+use surveyor_graph::{CodeGraph, EdgeFilter, Lookup, PathMode};
 use surveyor_link::{ChangedFiles, FileEntry, LinkInput, link, plan_update, relink};
 use surveyor_model::{EdgeKind, Fact, GraphStats, LiteralRole, NodeKind, RepoId, RepoPath};
 use surveyor_store::{FileRecord, LanceStore, RepositorySnapshot, StoreUpdate};
@@ -157,9 +157,23 @@ pub struct PathArgs {
     pub from: String,
     /// End symbol.
     pub to: String,
-    /// Follow edges in their direction only.
-    #[arg(long)]
+    /// Follow edges in their direction only (the default tries that first, then
+    /// searches against direction and labels the result a lead).
+    #[arg(long, conflicts_with = "undirected")]
     pub directed: bool,
+    /// Ignore edge direction from the start.
+    #[arg(long)]
+    pub undirected: bool,
+}
+
+impl PathArgs {
+    fn mode(&self) -> PathMode {
+        match (self.directed, self.undirected) {
+            (true, _) => PathMode::Directed,
+            (_, true) => PathMode::Undirected,
+            _ => PathMode::DirectedFirst,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -298,29 +312,40 @@ async fn open_graph(cli: &Cli, p: &Paths) -> anyhow::Result<(LanceStore, CodeGra
     Ok((store, graph, repo))
 }
 
-/// Resolves a user query to exactly one node, or explains the ambiguity.
+/// Resolves a user query to exactly one node, or explains why it cannot.
 fn resolve_one<'a>(
     graph: &'a CodeGraph,
     query: &str,
     kind: Option<&NodeKind>,
 ) -> anyhow::Result<&'a surveyor_model::Node> {
-    let found = graph.find(query, kind, 10);
-    match found.first() {
-        None => bail!("no node matches {query:?}"),
-        Some(first) => {
-            if found.len() > 1
-                && found[1].name.eq_ignore_ascii_case(&first.name)
-                && found[1].kind == first.kind
-                && first.id.as_str() != query
-            {
-                tracing::warn!(
-                    chosen = %first.id,
-                    alternatives = %found.iter().skip(1).take(5).map(|n| n.id.to_string()).collect::<Vec<_>>().join(", "),
-                    "query is ambiguous; using the closest match"
-                );
-            }
-            Ok(first)
-        }
+    let listing = |nodes: &[&surveyor_model::Node]| {
+        nodes
+            .iter()
+            .map(|n| format!("  {:<10} {}\n             {}", n.kind, location(n), n.id))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    match graph.lookup(query, kind) {
+        Lookup::Exact(node) | Lookup::Unique(node) => Ok(node),
+        Lookup::Ambiguous(nodes) => bail!(
+            "{query:?} is ambiguous: {} nodes match it equally well. Repeat with one of their identifiers:\n{}",
+            nodes.len(),
+            listing(&nodes)
+        ),
+        Lookup::NotFound { similar } if similar.is_empty() => bail!("no node matches {query:?}"),
+        Lookup::NotFound { similar } => bail!(
+            "no node matches {query:?}; the qualifier matches none of the {} nodes with that name:\n{}",
+            similar.len(),
+            listing(&similar)
+        ),
+    }
+}
+
+fn location(node: &surveyor_model::Node) -> String {
+    match (node.file(), node.lines()) {
+        (Some(file), Some(lines)) => format!("{file}:{}-{}", lines.start, lines.end),
+        (Some(file), None) => file.to_string(),
+        _ => String::new(),
     }
 }
 
@@ -368,14 +393,8 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let (_, graph, _) = open_graph(&cli, &p).await?;
             let from = resolve_one(&graph, &a.from, None)?;
             let to = resolve_one(&graph, &a.to, None)?;
-            let found = graph.best_path(&from.id, &to.id, a.directed);
-            out.path(
-                from,
-                to,
-                found
-                    .as_ref()
-                    .map(|(tier, steps)| (*tier, steps.as_slice())),
-            );
+            let found = graph.best_path(&from.id, &to.id, a.mode());
+            out.path(from, to, found.as_ref());
             Ok(())
         }
         Command::Query(q) => {
