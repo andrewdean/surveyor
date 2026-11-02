@@ -505,15 +505,17 @@ impl<'a> Builder<'a> {
     /// Creates (or merges into) the node for a declaration; returns its index.
     fn declaration_node(&mut self, set: &FactSet, d: &DeclarationFact) -> usize {
         let (id, qualified) = declaration_identity(set, d);
-        let mergeable = matches!(
-            d.kind,
-            NodeKind::Schema
-                | NodeKind::Table
-                | NodeKind::View
-                | NodeKind::Column
-                | NodeKind::Index
-                | NodeKind::Constraint
-        );
+        // Registrations of the same host function (overloads) are one declaration.
+        let mergeable = d.attributes.contains_key("language")
+            || matches!(
+                d.kind,
+                NodeKind::Schema
+                    | NodeKind::Table
+                    | NodeKind::View
+                    | NodeKind::Column
+                    | NodeKind::Index
+                    | NodeKind::Constraint
+            );
         if mergeable && let Some(&existing) = self.node_pos.get(&id) {
             let node = &mut self.nodes[existing];
             let before = node.attributes.len();
@@ -533,7 +535,7 @@ impl<'a> Builder<'a> {
             name: d.name.clone(),
             qualified_name: qualified,
             repo: self.input.repo.clone(),
-            language: set.language.clone(),
+            language: declared_language(set, d),
             location: Some(surveyor_model::Location::Span(SourceLocation::new(
                 set.path.clone(),
                 d.span,
@@ -1640,7 +1642,26 @@ impl<'a> Builder<'a> {
 }
 
 /// Stable identifier and qualified name for a declaration.
+/// The language a declaration belongs to: the file's, unless the pack exposed it to
+/// another (`definition.function.rhai` on a Rust `register_fn("name", ..)`).
+fn declared_language(set: &FactSet, d: &DeclarationFact) -> Option<Language> {
+    d.attributes
+        .get("language")
+        .and_then(|l| l.parse().ok())
+        .or_else(|| set.language.clone())
+}
+
 fn declaration_identity(set: &FactSet, d: &DeclarationFact) -> (NodeId, String) {
+    let language = declared_language(set, d);
+    // A function a host exposes to another language is known there by its bare name,
+    // not by the Rust function that registered it: `rhai:modules/proc.rs::sh`, so that
+    // `proc::sh(..)` in a script matches it through the file stem.
+    if d.attributes.contains_key("language") {
+        return (
+            symbol_id(language.as_ref(), &set.path, &d.name),
+            d.name.clone(),
+        );
+    }
     let schema = || d.scope.first().map_or("public", String::as_str);
     let table = || d.scope.get(1).map_or("", String::as_str);
     match &d.kind {
@@ -1672,7 +1693,7 @@ fn declaration_identity(set: &FactSet, d: &DeclarationFact) -> (NodeId, String) 
                 scope => format!("{}::query#{fp8}", scope.join("::")),
             };
             (
-                symbol_id(set.language.as_ref(), &set.path, &q),
+                symbol_id(language.as_ref(), &set.path, &q),
                 d.qualified_name(),
             )
         }
@@ -1681,11 +1702,11 @@ fn declaration_identity(set: &FactSet, d: &DeclarationFact) -> (NodeId, String) 
                 Some(t) => format!("{}#impl({t})", d.qualified_name()),
                 None => format!("{}#impl", d.qualified_name()),
             };
-            (symbol_id(set.language.as_ref(), &set.path, &q), q)
+            (symbol_id(language.as_ref(), &set.path, &q), q)
         }
         _ => {
             let q = d.qualified_name();
-            (symbol_id(set.language.as_ref(), &set.path, &q), q)
+            (symbol_id(language.as_ref(), &set.path, &q), q)
         }
     }
 }
@@ -2119,9 +2140,119 @@ pub(crate) fn is_builtin_name(language: Option<&Language>, name: &str) -> bool {
             BUILTIN_JS.contains(&name)
         }
         Some(Language::Bash) => BUILTIN_BASH.contains(&name),
+        Some(Language::Rhai) => BUILTIN_RHAI.contains(&name) || BUILTIN_COMMON.contains(&name),
         _ => BUILTIN_COMMON.contains(&name),
     }
 }
+
+/// Functions and methods the Rhai standard packages provide, which no script or host
+/// declares: a call to one with no declaration in reach is not a gap.
+const BUILTIN_RHAI: &[&str] = &[
+    "print",
+    "debug",
+    "type_of",
+    "is_def_var",
+    "is_def_fn",
+    "is_shared",
+    "eval",
+    "call",
+    "curry",
+    "is_anonymous",
+    "Fn",
+    "sleep",
+    "timestamp",
+    "elapsed",
+    "pop",
+    "shift",
+    "truncate",
+    "pad",
+    "extract",
+    "splice",
+    "reverse",
+    "retain",
+    "drain",
+    "dedup",
+    "reduce",
+    "reduce_rev",
+    "some",
+    "all",
+    "none",
+    "find_map",
+    "index_of",
+    "fill_with",
+    "mixin",
+    "chars",
+    "split_rev",
+    "to_upper",
+    "to_lower",
+    "make_upper",
+    "make_lower",
+    "sub_string",
+    "crop",
+    "to_debug",
+    "to_int",
+    "to_float",
+    "to_decimal",
+    "to_binary",
+    "to_octal",
+    "to_hex",
+    "to_radians",
+    "to_degrees",
+    "parse_int",
+    "parse_float",
+    "parse_json",
+    "sign",
+    "fraction",
+    "sqrt",
+    "exp",
+    "ln",
+    "log",
+    "sin",
+    "cos",
+    "tan",
+    "is_zero",
+    "is_odd",
+    "is_even",
+    "bits",
+    "bit",
+    "set_bit",
+    "range",
+    "zip",
+    "shuffle",
+    "to_chars",
+    "tag",
+    "set_tag",
+    "for_each",
+    "contains",
+    "starts_with",
+    "ends_with",
+    "trim",
+    "split",
+    "replace",
+    "keys",
+    "values",
+    "is_empty",
+    "abs",
+    "min",
+    "max",
+    "floor",
+    "ceil",
+    "round",
+    "int",
+    "to_string",
+    "len",
+    "push",
+    "insert",
+    "remove",
+    "clear",
+    "append",
+    "filter",
+    "map",
+    "sort",
+    "get",
+    "set",
+    "take",
+];
 
 /// TypeScript, TSX and JavaScript share declarations; every other language stands alone.
 fn same_family(a: &Language, b: &Language) -> bool {
@@ -2138,7 +2269,8 @@ fn same_family(a: &Language, b: &Language) -> bool {
 mod tests {
 
     use surveyor_extract::{
-        Extractors, ManifestExtractor, SqlDialect, SqlExtractor, TreeSitterExtractor, extract_units,
+        Extractors, ManifestExtractor, RhaiExtractor, SqlDialect, SqlExtractor,
+        TreeSitterExtractor, extract_units,
     };
     use surveyor_model::{CommitId, DerivationKind, Fact, LineSpan, RepoId, SourceUnit};
 
@@ -2157,6 +2289,7 @@ mod tests {
     fn linked(units: &[SourceUnit]) -> (GraphDelta, BTreeMap<String, usize>) {
         let extractors = Extractors::new()
             .with(TreeSitterExtractor::new())
+            .with(RhaiExtractor::new())
             .with(SqlExtractor::new(SqlDialect::PostgreSql, "public"))
             .with(ManifestExtractor::new());
         let extraction = extract_units(&extractors, units, SqlDialect::PostgreSql);
@@ -2916,5 +3049,55 @@ fn anything(schema: &str, table: &str) {
             vec![&("python:app/main.py::Svc::helper", 1.0)],
             "`self.helper()` is the enclosing class's method, not the module function: {calls:?}"
         );
+    }
+
+    #[test]
+    fn rhai_calls_resolve_to_the_functions_a_rust_host_registers() {
+        let units = [
+            unit(
+                "host/src/lib.rs",
+                "fn sh(c: &str) {}\nfn install(m: &mut rhai::Module) {\n    m.set_native_fn(\"sh\", |c: &str| Ok(sh(c)));\n    m.set_native_fn(\"sh\", |c: &str, _o: i64| Ok(sh(c)));\n    m.set_native_fn(\"repo_root\", || Ok(String::new()));\n}\n",
+            ),
+            unit(
+                "host/src/modules/proc.rs",
+                "pub fn module() -> rhai::Module {\n    let mut m = rhai::Module::new();\n    m.set_native_fn(\"shell\", |c: &str| Ok(()));\n    m\n}\n",
+            ),
+            unit(
+                "tasks/build.rhai",
+                "fn build() {\n    let root = repo_root();\n    sh(\"cargo build\");\n    proc::shell(\"cargo test\");\n    type_of(root);\n    nowhere();\n}\n",
+            ),
+        ];
+        let (delta, _) = linked(&units);
+        let from_build: Vec<(&str, f32)> = delta
+            .edges
+            .iter()
+            .filter(|e| {
+                e.src.as_str() == "rhai:tasks/build.rhai::build" && e.kind == EdgeKind::Calls
+            })
+            .map(|e| (e.dst.as_str(), e.provenance.confidence.get()))
+            .collect();
+        assert_eq!(
+            from_build,
+            vec![
+                ("rhai:host/src/lib.rs::repo_root", 1.0),
+                ("rhai:host/src/lib.rs::sh", 1.0),
+                ("rhai:host/src/modules/proc.rs::shell", 1.0),
+            ],
+            "the two `sh` registrations are one declaration, and the Rust `sh` is not a target"
+        );
+        let gaps: Vec<&str> = delta
+            .unresolved
+            .iter()
+            .filter(|u| u.site.file.as_str() == "tasks/build.rhai")
+            .map(|u| u.name.as_str())
+            .collect();
+        assert_eq!(gaps, vec!["nowhere"], "`type_of` is the standard library's");
+        let host = delta
+            .nodes
+            .iter()
+            .find(|n| n.id.as_str() == "rhai:host/src/lib.rs::sh")
+            .expect("host function node");
+        assert_eq!(host.language, Some(Language::Rhai));
+        assert_eq!(host.kind, NodeKind::Function);
     }
 }

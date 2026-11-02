@@ -38,7 +38,9 @@ const MAX_MACRO_DEPTH: u8 = 3;
 /// What a capture name asks the host to record.
 #[derive(Debug, Clone)]
 enum CaptureRole {
-    Definition(NodeKind),
+    /// A declaration; the language, when given, is the one that sees it under this
+    /// name (`definition.function.rhai` on a Rust `register_fn("name", ..)`).
+    Definition(NodeKind, Option<Language>),
     Reference(ReferenceRole),
     Literal(LiteralRole),
     Name,
@@ -54,8 +56,19 @@ fn role_for_capture(name: &str) -> Result<CaptureRole, ExtractError> {
         return Ok(CaptureRole::Ignore);
     }
     if let Some(kind) = name.strip_prefix("definition.") {
+        let (kind, exposed) = match kind.split_once('.') {
+            Some((kind, language)) => (
+                kind,
+                Some(
+                    language
+                        .parse::<Language>()
+                        .map_err(|_| unknown("exposed language"))?,
+                ),
+            ),
+            None => (kind, None),
+        };
         return definition_kind(kind)
-            .map(CaptureRole::Definition)
+            .map(|kind| CaptureRole::Definition(kind, exposed))
             .ok_or_else(|| unknown("definition kind"));
     }
     if let Some(role) = name.strip_prefix("reference.") {
@@ -369,7 +382,7 @@ impl<'t> Captures<'t> {
         m.captures().iter().fold(Self::default(), |mut acc, cap| {
             let idx = cap.index as usize;
             match &pack.roles[idx] {
-                CaptureRole::Definition(_)
+                CaptureRole::Definition(..)
                 | CaptureRole::Reference(_)
                 | CaptureRole::Literal(_) => {
                     acc.primary = Some((idx, cap.node));
@@ -407,8 +420,8 @@ fn collect(
         }
         let rule = RuleId::new(&pack.capture_names[idx]);
         match (&pack.roles[idx], pass) {
-            (CaptureRole::Definition(kind), Pass::Full) => {
-                raw.push_definition(site, kind.clone(), node, &captures, rule);
+            (CaptureRole::Definition(kind, exposed), Pass::Full) => {
+                raw.push_definition(site, kind.clone(), exposed.as_ref(), node, &captures, rule);
             }
             (CaptureRole::Reference(role), _) => {
                 raw.push_reference(site, role, node, captures.name, captures.receiver, &rule);
@@ -534,6 +547,7 @@ impl RawFacts {
         &mut self,
         site: Site<'_>,
         kind: NodeKind,
+        exposed: Option<&Language>,
         node: Node<'_>,
         captures: &Captures<'_>,
         rule: RuleId,
@@ -570,6 +584,7 @@ impl RawFacts {
                 "syntax".to_owned(),
                 node.kind().to_owned(),
             )))
+            .chain(exposed.map(|language| ("language".to_owned(), language.as_str().to_owned())))
             .collect::<BTreeMap<_, _>>();
         self.defs.push(DeclarationFact {
             kind,
@@ -1678,5 +1693,37 @@ describe("server", () => { it("starts", () => {}); });
         assert_eq!(receiver_of("setState"), Some("this".into()));
         assert_eq!(receiver_of("helper"), Some("ns".into()));
         assert_eq!(receiver_of("Thing"), Some("ns".into()));
+    }
+
+    #[test]
+    fn host_registrations_declare_functions_the_script_language_sees() {
+        let src = "use rhai::{Engine, Module};\nfn sh(c: &str) {}\nfn install(engine: &mut Engine, m: &mut Module) {\n    engine.register_fn(\"exit\", || std::process::exit(0));\n    m.set_native_fn(\"sh\", |c: &str| Ok(sh(c)));\n    m.set_native_fn(\"sh\", |c: &str, _o: i64| Ok(sh(c)));\n    engine.register_fn(\"is_blank\", |s: &str| s.trim().is_empty());\n}\n";
+        let facts = TreeSitterExtractor::new()
+            .extract(&unit("host.rs", src))
+            .expect("parses");
+        let exposed: Vec<(String, Vec<String>)> = facts
+            .declarations()
+            .filter(|d| d.attributes.get("language").map(String::as_str) == Some("rhai"))
+            .map(|d| (d.name.clone(), d.scope.clone()))
+            .collect();
+        assert_eq!(
+            exposed,
+            vec![
+                ("exit".to_owned(), vec!["install".to_owned()]),
+                ("sh".to_owned(), vec!["install".to_owned()]),
+                ("sh".to_owned(), vec!["install".to_owned()]),
+                ("is_blank".to_owned(), vec!["install".to_owned()]),
+            ]
+        );
+        assert!(
+            facts
+                .declarations()
+                .any(|d| d.name == "sh" && d.attributes.get("language").is_none()),
+            "the plain Rust `sh` is still a Rust function"
+        );
+        assert!(
+            role_for_capture("definition.function.Klingon").is_err(),
+            "a language tag the model cannot parse is a pack error"
+        );
     }
 }

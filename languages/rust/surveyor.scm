@@ -47,6 +47,20 @@
 (call_expression function: (identifier) @name) @reference.call
 (call_expression function: (scoped_identifier) @name) @reference.call
 (call_expression function: (field_expression value: (_) @receiver field: (field_identifier) @name)) @reference.call.method
+
+;; ---- functions a Rust host exposes to Rhai --------------------------------------
+;; `engine.register_fn("name", f)` and `module.set_native_fn("name", f)` declare a
+;; function Rhai scripts call by that name; the declaration is the registration site,
+;; and the linker gives it the Rhai language so only Rhai calls resolve to it.
+((call_expression
+   function: (field_expression field: (field_identifier) @_register)
+   arguments: (arguments . (string_literal) @name))
+ (#match? @_register "^(register_fn|set_native_fn|register_get|register_set|register_get_set)$")) @definition.function.rhai
+((call_expression
+   function: (scoped_identifier path: (identifier) @_type name: (identifier) @_new)
+   arguments: (arguments . (string_literal) @name))
+ (#eq? @_type "FuncRegistration")
+ (#eq? @_new "new")) @definition.function.rhai
 (call_expression function: (generic_function function: (identifier) @name)) @reference.call
 (call_expression function: (generic_function function: (scoped_identifier) @name)) @reference.call
 (macro_invocation macro: (identifier) @name) @reference.call.macro

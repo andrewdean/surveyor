@@ -13,7 +13,10 @@ for now). This checkout implements Phase 0 of that plan.
 - **Extraction.** Rust, TypeScript, TSX, JavaScript, Python and Bash through Tree-sitter
   query packs in `languages/`; SQL files and SQL string literals through `sqlparser`;
   Rhai through the `rhai` crate's AST; `Cargo.toml`, `package.json` and `pyproject.toml`;
-  Markdown design documents and runbooks. Rust macro arguments are re-parsed so calls
+  Markdown design documents and runbooks. A Rust host's `register_fn("name", ..)` and
+  `set_native_fn("name", ..)` declare a function Rhai scripts call by that name
+  (`rhai:modules/proc.rs::sh`), so `proc::sh(..)` in a script resolves to the
+  registration and `affected` crosses from the host into every script that calls it. Rust macro arguments are re-parsed so calls
   inside `assert_eq!` and friends are seen.
 - **Precise tier.** `surveyor index --scip index.scip` (or `[scip] indexes` in the
   profile) merges a SCIP index written by `rust-analyzer scip`, `scip-typescript` or
