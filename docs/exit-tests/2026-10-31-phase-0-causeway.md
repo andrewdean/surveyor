@@ -55,7 +55,7 @@ A tool that reports an ambiguous name honestly is not penalized for asking.
 | 9 | 985 | affected `PeopleService::batch_get_parties` | one test caller | the same; graphicle's ambiguity list omits the `PeopleRepo` trait method and `PgPeopleRepo` impl that exist in `repo.rs`, while Surveyor's `query` lists all eleven | match (see D2) |
 | 10 | 985 | explain `reconcile_in_transaction` | the `ResourceIdentityWrite` trait method and its twelve implementations by `DISPATCHES_TO`, each cited | asks to disambiguate eight; the trait method then shows its parameter types and no implementation | Surveyor |
 | 11 | 984 | affected `workflow_reports` | depth 1: `RouteAccess::from_config` (`access.rs:113`) and the test at `tests.rs:240`, exactly the two callers | `from_config` only | Surveyor (depth 1); depth 2 carries name-matched noise (D3) |
-| 12 | 984 | affected table `taxonomy_placement_proposals` | table node with 24 columns, constraint and index from migrations 0052 and 0058; zero dependents | table from migration 0052, its index, its foreign key to `containers`; no code | both fail: `placements.rs` reaches the table only through `format!("... {schema}.taxonomy_placement_proposals")` (D5) |
+| 12 | 984 | affected table `taxonomy_placement_proposals` | table node with 24 columns, constraint and index from migrations 0052 and 0058; zero dependents | table from migration 0052, its index, its foreign key to `containers`; no code | both fail: `placements.rs` reaches the table only through `format!("... {schema}.taxonomy_placement_proposals")` (D5). After the D5 fix Surveyor answers from the ground truth: depth 1 names `propose`, `decide`, `list_proposals` and the database test; depth 2 adds the server's `load_placements` and the admin host's `propose`. |
 | 13 | 983 | explain `ImageSource` | enum `images.rs:20-28`, variants, used by `classify`, imported by `content.rs` | the same | match |
 | 14 | 982 | explain `S3Credentials` | struct `garage.rs:132`, three methods, twelve users incl. `ObjectStoreWorkspace::from_env`, `TopologyFragment::ObjectStore` and two tests | seven users, two imports; `from_env` and the tests missing | Surveyor |
 | 15 | 981 | affected `PrefixedSettings` (Python) | depth 1: the five subclasses `RelayWorkerSettings`, `DatabricksSettings`, `SnowflakeConnection`, `ExampleSettings` and a test class; then their configs and the relay functions that use them | an import and a document reference; no subclass | Surveyor |
@@ -163,6 +163,21 @@ Ranked by how much they would mislead an agent:
   with `confidence 1/n` across schemas that declare it. This is the light dataflow
   the RFD's Phase 1 plan already names, and it is the one question class where a
   Causeway reader would have been better served by grep.
+  **Fixed 2026-11-01.** Two defects hid behind this one. The placeholder was the smaller:
+  a parsed name now keeps its table when only the qualifier was templated
+  (`{schema}.events` → `events`, `{catalog}.{schema}.t` → `t`) and yields nothing when the
+  table itself was (`{table}`, `{prefix}_events`), and the linker resolves a name without a
+  schema to every schema that declares it at `1/n` (Causeway declares every table
+  unqualified, so `n` is 1 and the edges are certain). The larger defect was that three
+  quarters of Causeway's templated queries are written across lines with `\`
+  continuations, and the literal extractor stripped quotes without decoding escapes, so
+  `sqlparser` never saw a statement; escapes are now decoded in every non-raw literal.
+  Query nodes rose from 309 to 936, `READS` from 478 to 1,610 and `WRITES` from 46 to 595.
+  Reading the gaps this exposed showed CTE names and table functions
+  (`jsonb_array_elements`, `unnest`) reported as missing tables, and `WITH`-prefixed
+  writes summarized as selects; both are fixed, leaving 212 `no-table` gaps that are
+  real: views (`catalog_search_export_v1`, the `*_v1` family), `information_schema` and
+  `pg_catalog` relations, which Surveyor does not yet declare.
 
 ## What this does not show
 

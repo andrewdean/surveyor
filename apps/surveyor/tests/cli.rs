@@ -234,9 +234,20 @@ fn index_and_answer_phase_zero_questions() {
         "rust:crates/outbox/src/store.rs::OutboxStore::pending",
         "rust:crates/outbox/src/relay.rs::Relay::drain",
         "rust:crates/api/src/main.rs::main",
+        // `purge` names the table through `{schema}.outbox`, so the schema is unknown
+        // until run time; `outbox` is declared in one schema, so the edge is certain.
+        "rust:crates/outbox/src/store.rs::OutboxStore::purge",
     ] {
         assert!(ids.contains(&expected), "{expected} missing from {ids:?}");
     }
+    let purge = affected["affected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["node"]["id"] == "rust:crates/outbox/src/store.rs::OutboxStore::purge")
+        .expect("purge is affected");
+    assert_eq!(purge["via"]["kind"], "WRITES", "{purge}");
+    assert_eq!(purge["depth"], 1, "{purge}");
     assert!(
         affected["affected"]
             .as_array()

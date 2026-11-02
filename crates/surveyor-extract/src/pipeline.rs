@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use itertools::Itertools;
 use rayon::prelude::*;
 use surveyor_model::{
     CommitId, ContentHash, DeclarationFact, ExtractorId, Fact, FactSet, Language, LiteralFact,
@@ -237,15 +238,35 @@ fn parse_literal(lit: &LiteralFact, dialect: SqlDialect) -> Option<StatementSumm
         kind: summary.kind,
         reads: summary
             .reads
-            .into_iter()
-            .filter(|t| !t.contains(PLACEHOLDER))
+            .iter()
+            .filter_map(|t| table_name(t))
+            .unique()
             .collect(),
         writes: summary
             .writes
-            .into_iter()
-            .filter(|t| !t.contains(PLACEHOLDER))
+            .iter()
+            .filter_map(|t| table_name(t))
+            .unique()
             .collect(),
     })
+}
+
+/// The table a parsed name refers to once its placeholders are accounted for.
+///
+/// A placeholder in a qualifier (`{schema}.events`) leaves the table name itself
+/// known, so the qualifier is dropped and the linker resolves the bare name across
+/// schemas. A placeholder in the table position (`{table}`, `{prefix}_events`) leaves
+/// nothing to resolve, so the name is `None`.
+fn table_name(parsed: &str) -> Option<String> {
+    let parts: Vec<&str> = parsed
+        .split('.')
+        .filter(|part| !part.contains(PLACEHOLDER))
+        .collect();
+    let known_table = parsed
+        .rsplit('.')
+        .next()
+        .is_some_and(|table| !table.contains(PLACEHOLDER));
+    (known_table && !parts.is_empty()).then(|| parts.join("."))
 }
 
 fn is_templated(sql: &str) -> bool {
@@ -462,5 +483,69 @@ mod tests {
             substitute_placeholders("UPDATE {t} SET a = {{x}}"),
             "UPDATE __p SET a = __p"
         );
+    }
+
+    #[test]
+    fn a_placeholder_schema_leaves_the_table_name_to_the_linker() {
+        assert_eq!(table_name("cw.users"), Some("cw.users".to_owned()));
+        assert_eq!(table_name("__p.users"), Some("users".to_owned()));
+        assert_eq!(table_name("__p.__p.users"), Some("users".to_owned()));
+        assert_eq!(table_name("__p_suffix.users"), Some("users".to_owned()));
+        assert_eq!(table_name("__p"), None);
+        assert_eq!(table_name("__p.__p"), None);
+        assert_eq!(table_name("cw.__p"), None);
+        assert_eq!(table_name("__p_events"), None);
+
+        let set = extract(
+            r#"fn f(schema: &str, table: &str) {
+    let a = format!("INSERT INTO {schema}.proposals (id) VALUES ($1)");
+    let b = format!("SELECT id FROM {schema}.{table} WHERE id = $1");
+    let c = format!("DELETE FROM {schema}.proposals p USING {schema}.decisions d WHERE d.id = p.id");
+}"#,
+        );
+        let mut refs: Vec<(ReferenceRole, String)> = set
+            .references()
+            .filter(|r| matches!(r.role, ReferenceRole::Read | ReferenceRole::Write))
+            .map(|r| (r.role.clone(), r.path.join(".")))
+            .collect();
+        refs.sort_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then(format!("{:?}", a.0).cmp(&format!("{:?}", b.0)))
+        });
+        assert_eq!(
+            refs,
+            vec![
+                (ReferenceRole::Read, "decisions".to_owned()),
+                (ReferenceRole::Write, "proposals".to_owned()),
+                (ReferenceRole::Write, "proposals".to_owned()),
+            ],
+            "the fully templated query keeps no reference; the rest name bare tables"
+        );
+        assert_eq!(
+            set.declarations()
+                .filter(|d| d.kind == NodeKind::Query)
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn a_query_continued_across_lines_still_parses() {
+        let set = extract(
+            "fn propose(schema: &str) {\n    let sql = format!(\n        \"INSERT INTO {schema}.taxonomy_placement_proposals \\\n            (taxonomy_path, container_id) \\\n         VALUES ($1, $2) RETURNING proposal_id\"\n    );\n    sqlx::query_as(&sql);\n}\n",
+        );
+        let query = set
+            .declarations()
+            .find(|d| d.kind == NodeKind::Query)
+            .expect("the continued literal parses as one statement");
+        assert_eq!(
+            query.attributes.get("statement").map(String::as_str),
+            Some("INSERT")
+        );
+        let write = set
+            .references()
+            .find(|r| r.role == ReferenceRole::Write)
+            .expect("write");
+        assert_eq!(write.path, vec!["taxonomy_placement_proposals"]);
     }
 }

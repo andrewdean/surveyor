@@ -35,7 +35,11 @@ for now). This checkout implements Phase 0 of that plan.
   never resolves to a function, a qualifier that names no declaration is a
   `qualifier-mismatch` gap rather than another file's node, and too many candidates are
   recorded as unresolved, never guessed. SQL references resolve against the schema the
-  migrations declare.
+  migrations declare; a table named without one, whether bare or behind a placeholder
+  (`format!("DELETE FROM {schema}.events ...")`), resolves to every schema that declares
+  it at confidence 1/n. String literals are decoded before parsing, so a query continued
+  across lines with `\` reads as the one line the program sends, and names a statement
+  introduces itself (CTEs, table functions) are never mistaken for tables.
 - **Provenance.** Every edge carries a derivation (`syntactic`, `resolved`, `declared`,
   later `observed` and `inferred`), a confidence, and evidence: repository, file, byte
   span, lines, commit and a hash of the cited text.

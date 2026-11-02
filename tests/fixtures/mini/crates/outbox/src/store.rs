@@ -13,4 +13,9 @@ impl OutboxStore {
     pub fn mark_sent(&self, _rows: &[String]) {
         let _ = sqlx::query("UPDATE cw_outbox.outbox SET sent_at = now() WHERE id = ANY($1)");
     }
+
+    /// Drops sent rows older than the retention window; the schema is chosen at run time.
+    pub fn purge(&self, schema: &str) {
+        let _ = sqlx::query(&format!("DELETE FROM {schema}.outbox WHERE sent_at < now() - interval '7 days'"));
+    }
 }

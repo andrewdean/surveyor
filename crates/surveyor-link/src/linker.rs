@@ -15,7 +15,7 @@ use surveyor_model::{
 
 use crate::ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id};
 use crate::input::LinkInput;
-use crate::resolve::{Resolution, Site, SymbolIndex, Tier, decide, is_method, rank};
+use crate::resolve::{Resolution, Site, SymbolIndex, Tier, decide, decide_table, is_method, rank};
 
 /// Resolver recorded on edges derived from `sqlparser` facts.
 const SQL_RESOLVER: &str = "sqlparser";
@@ -982,22 +982,36 @@ impl<'a> Builder<'a> {
             [t] => (None, t.as_str()),
             _ => (None, r.name.as_str()),
         };
-        let Some(dst) = self.index.table(schema, table) else {
-            self.report(r, &file, UnresolvedReason::NoTable);
-            return;
-        };
+        let candidates = self.index.tables(schema, table);
+        let (targets, confidence) =
+            match decide_table(candidates, self.input.options.max_candidates) {
+                Resolution::Linked {
+                    targets,
+                    confidence,
+                } => (targets, confidence),
+                Resolution::Unresolved(reason) => {
+                    self.report(r, &file, reason);
+                    return;
+                }
+                Resolution::Silent => return,
+            };
         let kind = match (&set.language, &r.role) {
             (Some(Language::Sql), ReferenceRole::Write) => EdgeKind::Migrates,
             _ => r.role.edge_kind(),
         };
-        let prov = self.resolved_sql(&file, r.span, r.hash);
-        let against = vec![self.node_id(dst)];
-        self.push_edge_once(src, kind.clone(), dst, prov.clone(), against.clone());
         // The symbol that holds a query literal touches the table too.
-        if self.nodes[src].kind == NodeKind::Query
-            && let Some(parent) = self.parent_decl(&file, src)
-        {
-            self.push_edge_once(parent, kind, dst, prov, against);
+        let holder = (self.nodes[src].kind == NodeKind::Query)
+            .then(|| self.parent_decl(&file, src))
+            .flatten();
+        for dst in targets {
+            let prov = self
+                .resolved_sql(&file, r.span, r.hash)
+                .with_confidence(confidence);
+            let against = vec![self.node_id(dst)];
+            self.push_edge_once(src, kind.clone(), dst, prov.clone(), against.clone());
+            if let Some(parent) = holder {
+                self.push_edge_once(parent, kind.clone(), dst, prov, against);
+            }
         }
     }
 
@@ -2367,6 +2381,64 @@ mod tests {
                 .unresolved
                 .iter()
                 .all(|u| u.reason != UnresolvedReason::NoTable)
+        );
+    }
+
+    #[test]
+    fn a_table_behind_a_schema_placeholder_links_to_every_schema_that_declares_it() {
+        let units = [
+            unit(
+                "migrations/001.sql",
+                "CREATE SCHEMA a;\nCREATE TABLE a.events (id uuid);\nCREATE TABLE a.only_here (id uuid);\n",
+            ),
+            unit(
+                "migrations/002.sql",
+                "CREATE SCHEMA b;\nCREATE TABLE b.events (id uuid);\n",
+            ),
+            unit(
+                "src/repo.rs",
+                r#"fn record(schema: &str) {
+    let _ = sqlx::query(&format!("INSERT INTO {schema}.events (id) VALUES ($1)"));
+}
+fn count(schema: &str) {
+    let _ = sqlx::query(&format!("SELECT count(*) FROM {schema}.only_here"));
+}
+fn anything(schema: &str, table: &str) {
+    let _ = sqlx::query(&format!("SELECT 1 FROM {schema}.{table}"));
+}
+"#,
+            ),
+        ];
+        let (delta, _) = linked(&units);
+        let writes: Vec<_> = delta
+            .edges
+            .iter()
+            .filter(|e| e.src.as_str() == "rust:src/repo.rs::record" && e.kind == EdgeKind::Writes)
+            .collect();
+        let mut written: Vec<&str> = writes.iter().map(|e| e.dst.as_str()).collect();
+        written.sort_unstable();
+        assert_eq!(written, vec!["sql:a.events", "sql:b.events"]);
+        assert!(
+            writes
+                .iter()
+                .all(|e| (e.provenance.confidence.get() - 0.5).abs() < 1e-6),
+            "two schemas declare `events`, so each edge carries half the confidence"
+        );
+        let only = edge(
+            &delta,
+            "rust:src/repo.rs::count",
+            &EdgeKind::Reads,
+            "sql:a.only_here",
+        )
+        .expect("a bare name declared once resolves");
+        assert!((only.provenance.confidence.get() - 1.0).abs() < f32::EPSILON);
+        assert!(
+            delta
+                .unresolved
+                .iter()
+                .all(|u| u.reason != UnresolvedReason::NoTable),
+            "a query whose table is itself a placeholder names nothing to miss: {:?}",
+            delta.unresolved
         );
     }
 }

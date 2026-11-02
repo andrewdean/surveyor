@@ -10,11 +10,12 @@
 //! statements that fail are skipped and counted in the `sql.unparsed` attribute of the
 //! fact set's first declaration, never silently invented.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::ops::ControlFlow;
 
 use sqlparser::ast::{
-    AlterTableOperation, FromTable, ObjectName, ObjectNamePart, SchemaName, Statement, TableFactor,
-    TableObject,
+    AlterTableOperation, FromTable, ObjectName, ObjectNamePart, Query, SchemaName, SetExpr,
+    Statement, TableFactor, TableObject, Visit, Visitor,
 };
 use sqlparser::dialect::{
     AnsiDialect, BigQueryDialect, Dialect, DuckDbDialect, GenericDialect, MySqlDialect,
@@ -97,18 +98,84 @@ fn object_name(name: &ObjectName) -> String {
         .join(".")
 }
 
+/// Names a statement introduces itself, which read like tables but are not.
+///
+/// A common table expression (`WITH recent AS (...) SELECT ... FROM recent`) and a
+/// table function (`FROM jsonb_array_elements(tags)`) both appear as relations to
+/// `sqlparser`; neither is a table the schema declares.
+#[derive(Debug, Default)]
+struct LocalNames(HashSet<String>);
+
+impl Visitor for LocalNames {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<()> {
+        self.0.extend(
+            query
+                .with
+                .iter()
+                .flat_map(|with| with.cte_tables.iter())
+                .map(|cte| cte.alias.name.value.clone()),
+        );
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
+        if let TableFactor::Table {
+            name,
+            args: Some(_),
+            ..
+        }
+        | TableFactor::Function { name, .. } = factor
+        {
+            self.0.insert(object_name(name));
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+fn local_names(stmt: &Statement) -> HashSet<String> {
+    let mut names = LocalNames::default();
+    let _ = stmt.visit(&mut names);
+    names.0
+}
+
 fn summarize_statement(stmt: &Statement) -> StatementSummary {
+    let local = local_names(stmt);
     let mut all: Vec<String> = Vec::new();
     let _ = sqlparser::ast::visit_relations(stmt, |rel: &ObjectName| {
         let name = object_name(rel);
-        if !all.contains(&name) {
+        if !all.contains(&name) && !local.contains(&name) {
             all.push(name);
         }
-        std::ops::ControlFlow::<()>::Continue(())
+        ControlFlow::<()>::Continue(())
     });
     let mut writes: Vec<String> = Vec::new();
     let kind = match stmt {
-        Statement::Query(_) => "SELECT",
+        // `WITH ... INSERT/UPDATE/DELETE/MERGE` parses as a query wrapping the statement.
+        Statement::Query(query) => match query.body.as_ref() {
+            SetExpr::Insert(inner)
+            | SetExpr::Update(inner)
+            | SetExpr::Delete(inner)
+            | SetExpr::Merge(inner) => {
+                let StatementSummary {
+                    kind,
+                    reads,
+                    writes: inner_writes,
+                } = summarize_statement(inner);
+                push_unique(
+                    &mut all,
+                    reads.into_iter().filter(|t| !local.contains(t)).collect(),
+                );
+                writes = inner_writes;
+                return StatementSummary {
+                    kind,
+                    reads: all.into_iter().filter(|t| !writes.contains(t)).collect(),
+                    writes,
+                };
+            }
+            _ => "SELECT",
+        },
         Statement::Insert(insert) => {
             if let TableObject::TableName(name) = &insert.table {
                 writes.push(object_name(name));
@@ -543,6 +610,34 @@ mod tests {
         .expect("parses");
         assert_eq!(u.writes, vec!["t"]);
         assert_eq!(u.reads, vec!["s"]);
+    }
+
+    #[test]
+    fn ctes_and_table_functions_are_not_tables() {
+        let s = summarize_sql(
+            "WITH recent AS (SELECT * FROM cw.events WHERE at > now() - interval '1 day'), \
+             ranked AS (SELECT r.*, row_number() OVER () AS n FROM recent r) \
+             SELECT u.id, t.value FROM ranked k \
+             JOIN cw.users u ON u.id = k.user_id \
+             CROSS JOIN jsonb_array_elements(k.tags) AS t \
+             JOIN LATERAL unnest(u.roles) AS role ON true",
+            SqlDialect::PostgreSql,
+        )
+        .expect("parses");
+        assert_eq!(s.kind, "SELECT");
+        assert_eq!(s.reads, vec!["cw.events", "cw.users"]);
+        let w = summarize_sql(
+            "WITH expired AS (SELECT id FROM cw.sessions WHERE expired) \
+             INSERT INTO cw.audit (id) SELECT id FROM expired",
+            SqlDialect::PostgreSql,
+        )
+        .expect("parses");
+        assert_eq!(
+            w.kind, "INSERT",
+            "a WITH-prefixed insert is still an insert"
+        );
+        assert_eq!(w.writes, vec!["cw.audit"]);
+        assert_eq!(w.reads, vec!["cw.sessions"]);
     }
 
     #[test]

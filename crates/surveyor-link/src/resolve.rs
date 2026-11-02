@@ -61,17 +61,20 @@ impl SymbolIndex {
         self.by_name.get(name).map_or(&[], Vec::as_slice)
     }
 
-    /// The table `schema.name`, or the unique table called `name` when no schema is given.
-    pub(crate) fn table(&self, schema: Option<&str>, name: &str) -> Option<usize> {
+    /// The table `schema.name`, or every table called `name` when no schema is given.
+    ///
+    /// A name without a schema comes from a `search_path` lookup or a templated
+    /// `{schema}.name`; either way the schema is decided at run time, so each schema
+    /// that declares the table is a candidate.
+    pub(crate) fn tables(&self, schema: Option<&str>, name: &str) -> Vec<usize> {
         match schema {
             Some(s) => self
                 .tables_by_qualified
                 .get(&format!("{s}.{name}"))
-                .copied(),
-            None => match self.tables_by_name.get(name).map(Vec::as_slice) {
-                Some([only]) => Some(*only),
-                _ => None,
-            },
+                .into_iter()
+                .copied()
+                .collect(),
+            None => self.tables_by_name.get(name).cloned().unwrap_or_default(),
         }
     }
 
@@ -312,6 +315,22 @@ pub(crate) fn decide(ranked: &Ranked, site: Site, max_candidates: usize) -> Reso
     }
 }
 
+/// Decides what to do with the tables a reference may name. Pure.
+///
+/// A schema-qualified name has at most one candidate and links with certainty. A bare
+/// name links to every schema that declares the table, each at `1/n`, because the
+/// schema is chosen at run time and the graph cannot tell which.
+pub(crate) fn decide_table(candidates: Vec<usize>, max_candidates: usize) -> Resolution {
+    match candidates.len() {
+        0 => Resolution::Unresolved(UnresolvedReason::NoTable),
+        n if n > max_candidates => Resolution::Unresolved(UnresolvedReason::Ambiguous),
+        n => Resolution::Linked {
+            confidence: Confidence::new(1.0 / n as f32),
+            targets: candidates,
+        },
+    }
+}
+
 /// Whether a call form is a method call.
 pub(crate) const fn is_method(form: CallForm) -> bool {
     matches!(form, CallForm::Method)
@@ -326,6 +345,32 @@ mod tests {
             candidates: candidates.to_vec(),
             anchor,
         }
+    }
+
+    #[test]
+    fn a_table_shares_confidence_across_the_schemas_that_declare_it() {
+        assert_eq!(
+            decide_table(vec![], 8),
+            Resolution::Unresolved(UnresolvedReason::NoTable)
+        );
+        assert_eq!(
+            decide_table(vec![3], 8),
+            Resolution::Linked {
+                targets: vec![3],
+                confidence: Confidence::CERTAIN,
+            }
+        );
+        assert_eq!(
+            decide_table(vec![3, 5], 8),
+            Resolution::Linked {
+                targets: vec![3, 5],
+                confidence: Confidence::new(0.5),
+            }
+        );
+        assert_eq!(
+            decide_table(vec![1, 2, 3], 2),
+            Resolution::Unresolved(UnresolvedReason::Ambiguous)
+        );
     }
 
     fn confidence_of(resolution: &Resolution) -> f32 {

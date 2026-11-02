@@ -831,6 +831,10 @@ fn first_word(text: &str) -> String {
 }
 
 /// Removes the quoting syntax of string literals across the supported languages.
+///
+/// Escape sequences are decoded unless the literal is raw (`r"…"`, `r#"…"#`, `rb"…"`),
+/// so a query written across several lines with `\` continuations reads as the one
+/// line the program sees.
 fn unquote(text: &str) -> String {
     let t = text.trim();
     // A literal prefix (`r#`, `b`, `f`, `R`) is only a prefix when a quote follows it.
@@ -841,18 +845,57 @@ fn unquote(text: &str) -> String {
         .last()
         .unwrap_or(0);
     let body = &t[prefix_len..];
-    let t = if body.starts_with(['"', '\'', '`']) {
+    let quoted = body.starts_with(['"', '\'', '`']);
+    let raw = quoted && t[..prefix_len].contains(['r', 'R']);
+    let t = if quoted {
         body.trim_end_matches('#')
     } else {
         t
     };
-    ["\"\"\"", "'''", "\"", "'", "`"]
+    let inner = ["\"\"\"", "'''", "\"", "'", "`"]
         .iter()
         .find(|q| t.len() >= 2 * q.len() && t.starts_with(*q) && t.ends_with(*q))
-        .map_or_else(
-            || t.to_owned(),
-            |q| t[q.len()..t.len() - q.len()].to_owned(),
-        )
+        .map_or(t, |q| &t[q.len()..t.len() - q.len()]);
+    if raw || !quoted {
+        inner.to_owned()
+    } else {
+        unescape(inner)
+    }
+}
+
+/// Decodes the escape sequences string literals share across languages.
+///
+/// A backslash before a line break continues the string: the break is dropped and
+/// the next line's indentation is kept, which reads as extra spaces in Rust (where
+/// the compiler would drop it too) and as the author's spacing in Python and
+/// JavaScript. Sequences this does not know (`\u{…}`, `\x..`) are kept verbatim.
+fn unescape(body: &str) -> String {
+    let (out, pending) = body.chars().fold(
+        (String::with_capacity(body.len()), false),
+        |(mut out, escaped), c| match (escaped, c) {
+            (false, '\\') => (out, true),
+            (false, c) => {
+                out.push(c);
+                (out, false)
+            }
+            (true, '\n' | '\r') => (out, false),
+            (true, c) => {
+                match c {
+                    'n' => out.push('\n'),
+                    't' => out.push('\t'),
+                    'r' => out.push('\r'),
+                    '0' => out.push('\0'),
+                    '\\' | '"' | '\'' | '`' => out.push(c),
+                    other => {
+                        out.push('\\');
+                        out.push(other);
+                    }
+                }
+                (out, false)
+            }
+        },
+    );
+    if pending { out + "\\" } else { out }
 }
 
 /// Cuts `text` at a character boundary at or before `max` bytes, marking the cut.
@@ -1386,6 +1429,25 @@ describe("server", () => { it("starts", () => {}); });
         assert_eq!(unquote("b\"bytes\""), "bytes");
         assert_eq!(unquote("f'py {x}'"), "py {x}");
         assert_eq!(unquote("\"\"\"doc\"\"\""), "doc");
+        assert_eq!(
+            unquote(
+                "\"INSERT INTO {schema}.t \\\n                (a, b) \\\n             VALUES ($1, $2)\""
+            ),
+            "INSERT INTO {schema}.t                 (a, b)              VALUES ($1, $2)",
+            "a continued line drops the break and keeps the indentation"
+        );
+        assert_eq!(unquote("\"say \\\"hi\\\"\\n\""), "say \"hi\"\n");
+        assert_eq!(
+            unquote("r\"a\\nb\""),
+            "a\\nb",
+            "raw strings keep their backslashes"
+        );
+        assert_eq!(unquote("r#\"a\\\"b\"#"), "a\\\"b");
+        assert_eq!(
+            unquote("\"\\u{1F600}\""),
+            "\\u{1F600}",
+            "unknown escapes stay verbatim"
+        );
         assert_eq!(definition_name("Vec<T>"), "Vec");
         assert_eq!(reference_path("Vec::<u8>::new"), vec!["Vec", "new"]);
         assert_eq!(python_module_path("..pkg.mod"), vec!["..", "pkg", "mod"]);
