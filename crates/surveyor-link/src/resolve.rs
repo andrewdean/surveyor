@@ -32,6 +32,10 @@ pub(crate) struct SymbolIndex {
     /// Names a file imports from outside the repository (dependencies, the standard
     /// library), by file. A reference to one is that dependency's, not a gap.
     pub(crate) external_names_by_file: HashMap<RepoPath, HashSet<String>>,
+    /// Node indexes each name a file imports from inside the repository stands for
+    /// (a module file, a class, a function), by file and bound name. A receiver that
+    /// is one of these names narrows a reference to that target's declarations.
+    pub(crate) imported_targets_by_file: HashMap<RepoPath, HashMap<String, Vec<usize>>>,
     /// Package node ids a package depends on, by package node id.
     pub(crate) deps_of_package: HashMap<String, HashSet<String>>,
 }
@@ -284,6 +288,10 @@ pub(crate) struct Site {
     /// A call on `self`/`this` inside a class that extends a type from outside the
     /// repository, so a method declared nowhere here is inherited from it.
     pub(crate) inherits_external: bool,
+    /// The candidates were narrowed by the receiver to the declarations of the
+    /// imported module, the imported class or the enclosing class, so the receiver's
+    /// type is not a guess.
+    pub(crate) receiver_known: bool,
 }
 
 /// Confidence of a method call resolved by name to a declaration in another file of
@@ -328,6 +336,9 @@ pub(crate) fn decide(ranked: &Ranked, site: Site, max_candidates: usize) -> Reso
         [] if site.builtin => Resolution::Silent,
         [] if ranked.anchor == Anchor::Mismatched => report(UnresolvedReason::QualifierMismatch),
         [] => report(UnresolvedReason::NoDeclaration),
+        // `db.connect()` after `from . import db`: the receiver named the module, and
+        // the candidates are its declarations, wherever that module lives.
+        _ if site.receiver_known => linked(1.0),
         _ if site.builtin && !anchored => Resolution::Silent,
         many if many.len() > max_candidates => report(UnresolvedReason::Ambiguous),
         // A method call whose only matches are in unrelated packages is a guess about
@@ -379,6 +390,7 @@ mod tests {
             report: true,
             external_import: true,
             inherits_external: false,
+            receiver_known: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::None), site, 8),
@@ -400,6 +412,7 @@ mod tests {
             report: true,
             external_import: false,
             inherits_external: true,
+            receiver_known: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::None), site, 8),
@@ -411,6 +424,31 @@ mod tests {
                 Resolution::Linked { .. }
             ),
             "a method declared here still links"
+        );
+    }
+
+    #[test]
+    fn a_known_receiver_makes_a_remote_method_call_certain() {
+        let site = Site {
+            method_call: true,
+            builtin: true,
+            report: true,
+            external_import: false,
+            inherits_external: false,
+            receiver_known: true,
+        };
+        assert_eq!(
+            decide(&ranked(&[(Tier::SameRepo, 4)], Anchor::None), site, 8),
+            Resolution::Linked {
+                targets: vec![4],
+                confidence: Confidence::CERTAIN,
+            },
+            "a builtin name on a known receiver is the receiver's own method"
+        );
+        assert_eq!(
+            decide(&ranked(&[], Anchor::None), site, 8),
+            Resolution::Silent,
+            "with nothing declared, a builtin name stays silent as before"
         );
     }
 
@@ -456,6 +494,7 @@ mod tests {
             report: true,
             external_import: false,
             inherits_external: false,
+            receiver_known: false,
         };
         let plain = |c: &[(Tier, usize)]| ranked(c, Anchor::None);
         assert_eq!(
@@ -483,6 +522,7 @@ mod tests {
             report: false,
             external_import: false,
             inherits_external: false,
+            receiver_known: false,
             ..free
         };
         assert_eq!(decide(&plain(&[]), quiet, 5), Resolution::Silent);
@@ -535,6 +575,7 @@ mod tests {
             report: true,
             external_import: false,
             inherits_external: false,
+            receiver_known: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::Mismatched), free, 5),
@@ -558,6 +599,7 @@ mod tests {
             report: true,
             external_import: false,
             inherits_external: false,
+            receiver_known: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::None), builtin, 5),
@@ -593,6 +635,7 @@ mod tests {
             report: true,
             external_import: false,
             inherits_external: false,
+            receiver_known: false,
         };
         let one = |tier| ranked(&[(tier, 1)], Anchor::None);
         assert_eq!(confidence_of(&decide(&one(Tier::SameFile), method, 5)), 1.0);

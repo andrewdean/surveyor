@@ -52,7 +52,11 @@ for now). This checkout implements Phase 0 of that plan.
   (`descriptor` in `descriptor.Foo()`, `_message` in `class Envelope(_message.Message)`),
   so a name reached through an imported module is the module's too, and a `self`
   or `this` call inside a class that extends a dependency's type is that base
-  class's method when nothing in the repository declares it. SQL references resolve against the schema the
+  class's method when nothing in the repository declares it. A receiver that names
+  something imported from the repository narrows the candidates to it: `db.connect()`
+  after `from . import db` is the module's `connect`, `Repo.create()` the class's
+  member, `self.save()` the enclosing class's method, each at confidence 1 wherever
+  the declaration lives. SQL references resolve against the schema the
   migrations declare; a table named without one, whether bare or behind a placeholder
   (`format!("DELETE FROM {schema}.events ...")`), resolves to every schema that declares
   it at confidence 1/n. String literals are decoded before parsing, so a query continued
@@ -78,7 +82,7 @@ for now). This checkout implements Phase 0 of that plan.
   product along each path (paths below `--min-confidence`, default 0.25, are dropped),
   shortest paths with a tier that says how certain the hops are, hubs ranked by how
   many files depend on a node, label-propagation communities and dependency cycles over
-  `petgraph`.
+  `petgraph`. A file reached by the walk is reported but not walked through: the files that import it depend on everything it exports, so ask about the file itself for its importers.
 - **Dispatch.** A trait or interface method carries `DISPATCHES_TO` edges to every
   implementation that defines the same name, so a path through `dyn Trait` continues
   into the bodies that run and `affected` on an implementation climbs to the callers of

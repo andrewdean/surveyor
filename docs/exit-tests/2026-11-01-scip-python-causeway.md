@@ -210,6 +210,26 @@ the ambiguous list because its receiver root `sqlx` is a dependency. With all
 fifty-nine indexes loaded, the whole-graph gaps go from 11,126 to 8,919. The
 exit-test answers are unchanged in content.
 
+The receiver then went to work on precision. When it names something the file
+imported from the repository, the candidates narrow to that target's declarations:
+`db.connect()` after `from . import db` is `connect` in `db.py`, `Repo.create()` is
+the class's member, and `self.save()` is the enclosing class's method, each at
+confidence 1 wherever the declaration lives. On Causeway that moved 608 Rust calls,
+26 TypeScript calls and 14 Python calls from shared 1/n or 0.75 edges to certain
+ones and withdrew 783 Rust name matches the receiver ruled out; gaps went from
+24,939 to 24,782 name-only and from 8,919 to 8,875 with every index. The gain is
+small because most of Causeway's method calls are on local variables, whose types
+only the precise tier knows.
+
+Running question 15 again after these changes showed a regression the from-import
+edges had introduced: `affected PrefixedSettings` at depth 2 listed thirty-one nodes,
+because `causeway_platform/__init__.py` re-exports the class, so the file was
+affected at depth 1 and every file importing anything from the package followed at
+depth 2. `affected` now reports a file it reaches but does not walk through it; what
+imports that file depends on everything it exports, which is too coarse to count as
+affected by one symbol, and asking about the file itself still walks its importers.
+Question 15 is back to its ten nodes plus the re-exporting file.
+
 ***Recommendation:*** keep scip-python in the documented default set alongside
 rust-analyzer and scip-typescript; tell adopters that the index covers what their
 pyright configuration includes and that workspace packages resolve only when the

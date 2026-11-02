@@ -665,6 +665,7 @@ impl<'a> Builder<'a> {
             report: false,
             external_import: false,
             inherits_external: false,
+            receiver_known: false,
         };
         let Resolution::Linked {
             targets,
@@ -933,6 +934,78 @@ impl<'a> Builder<'a> {
         true
     }
 
+    /// The declarations the receiver of `r` narrows it to, when the receiver names
+    /// something the file imported from the repository or the enclosing class.
+    ///
+    /// `db.connect()` after `from . import db` yields `connect` in `db.py`;
+    /// `Repo.create()` after `from .db import Repo` yields `create` inside `Repo`;
+    /// `self.save()` yields `save` inside an enclosing class or impl. `None` when the
+    /// receiver is not such a name; an empty list when it is but declares no such
+    /// member, in which case the caller falls back to matching by name.
+    fn receiver_candidates(
+        &self,
+        file: &RepoPath,
+        r: &ReferenceFact,
+        accept: &impl Fn(&NodeKind) -> bool,
+    ) -> Option<Vec<(usize, &Node)>> {
+        let root = r.receiver.as_deref()?;
+        let named = |d: &DeclRef| {
+            let node = &self.nodes[d.node];
+            node.name == r.name && accept(&node.kind)
+        };
+        if matches!(root, "self" | "this" | "cls" | "Self") {
+            let decls = self.decls_by_file.get(file)?;
+            return Some(
+                decls
+                    .iter()
+                    .filter(|d| named(d))
+                    .filter(|d| {
+                        // `parent` indexes the file's declaration list, not the nodes.
+                        d.parent.is_some_and(|p| {
+                            r.scope.iter().any(|s| self.nodes[decls[p].node].name == *s)
+                        })
+                    })
+                    .map(|d| (d.node, &self.nodes[d.node]))
+                    .collect(),
+            );
+        }
+        let targets = self.index.imported_targets_by_file.get(file)?.get(root)?;
+        let found: Vec<(usize, &Node)> = targets
+            .iter()
+            .flat_map(|&target| {
+                let decls = self.nodes[target]
+                    .file()
+                    .and_then(|f| self.decls_by_file.get(f))
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let members: Vec<&DeclRef> = if self.nodes[target].kind == NodeKind::File {
+                    // Top-level declarations of the module first; anything in it otherwise.
+                    let top: Vec<&DeclRef> = decls
+                        .iter()
+                        .filter(|d| named(d) && d.parent.is_none())
+                        .collect();
+                    if top.is_empty() {
+                        decls.iter().filter(|d| named(d)).collect()
+                    } else {
+                        top
+                    }
+                } else {
+                    decls
+                        .iter()
+                        .filter(|d| named(d) && d.parent.is_some_and(|p| decls[p].node == target))
+                        .collect()
+                };
+                members
+                    .into_iter()
+                    .map(|d| (d.node, &self.nodes[d.node]))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        // The same declaration may be reached through the module and the symbol.
+        let mut seen = HashSet::new();
+        Some(found.into_iter().filter(|(i, _)| seen.insert(*i)).collect())
+    }
+
     fn link_named(
         &mut self,
         si: usize,
@@ -965,13 +1038,17 @@ impl<'a> Builder<'a> {
             .filter(|(_, n)| same_language(n))
             .collect();
         // `Foo(...)` in Python, TypeScript or JavaScript constructs a class.
-        let candidates = if typed.is_empty() && r.role.is_call() {
+        let by_name = if typed.is_empty() && r.role.is_call() {
             self.candidates(&r.name, src, NodeKind::is_type)
                 .into_iter()
                 .filter(|(_, n)| same_language(n))
                 .collect()
         } else {
             typed
+        };
+        let (candidates, receiver_known) = match self.receiver_candidates(&file, r, &accept) {
+            Some(narrowed) if !narrowed.is_empty() => (narrowed, true),
+            _ => (by_name, false),
         };
         let ranked = rank(&self.index, &file, candidates, qualifier.as_deref());
         // A name the file imports from outside the repository is that dependency's,
@@ -1001,6 +1078,7 @@ impl<'a> Builder<'a> {
             report,
             external_import,
             inherits_external,
+            receiver_known,
         };
         match decide(&ranked, site, self.input.options.max_candidates) {
             Resolution::Silent => {}
@@ -1110,6 +1188,11 @@ impl<'a> Builder<'a> {
             Some(Language::Rust) => self.rust_import_targets(src, &file, r),
             _ => Vec::new(),
         };
+        let root = r
+            .path
+            .first()
+            .filter(|s| !matches!(s.as_str(), "." | ".."))
+            .cloned();
         if self.is_external_import(language.as_ref(), r, relative, &targets) {
             let names = self
                 .index
@@ -1119,8 +1202,34 @@ impl<'a> Builder<'a> {
             names.insert(r.name.clone());
             names.extend(r.binding.clone());
             // `import a.b` binds `a`; recording the root too covers that form.
-            if let Some(root) = r.path.first().filter(|s| !matches!(s.as_str(), "." | "..")) {
-                names.insert(root.clone());
+            names.extend(root);
+        } else if !targets.is_empty() {
+            // The bound name stands for what the import resolved to: a receiver that
+            // is this name narrows a reference to those declarations.
+            let bound = self
+                .index
+                .imported_targets_by_file
+                .entry(file.clone())
+                .or_default();
+            // `from m import X` resolved to the module and `X` inside it: the name
+            // stands for `X`, not the module. A module-only import stands for the file.
+            let symbols: Vec<usize> = targets
+                .iter()
+                .copied()
+                .filter(|&t| self.nodes[t].kind != NodeKind::File)
+                .collect();
+            let stands_for = if symbols.is_empty() {
+                targets.clone()
+            } else {
+                symbols
+            };
+            let binding = r.binding.clone().unwrap_or_else(|| r.name.clone());
+            bound
+                .entry(binding)
+                .or_default()
+                .extend(stands_for.iter().copied());
+            if let Some(root) = root.filter(|root| *root != r.name && r.binding.is_none()) {
+                bound.entry(root).or_default().extend(stands_for);
             }
         }
         if targets.is_empty() {
@@ -2757,6 +2866,55 @@ fn anything(schema: &str, table: &str) {
                 "typescript:web/src/thing.ts::Thing"
             )
             .is_some()
+        );
+    }
+
+    #[test]
+    fn a_receiver_that_names_an_import_or_the_class_narrows_the_candidates() {
+        let units = [
+            unit("app/__init__.py", ""),
+            unit(
+                "app/db.py",
+                "def connect():\n    pass\n\nclass Repo:\n    def connect(self):\n        pass\n\n    @staticmethod\n    def create():\n        pass\n",
+            ),
+            unit(
+                "app/util.py",
+                "def connect():\n    pass\n\ndef create():\n    pass\n",
+            ),
+            unit(
+                "app/main.py",
+                "from app import db\nfrom app.db import Repo\n\nclass Svc:\n    def run(self):\n        db.connect()\n        Repo.create()\n        self.helper()\n\n    def helper(self):\n        pass\n\ndef helper():\n    pass\n",
+            ),
+        ];
+        let (delta, _) = linked(&units);
+        let calls: Vec<(&str, f32)> = delta
+            .edges
+            .iter()
+            .filter(|e| {
+                e.src.as_str() == "python:app/main.py::Svc::run" && e.kind == EdgeKind::Calls
+            })
+            .map(|e| (e.dst.as_str(), e.provenance.confidence.get()))
+            .collect();
+        let dst = |name: &str| {
+            calls
+                .iter()
+                .filter(|(d, _)| d.ends_with(name))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            dst("::connect"),
+            vec![&("python:app/db.py::connect", 1.0)],
+            "`db.connect()` is the module's top-level function, not `Repo.connect` or `util.connect`: {calls:?}"
+        );
+        assert_eq!(
+            dst("::create"),
+            vec![&("python:app/db.py::Repo::create", 1.0)],
+            "`Repo.create()` is the class's member, not `util.create`: {calls:?}"
+        );
+        assert_eq!(
+            dst("::helper"),
+            vec![&("python:app/main.py::Svc::helper", 1.0)],
+            "`self.helper()` is the enclosing class's method, not the module function: {calls:?}"
         );
     }
 }

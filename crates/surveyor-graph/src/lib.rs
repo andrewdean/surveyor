@@ -595,13 +595,20 @@ impl CodeGraph {
                     continue;
                 }
                 seen.insert(src, d + 1);
+                let node = &self.nodes[self.graph[src]];
                 out.push(Affected {
-                    node: &self.nodes[self.graph[src]],
+                    node,
                     depth: d + 1,
                     via: edge,
                     confidence: c,
                 });
-                queue.push_back((src, d + 1, c));
+                // A file that imports the symbol is affected; the files that import
+                // that file depend on everything it exports, which is too coarse to
+                // count as affected by one symbol. Ask about the file itself to walk
+                // its importers.
+                if node.kind != NodeKind::File {
+                    queue.push_back((src, d + 1, c));
+                }
             }
         }
         out
@@ -1008,6 +1015,79 @@ mod tests {
             )
             .len(),
             1
+        );
+    }
+
+    #[test]
+    fn affected_reports_an_importing_file_but_does_not_walk_its_importers() {
+        // `settings.py` declares S; `__init__.py` re-exports it; `app.py` and
+        // `other.py` import from `__init__.py`, and only `app.py` uses S.
+        let graph = CodeGraph::new(
+            vec![
+                node("py:settings.py::S", NodeKind::Class),
+                node("file:pkg/__init__.py", NodeKind::File),
+                node("file:app.py", NodeKind::File),
+                node("file:other.py", NodeKind::File),
+                node("py:app.py::Use", NodeKind::Class),
+            ],
+            vec![
+                edge(
+                    "file:pkg/__init__.py",
+                    EdgeKind::Imports,
+                    "py:settings.py::S",
+                    1.0,
+                ),
+                edge(
+                    "file:app.py",
+                    EdgeKind::Imports,
+                    "file:pkg/__init__.py",
+                    1.0,
+                ),
+                edge(
+                    "file:other.py",
+                    EdgeKind::Imports,
+                    "file:pkg/__init__.py",
+                    1.0,
+                ),
+                edge(
+                    "py:app.py::Use",
+                    EdgeKind::Extends,
+                    "py:settings.py::S",
+                    1.0,
+                ),
+            ],
+        );
+        let mut hits: Vec<(String, usize)> = graph
+            .affected(
+                &NodeId::new("py:settings.py::S"),
+                Reach::depth(3),
+                &EdgeFilter::impact(),
+            )
+            .iter()
+            .map(|a| (a.node.id.to_string(), a.depth))
+            .collect();
+        hits.sort();
+        assert_eq!(
+            hits,
+            vec![
+                ("file:pkg/__init__.py".to_owned(), 1),
+                ("py:app.py::Use".to_owned(), 1)
+            ],
+            "the re-exporting file is affected; what imports that file is not, by this symbol"
+        );
+        let importers: Vec<String> = graph
+            .affected(
+                &NodeId::new("file:pkg/__init__.py"),
+                Reach::depth(1),
+                &EdgeFilter::impact(),
+            )
+            .iter()
+            .map(|a| a.node.id.to_string())
+            .collect();
+        assert_eq!(
+            importers.len(),
+            2,
+            "asked about the file, its importers are affected"
         );
     }
 
