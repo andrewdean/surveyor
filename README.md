@@ -22,7 +22,11 @@ for now). This checkout implements Phase 0 of that plan.
   Tree-sitter reference at the same site, so the covered `CALLS`, `USES_TYPE` and
   `IMPLEMENTS` edges carry `resolved` provenance at confidence 1 while the uncovered
   ones keep their name-matched edges. A reference the index attributes to a dependency
-  or a local binding is neither an edge nor a gap. No index, no change.
+  or a local binding is neither an edge nor a gap. No index, no change. Several
+  indexes pool their declarations and are re-rooted under the workspace each was
+  built from, so a monorepo indexed one Cargo workspace at a time still resolves
+  calls across workspaces; `docs/exit-tests/2026-11-01-scip-causeway.md` measures
+  the cost and the gain on Causeway's fourteen workspaces.
 - **Linking.** Declarations become nodes with stable identifiers such as
   `rust:crates/outbox/src/relay.rs::Relay::drain` or `sql:cw_outbox.outbox`. References
   resolve by name within the same file, then package, then repository. A reference is
