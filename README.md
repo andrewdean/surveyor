@@ -29,7 +29,10 @@ for now). This checkout implements Phase 0 of that plan.
   the cost and the gain on Causeway's fourteen workspaces. The companion note
   `2026-11-01-scip-typescript-causeway.md` does the same for `scip-typescript` on its
   thirty-seven TypeScript projects, which cost 33 s and 10 MB of index and resolve
-  46% of the TypeScript edges.
+  46% of the TypeScript edges, and `2026-11-01-scip-python-causeway.md` for
+  `scip-python` on its nine Python projects (14 s, 2.5 MB), ending with all fifty-nine
+  indexes loaded at once: 55% of Causeway's edges resolved and gaps down from 40,539
+  to 13,295.
 - **Linking.** Declarations become nodes with stable identifiers such as
   `rust:crates/outbox/src/relay.rs::Relay::drain` or `sql:cw_outbox.outbox`. References
   resolve by name within the same file, then package, then repository. A reference is
