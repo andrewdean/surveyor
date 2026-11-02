@@ -135,11 +135,29 @@ impl ScipExtractor {
     /// Returns an I/O error when the file cannot be read and a parse error when it is
     /// not a SCIP index.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ExtractError> {
+        Self::load_under(path, None)
+    }
+
+    /// Reads the index at `path` for the repository rooted at `repo_root`.
+    ///
+    /// An index lists its documents relative to the project it was built from. When
+    /// that project is a workspace inside the repository (a monorepo with several
+    /// Cargo workspaces, indexed one at a time), the documents are re-rooted so they
+    /// name the same files the walker does: `src/main.rs` in an index of `apps/`
+    /// becomes `apps/src/main.rs`.
+    ///
+    /// # Errors
+    /// Returns an I/O error when the file cannot be read and a parse error when it is
+    /// not a SCIP index.
+    pub fn load_under(
+        path: impl AsRef<Path>,
+        repo_root: Option<&Path>,
+    ) -> Result<Self, ExtractError> {
         let path = path.as_ref();
         let bytes = std::fs::read(path).map_err(|e| ExtractError::io(e).at(path))?;
         let index = Index::parse_from_bytes(&bytes)
             .map_err(|e| ExtractError::parse(format!("not a SCIP index: {e}")).at(path))?;
-        let extractor = Self::from_index(&index);
+        let extractor = Self::from_index_under(&index, repo_root);
         tracing::info!(
             index = %path.display(),
             tool = %index.metadata.tool_info.name,
@@ -151,20 +169,31 @@ impl ScipExtractor {
         Ok(extractor)
     }
 
-    /// Builds the extractor from a parsed index.
+    /// Builds the extractor from a parsed index whose project is the repository root.
     #[must_use]
     pub fn from_index(index: &Index) -> Self {
+        Self::from_index_under(index, None)
+    }
+
+    /// Builds the extractor from a parsed index, re-rooting its documents under the
+    /// directory the index's project occupies in the repository at `repo_root`.
+    #[must_use]
+    pub fn from_index_under(index: &Index, repo_root: Option<&Path>) -> Self {
         let tool = index.metadata.tool_info.name.as_str();
         let resolver = ResolverId::new(format!(
             "{PREFIX}/{}",
             if tool.is_empty() { "unknown" } else { tool }
         ));
+        let prefix = repo_root.and_then(|root| project_prefix(&index.metadata.project_root, root));
         let mut definitions: HashMap<String, Definition> = HashMap::new();
         let documents: HashMap<RepoPath, Document> = index
             .documents
             .iter()
             .map(|doc| {
-                let path = RepoPath::new(&doc.relative_path);
+                let path = match &prefix {
+                    Some(prefix) => RepoPath::new(format!("{prefix}/{}", doc.relative_path)),
+                    None => RepoPath::new(&doc.relative_path),
+                };
                 let occurrences: Vec<Occurrence> = doc
                     .occurrences
                     .iter()
@@ -250,6 +279,61 @@ fn line_starts(text: &str) -> Vec<usize> {
     std::iter::once(0)
         .chain(text.match_indices('\n').map(|(i, _)| i + 1))
         .collect()
+}
+
+/// The repository-relative directory an index's project root names, if it is a
+/// proper subdirectory of the repository.
+///
+/// `project_root` is the `file://` URI the indexer recorded. The repository root is
+/// compared both as written and canonicalized, so a symlinked checkout still matches.
+/// `None` when the project is the repository itself or lies outside it; the latter is
+/// logged, since every document of such an index will go unmatched.
+fn project_prefix(project_root: &str, repo_root: &Path) -> Option<String> {
+    let project =
+        Path::new(percent_decode(project_root.strip_prefix("file://")?).as_ref()).to_path_buf();
+    let roots = std::iter::once(repo_root.to_path_buf())
+        .chain(std::fs::canonicalize(repo_root).ok())
+        .collect::<Vec<_>>();
+    let relative = roots
+        .iter()
+        .find_map(|root| project.strip_prefix(root).ok())
+        .map(|rel| rel.to_string_lossy().trim_matches('/').to_owned());
+    match relative {
+        Some(rel) if rel.is_empty() => None,
+        Some(rel) => Some(rel),
+        None => {
+            tracing::warn!(
+                project = %project.display(),
+                repo = %repo_root.display(),
+                "SCIP index project is outside the repository; its documents will not match"
+            );
+            None
+        }
+    }
+}
+
+/// Decodes `%XX` escapes in a URI path; anything else passes through unchanged.
+fn percent_decode(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('%') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes.get(i..i + 3) {
+            Some([b'%', hi, lo]) if hi.is_ascii_hexdigit() && lo.is_ascii_hexdigit() => {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("00");
+                out.push(u8::from_str_radix(hex, 16).unwrap_or(b'%'));
+                i += 3;
+            }
+            _ => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    std::borrow::Cow::Owned(String::from_utf8_lossy(&out).into_owned())
 }
 
 impl Extractor for ScipExtractor {
@@ -360,6 +444,41 @@ mod tests {
             ],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn an_index_of_a_workspace_is_rerooted_under_the_repository() {
+        let mut index = index();
+        index.metadata.as_mut().unwrap().project_root = "file:///repo/apps/my%20svc".into();
+        let under = ScipExtractor::from_index_under(&index, Some(Path::new("/repo")));
+        assert!(
+            under
+                .documents
+                .contains_key(&RepoPath::new("apps/my svc/src/relay.rs"))
+        );
+        assert!(
+            under
+                .documents
+                .contains_key(&RepoPath::new("apps/my svc/src/store.rs"))
+        );
+        assert_eq!(
+            under.definitions.values().next().map(|d| d.file.as_str()),
+            Some("apps/my svc/src/store.rs"),
+            "declarations are re-rooted too"
+        );
+        let same = ScipExtractor::from_index_under(&index, Some(Path::new("/repo/apps/my svc")));
+        assert!(same.documents.contains_key(&RepoPath::new("src/relay.rs")));
+        let outside = ScipExtractor::from_index_under(&index, Some(Path::new("/elsewhere")));
+        assert!(
+            outside
+                .documents
+                .contains_key(&RepoPath::new("src/relay.rs"))
+        );
+        assert_eq!(project_prefix("file:///repo", Path::new("/repo")), None);
+        assert_eq!(
+            project_prefix("file:///repo/crates/", Path::new("/repo")),
+            Some("crates".to_owned())
+        );
     }
 
     #[test]

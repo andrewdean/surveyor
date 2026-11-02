@@ -106,7 +106,10 @@ pub fn extract_repository_with(
 ) -> Result<Extraction, ExtractError> {
     let mut extractors = default_extractors(profile)?;
     for path in scip {
-        extractors.push(Box::new(ScipExtractor::load(path)?));
+        extractors.push(Box::new(ScipExtractor::load_under(
+            path,
+            Some(repo.root()),
+        )?));
     }
     let units = repo.units(profile)?;
     Ok(Extraction {
