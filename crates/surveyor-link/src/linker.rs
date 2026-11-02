@@ -659,6 +659,7 @@ impl<'a> Builder<'a> {
             method_call: false,
             builtin: false,
             report: false,
+            external_import: false,
         };
         let Resolution::Linked {
             targets,
@@ -946,10 +947,18 @@ impl<'a> Builder<'a> {
             typed
         };
         let ranked = rank(&self.index, &file, candidates, qualifier.as_deref());
+        // A name the file imports from outside the repository is that dependency's,
+        // whatever declarations here share it.
+        let external_import = self.index.imports_external(&file, &r.name)
+            || r.path
+                .first()
+                .filter(|root| **root != r.name)
+                .is_some_and(|root| self.index.imports_external(&file, root));
         let site = Site {
             method_call,
             builtin: is_builtin_name(language.as_ref(), &r.name),
             report,
+            external_import,
         };
         match decide(&ranked, site, self.input.options.max_candidates) {
             Resolution::Silent => {}
@@ -1024,12 +1033,11 @@ impl<'a> Builder<'a> {
 
         let targets: Vec<usize> = match language {
             Some(Language::TypeScript | Language::Tsx | Language::JavaScript) => {
-                let found = if relative {
-                    self.resolve_relative_file(&file, &r.path, language.as_ref())
+                if relative {
+                    self.module_targets(&file, &r.path, language.as_ref())
                 } else {
-                    self.npm_package(&r.path)
-                };
-                found.into_iter().collect()
+                    self.npm_package(&r.path).into_iter().collect()
+                }
             }
             Some(Language::Bash | Language::Rhai) => {
                 // `source ./x.sh` resolves against the working directory, which is
@@ -1045,18 +1053,33 @@ impl<'a> Builder<'a> {
                     .into_iter()
                     .collect()
             }
-            Some(Language::Python) => self
-                .resolve_python_module(&file, &r.path)
-                .or_else(|| {
+            Some(Language::Python) => {
+                let found = self.module_targets(&file, &r.path, language.as_ref());
+                if found.is_empty() {
                     r.path
                         .first()
                         .and_then(|p| self.package_by_name.get(&package_key("pypi", p)).copied())
-                })
-                .into_iter()
-                .collect(),
+                        .into_iter()
+                        .collect()
+                } else {
+                    found
+                }
+            }
             Some(Language::Rust) => self.rust_import_targets(src, &file, r),
             _ => Vec::new(),
         };
+        if self.is_external_import(language.as_ref(), r, relative, &targets) {
+            let names = self
+                .index
+                .external_names_by_file
+                .entry(file.clone())
+                .or_default();
+            names.insert(r.name.clone());
+            // `import a.b` binds `a`; recording the root too covers that form.
+            if let Some(root) = r.path.first().filter(|s| !matches!(s.as_str(), "." | "..")) {
+                names.insert(root.clone());
+            }
+        }
         if targets.is_empty() {
             return;
         }
@@ -1075,7 +1098,20 @@ impl<'a> Builder<'a> {
             .entry(file.clone())
             .or_default()
             .extend(targets.iter().map(|&t| self.nodes[t].id.to_string()));
-        let confidence = Confidence::new(1.0 / targets.len() as f32);
+        // A module and the symbol imported from it are one binding, not alternatives;
+        // only same-kind targets share the confidence between them.
+        let alternatives = targets
+            .iter()
+            .filter(|&&t| self.nodes[t].kind == NodeKind::File)
+            .count()
+            .max(
+                targets
+                    .iter()
+                    .filter(|&&t| self.nodes[t].kind != NodeKind::File)
+                    .count(),
+            )
+            .max(1);
+        let confidence = Confidence::new(1.0 / alternatives as f32);
         for dst in targets {
             let set = &self.input.fact_sets[si];
             let prov = self
@@ -1084,6 +1120,68 @@ impl<'a> Builder<'a> {
             let against = vec![self.node_id(dst)];
             self.push_edge_once(src, EdgeKind::Imports, dst, prov, against);
         }
+    }
+
+    /// Whether an import binds names from outside the repository.
+    ///
+    /// True when every target is a package the repository does not contain, when a
+    /// Rust `use` names the standard library, or when a non-relative Python or
+    /// JavaScript import resolves to nothing in the repository, which is a dependency
+    /// no manifest lists (`google.protobuf` from the `protobuf` distribution) far more
+    /// often than a module the walker missed.
+    fn is_external_import(
+        &self,
+        language: Option<&Language>,
+        r: &ReferenceFact,
+        relative: bool,
+        targets: &[usize],
+    ) -> bool {
+        let root = r.path.first().map_or("", String::as_str);
+        if targets.is_empty() {
+            return match language {
+                Some(Language::Rust) => matches!(root, "std" | "core" | "alloc"),
+                Some(
+                    Language::Python | Language::TypeScript | Language::Tsx | Language::JavaScript,
+                ) => !relative,
+                _ => false,
+            };
+        }
+        targets.iter().all(|&t| {
+            self.nodes[t].kind == NodeKind::Package
+                && !self.package_dirs.iter().any(|(_, p)| *p == t)
+        })
+    }
+
+    /// The file an import path names, or the file its prefix names together with the
+    /// symbol the last segment names inside it (`from app.db import connect`,
+    /// `import { Client } from "./client"`).
+    fn module_targets(
+        &self,
+        file: &RepoPath,
+        path: &[String],
+        language: Option<&Language>,
+    ) -> Vec<usize> {
+        let resolve = |segments: &[String]| match language {
+            Some(Language::Python) => self.resolve_python_module(file, segments),
+            _ => self.resolve_relative_file(file, segments, language),
+        };
+        if let Some(module) = resolve(path) {
+            return vec![module];
+        }
+        let Some((symbol, module_path)) = path.split_last() else {
+            return Vec::new();
+        };
+        let Some(module) = resolve(module_path) else {
+            return Vec::new();
+        };
+        let declared = self.nodes[module].file().and_then(|module_file| {
+            self.decls_by_file
+                .get(module_file)?
+                .iter()
+                .map(|d| d.node)
+                .find(|&n| self.nodes[n].name == *symbol && self.nodes[n].kind.is_symbol())
+        });
+        std::iter::once(module).chain(declared).collect()
     }
 
     /// Targets of a Rust `use`: the crate's package node when the root names a
@@ -2519,6 +2617,94 @@ fn anything(schema: &str, table: &str) {
                 .all(|u| u.reason != UnresolvedReason::NoTable),
             "a query whose table is itself a placeholder names nothing to miss: {:?}",
             delta.unresolved
+        );
+    }
+
+    #[test]
+    fn names_imported_from_outside_the_repository_are_silent() {
+        let units = [
+            unit(
+                "svc/pyproject.toml",
+                "[project]\nname = \"svc\"\ndependencies = [\"connectrpc>=0.10\"]\n",
+            ),
+            unit("svc/app/__init__.py", ""),
+            unit(
+                "svc/app/db.py",
+                "def connect():\n    pass\n\nclass MethodInfo:\n    pass\n",
+            ),
+            unit(
+                "svc/app/gen/stub.py",
+                "from connectrpc.client import MethodInfo\nfrom google.protobuf import descriptor\nfrom app.db import connect\n\ndef make():\n    MethodInfo(1)\n    descriptor.Foo()\n    connect()\n",
+            ),
+            unit(
+                "web/package.json",
+                "{\n  \"name\": \"web\",\n  \"dependencies\": {\n    \"left-pad\": \"^1\"\n  }\n}\n",
+            ),
+            unit(
+                "web/src/a.ts",
+                "import { pad } from \"left-pad\";\nimport { Thing } from \"./thing\";\nexport function go() { pad(1); new Thing(); }\n",
+            ),
+            unit("web/src/thing.ts", "export class Thing {}\n"),
+        ];
+        let (delta, _) = linked(&units);
+        let gaps: Vec<&str> = delta.unresolved.iter().map(|u| u.name.as_str()).collect();
+        for external in ["MethodInfo", "descriptor", "pad"] {
+            assert!(
+                !gaps.contains(&external),
+                "{external} is imported from a dependency: {gaps:?}"
+            );
+        }
+        // `descriptor.Foo()` is a method call whose receiver the Python pack does not
+        // keep, so the imported module cannot yet vouch for `Foo`.
+        assert_eq!(gaps, vec!["Foo"]);
+        assert!(
+            edge(
+                &delta,
+                "python:svc/app/gen/stub.py::make",
+                &EdgeKind::Calls,
+                "python:svc/app/db.py::MethodInfo"
+            )
+            .is_none(),
+            "the import of `MethodInfo` from connectrpc shadows the local class of that name"
+        );
+        assert!(
+            edge(
+                &delta,
+                "python:svc/app/gen/stub.py::make",
+                &EdgeKind::Calls,
+                "python:svc/app/db.py::connect"
+            )
+            .is_some(),
+            "a name imported from a repository module still links"
+        );
+        let symbol_import = edge(
+            &delta,
+            "file:svc/app/gen/stub.py",
+            &EdgeKind::Imports,
+            "python:svc/app/db.py::connect",
+        )
+        .expect("a from-import names the symbol as well as the module");
+        assert!(
+            (symbol_import.provenance.confidence.get() - 1.0).abs() < f32::EPSILON,
+            "the module and its symbol are one binding, not alternatives"
+        );
+        assert!(
+            edge(
+                &delta,
+                "file:svc/app/gen/stub.py",
+                &EdgeKind::Imports,
+                "file:svc/app/db.py"
+            )
+            .is_some()
+        );
+        assert!(
+            edge(
+                &delta,
+                "typescript:web/src/a.ts::go",
+                &EdgeKind::UsesType,
+                "typescript:web/src/thing.ts::Thing"
+            )
+            .is_some()
         );
     }
 }

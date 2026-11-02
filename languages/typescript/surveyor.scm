@@ -36,7 +36,9 @@
 (call_expression function: (member_expression property: (property_identifier) @name)) @reference.call.method
 (new_expression constructor: (identifier) @name) @reference.type
 
-(import_statement source: (string) @name) @reference.import
+;; The whole statement is the name: the extractor expands `import { a, b } from "m"`
+;; into one import per bound name.
+(import_statement) @name @reference.import
 (call_expression
   function: (identifier) @_r
   arguments: (arguments . (string) @name)

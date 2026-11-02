@@ -16,8 +16,9 @@
 
 (import_statement name: (dotted_name) @name) @reference.import
 (import_statement name: (aliased_import name: (dotted_name) @name)) @reference.import
-(import_from_statement module_name: (dotted_name) @name) @reference.import
-(import_from_statement module_name: (relative_import) @name) @reference.import
+;; The whole statement is the name: the extractor expands `from m import a, b` into
+;; one import per bound name.
+(import_from_statement) @name @reference.import
 
 (class_definition superclasses: (argument_list (identifier) @name)) @reference.extends
 (class_definition superclasses: (argument_list (attribute attribute: (identifier) @name))) @reference.extends

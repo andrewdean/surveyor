@@ -29,6 +29,9 @@ pub(crate) struct SymbolIndex {
     pub(crate) imports_of_file: HashMap<RepoPath, HashSet<String>>,
     /// Every node id a file's imports resolved to (packages, files, symbols), by file.
     pub(crate) imported_by_file: HashMap<RepoPath, HashSet<String>>,
+    /// Names a file imports from outside the repository (dependencies, the standard
+    /// library), by file. A reference to one is that dependency's, not a gap.
+    pub(crate) external_names_by_file: HashMap<RepoPath, HashSet<String>>,
     /// Package node ids a package depends on, by package node id.
     pub(crate) deps_of_package: HashMap<String, HashSet<String>>,
 }
@@ -85,6 +88,13 @@ impl SymbolIndex {
         self.package_of_file
             .get(file)
             .map(|id| normalize_package(id.rsplit('/').next().unwrap_or(id)))
+    }
+
+    /// True when `from` imports `name` from outside the repository.
+    pub(crate) fn imports_external(&self, from: &RepoPath, name: &str) -> bool {
+        self.external_names_by_file
+            .get(from)
+            .is_some_and(|names| names.contains(name))
     }
 
     /// True when `from` imports `candidate` itself or the file that declares it.
@@ -268,6 +278,9 @@ pub(crate) struct Site {
     pub(crate) builtin: bool,
     /// Whether a miss should be reported as a gap.
     pub(crate) report: bool,
+    /// The name, or its path's root, is one the file imports from outside the
+    /// repository.
+    pub(crate) external_import: bool,
 }
 
 /// Confidence of a method call resolved by name to a declaration in another file of
@@ -301,6 +314,9 @@ pub(crate) fn decide(ranked: &Ranked, site: Site, max_candidates: usize) -> Reso
         confidence: Confidence::new(confidence / candidates.len() as f32),
     };
     match candidates {
+        // A name imported from a dependency is that dependency's, whatever the
+        // repository declares under the same name: neither an edge nor a gap.
+        _ if site.external_import => Resolution::Silent,
         // A standard-library name (`expect`, `Result`, `map`) with no declaration the
         // reference points at is the std item, not a gap.
         [] if site.builtin => Resolution::Silent,
@@ -350,6 +366,26 @@ mod tests {
     }
 
     #[test]
+    fn a_name_imported_from_outside_the_repository_is_silent() {
+        let site = Site {
+            method_call: false,
+            builtin: false,
+            report: true,
+            external_import: true,
+        };
+        assert_eq!(
+            decide(&ranked(&[], Anchor::None), site, 8),
+            Resolution::Silent,
+            "no gap for a dependency's name"
+        );
+        assert_eq!(
+            decide(&ranked(&[(Tier::SameFile, 1)], Anchor::None), site, 8),
+            Resolution::Silent,
+            "no edge either, even to a same-named declaration next door"
+        );
+    }
+
+    #[test]
     fn a_table_shares_confidence_across_the_schemas_that_declare_it() {
         assert_eq!(
             decide_table(vec![], 8),
@@ -389,6 +425,7 @@ mod tests {
             method_call: false,
             builtin: false,
             report: true,
+            external_import: false,
         };
         let plain = |c: &[(Tier, usize)]| ranked(c, Anchor::None);
         assert_eq!(
@@ -414,6 +451,7 @@ mod tests {
         );
         let quiet = Site {
             report: false,
+            external_import: false,
             ..free
         };
         assert_eq!(decide(&plain(&[]), quiet, 5), Resolution::Silent);
@@ -464,6 +502,7 @@ mod tests {
             method_call: false,
             builtin: false,
             report: true,
+            external_import: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::Mismatched), free, 5),
@@ -485,6 +524,7 @@ mod tests {
             method_call: false,
             builtin: true,
             report: true,
+            external_import: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::None), builtin, 5),
@@ -518,6 +558,7 @@ mod tests {
             method_call: true,
             builtin: false,
             report: true,
+            external_import: false,
         };
         let one = |tier| ranked(&[(tier, 1)], Anchor::None);
         assert_eq!(confidence_of(&decide(&one(Tier::SameFile), method, 5)), 1.0);

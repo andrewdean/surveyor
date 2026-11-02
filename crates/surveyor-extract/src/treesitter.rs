@@ -1011,12 +1011,94 @@ fn clean_doc(raw: &str) -> String {
 fn expand_import(language: &Language, text: &str) -> Vec<Vec<String>> {
     match language {
         Language::Rust => expand_rust_use(text),
-        Language::Python => vec![python_module_path(text)],
-        Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Bash => {
-            vec![specifier_path(&unquote(text))]
-        }
+        Language::Python => python_import_paths(text),
+        Language::TypeScript | Language::Tsx | Language::JavaScript => js_import_paths(text),
+        Language::Bash => vec![specifier_path(&unquote(text))],
         _ => vec![reference_path(text)],
     }
+}
+
+/// Expands a Python import into one path per name it binds.
+///
+/// `from a.b import c, d as e` becomes `[a, b, c]` and `[a, b, d]`; `from . import x`
+/// becomes `[., x]`; `from m import *` and a plain module (`a.b`, as the
+/// `import a.b` patterns capture it) stay a module path.
+fn python_import_paths(text: &str) -> Vec<Vec<String>> {
+    let text = text.trim();
+    let Some((module, names)) = text
+        .strip_prefix("from ")
+        .and_then(|rest| rest.split_once(" import "))
+    else {
+        return vec![python_module_path(text)];
+    };
+    let module = python_module_path(module.trim());
+    // Drop comments line by line before joining a parenthesized list.
+    let cleaned = names
+        .lines()
+        .map(|line| line.split('#').next().unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace(['(', ')', '\\'], " ");
+    let names: Vec<&str> = cleaned
+        .split(',')
+        .filter_map(|part| part.split_whitespace().next())
+        .map(|name| name.trim_end_matches(';'))
+        .filter(|name| !name.is_empty() && *name != "*")
+        .collect();
+    with_names(module, names)
+}
+
+/// Expands a JavaScript or TypeScript import into one path per name it binds.
+///
+/// `import X, { a, b as c } from "m"` becomes `[m, X]`, `[m, a]` and `[m, b]`;
+/// `import * as ns from "@s/p"` becomes `[@s, p, ns]`; a bare specifier (`import
+/// "./side"`, `require("m")`) stays a module path.
+fn js_import_paths(text: &str) -> Vec<Vec<String>> {
+    let text = text.trim().trim_end_matches(';').trim();
+    if text.starts_with(['"', '\'', '`']) {
+        return vec![specifier_path(&unquote(text))];
+    }
+    let Some(body) = text.strip_prefix("import") else {
+        return vec![specifier_path(&unquote(text))];
+    };
+    let body = body.trim_start();
+    let body = body.strip_prefix("type ").map_or(body, str::trim_start);
+    let (clause, spec) = match body.rsplit_once(" from ") {
+        Some((clause, spec)) => (clause.trim(), spec.trim()),
+        None => ("", body.trim()),
+    };
+    let module = specifier_path(&unquote(spec));
+    let names: Vec<&str> = clause
+        .split([',', '{', '}'])
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| {
+            let words: Vec<&str> = part.split_whitespace().filter(|w| *w != "type").collect();
+            match words.as_slice() {
+                ["*", "as", ns] => Some(*ns),
+                [name, "as", _] | [name] => Some(*name),
+                _ => None,
+            }
+        })
+        .collect();
+    with_names(module, names)
+}
+
+/// One path per bound name under `module`, or the module alone when nothing is named.
+fn with_names(module: Vec<String>, names: Vec<&str>) -> Vec<Vec<String>> {
+    if names.is_empty() {
+        return vec![module];
+    }
+    names
+        .into_iter()
+        .map(|name| {
+            module
+                .iter()
+                .cloned()
+                .chain(std::iter::once(name.to_owned()))
+                .collect()
+        })
+        .collect()
 }
 
 fn specifier_path(spec: &str) -> Vec<String> {
@@ -1337,7 +1419,8 @@ describe("server", () => { it("starts", () => {}); });
         let refs: Vec<_> = facts.references().collect();
         assert!(
             refs.iter()
-                .any(|r| r.role == ReferenceRole::Import && r.path == vec![".", "client"])
+                .any(|r| r.role == ReferenceRole::Import
+                    && r.path == vec![".", "client", "Client"])
         );
         assert!(
             refs.iter()
@@ -1377,7 +1460,7 @@ describe("server", () => { it("starts", () => {}); });
         );
         assert!(
             refs.iter()
-                .any(|r| r.role == ReferenceRole::Import && r.path == vec!["..", "pkg"])
+                .any(|r| r.role == ReferenceRole::Import && r.path == vec!["..", "pkg", "thing"])
         );
         assert!(
             refs.iter()
@@ -1454,5 +1537,33 @@ describe("server", () => { it("starts", () => {}); });
         assert_eq!(python_module_path(".sib"), vec![".", "sib"]);
         assert_eq!(python_module_path("os.path"), vec!["os", "path"]);
         assert_eq!(strip_angle_brackets("Map<K, Vec<V>>::new"), "Map::new");
+    }
+
+    #[test]
+    fn imports_expand_to_the_names_they_bind() {
+        let p = |t: &str| python_import_paths(t);
+        assert_eq!(p("os.path"), vec![vec!["os", "path"]]);
+        assert_eq!(
+            p("from a.b import c, d as e"),
+            vec![vec!["a", "b", "c"], vec!["a", "b", "d"]]
+        );
+        assert_eq!(p("from . import x"), vec![vec![".", "x"]]);
+        assert_eq!(
+            p("from ..pkg import (\n    one,  # first\n    two,\n)"),
+            vec![vec!["..", "pkg", "one"], vec!["..", "pkg", "two"]]
+        );
+        assert_eq!(p("from m import *"), vec![vec!["m"]]);
+        let j = |t: &str| js_import_paths(t);
+        assert_eq!(
+            j("import X, { a, b as c } from \"m\";"),
+            vec![vec!["m", "X"], vec!["m", "a"], vec!["m", "b"]]
+        );
+        assert_eq!(j("import * as ns from '@s/p'"), vec![vec!["@s", "p", "ns"]]);
+        assert_eq!(
+            j("import type { T } from \"./t\""),
+            vec![vec![".", "t", "T"]]
+        );
+        assert_eq!(j("import \"./side\""), vec![vec![".", "side"]]);
+        assert_eq!(j("\"left-pad\""), vec![vec!["left-pad"]]);
     }
 }

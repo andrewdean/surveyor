@@ -158,6 +158,40 @@ change would remove the four generated-code names from the top of the gap list
 without any index, for Python and TypeScript alike, and is the next thing to do
 before measuring anything further.
 
+## Follow-up: the name tier learned what imports bind
+
+Done the same day (commit noted in the README). Python and JavaScript import
+statements now expand to one import per bound name, so `from a.b import c` links the
+file to `a/b.py` and to `c` inside it, and the linker records which bound names come
+from outside the repository: every target a package the repository does not contain,
+a Rust `use` of the standard library, or a non-relative Python or JavaScript import
+that resolves to nothing in the repository. A reference to such a name is silent,
+neither an edge nor a gap, even where the repository declares the same name, because
+the import binding shadows it. On Causeway, name-only, with no index at all:
+
+| | before | after |
+|---|---|---|
+| gaps, whole graph | 40,539 | 30,655 |
+| gaps in `.py` files | 3,353 | 1,659 |
+| gaps in `.ts` files | 3,836 | 2,101 |
+| gaps in `.rs` files | 29,328 | 23,003 |
+| `.rs` `qualifier-mismatch` | 4,748 | 1,908 |
+| name-matched `CALLS`/`USES_TYPE` targets withdrawn | | 3,619 |
+
+Table 4: the external-import rule without any SCIP index. `MethodInfo` and
+`ConnectError` left the gap list; `qualifier-mismatch` in Rust fell because
+`Uuid::new_v4` and its kind now read as the dependency's. The withdrawn targets are
+name matches to a repository declaration that an import of the same name from a
+dependency had shadowed. With all fifty-nine indexes loaded as well, the whole-graph
+gaps go from 13,295 to 11,126.
+
+What the rule does not reach is a name used through a receiver or qualifier the
+query packs do not keep: `self.execute_unary(...)` (446 sites, a method inherited from
+a `connectrpc` base class) and `class Foo(google.protobuf.message.Message)` in the
+`.pyi` stubs (908 sites) still appear as gaps, because the Python pack records only
+the final identifier of an attribute. Keeping the receiver root for method calls and
+attribute references is the next step for those.
+
 ***Recommendation:*** keep scip-python in the documented default set alongside
 rust-analyzer and scip-typescript; tell adopters that the index covers what their
 pyright configuration includes and that workspace packages resolve only when the

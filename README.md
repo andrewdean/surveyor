@@ -44,7 +44,11 @@ for now). This checkout implements Phase 0 of that plan.
   standard-library name (`write`, `new`, `fmt`) resolves only when anchored, a macro
   never resolves to a function, a qualifier that names no declaration is a
   `qualifier-mismatch` gap rather than another file's node, and too many candidates are
-  recorded as unresolved, never guessed. SQL references resolve against the schema the
+  recorded as unresolved, never guessed. Imports name what they bind: `from a.b import
+  c` and `import { c } from "./b"` link the file to module and symbol alike, and a
+  name a file imports from outside the repository (a dependency, the standard
+  library) is that dependency's, neither an edge nor a gap, even when something in
+  the repository shares the name. SQL references resolve against the schema the
   migrations declare; a table named without one, whether bare or behind a placeholder
   (`format!("DELETE FROM {schema}.events ...")`), resolves to every schema that declares
   it at confidence 1/n. String literals are decoded before parsing, so a query continued

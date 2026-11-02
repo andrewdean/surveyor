@@ -82,7 +82,7 @@ pub use walk::{ChangeSource, FileChanges, Repository};
 ///
 /// Part of the engine fingerprint a dataset records, with [`query_pack_fingerprint`],
 /// so `surveyor update` re-indexes in full rather than mixing old and new facts.
-pub const EXTRACT_REVISION: u32 = 5;
+pub const EXTRACT_REVISION: u32 = 6;
 
 /// A hash of the embedded query packs: part of the engine fingerprint a dataset records.
 ///
