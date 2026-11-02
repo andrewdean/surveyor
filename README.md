@@ -26,7 +26,10 @@ for now). This checkout implements Phase 0 of that plan.
   indexes pool their declarations and are re-rooted under the workspace each was
   built from, so a monorepo indexed one Cargo workspace at a time still resolves
   calls across workspaces; `docs/exit-tests/2026-11-01-scip-causeway.md` measures
-  the cost and the gain on Causeway's fourteen workspaces.
+  the cost and the gain on Causeway's fourteen workspaces. The companion note
+  `2026-11-01-scip-typescript-causeway.md` does the same for `scip-typescript` on its
+  thirty-seven TypeScript projects, which cost 33 s and 10 MB of index and resolve
+  46% of the TypeScript edges.
 - **Linking.** Declarations become nodes with stable identifiers such as
   `rust:crates/outbox/src/relay.rs::Relay::drain` or `sql:cw_outbox.outbox`. References
   resolve by name within the same file, then package, then repository. A reference is

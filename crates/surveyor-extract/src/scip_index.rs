@@ -33,12 +33,26 @@ enum Encoding {
 }
 
 impl Encoding {
-    fn of(document: PositionEncoding) -> Self {
+    /// The encoding a document declares, or the one its indexer is known to use when
+    /// it declares none.
+    fn of(document: PositionEncoding, tool: &str) -> Self {
         match document {
+            PositionEncoding::UTF8CodeUnitOffsetFromLineStart => Self::Utf8,
             PositionEncoding::UTF16CodeUnitOffsetFromLineStart => Self::Utf16,
             PositionEncoding::UTF32CodeUnitOffsetFromLineStart => Self::Utf32,
-            // rust-analyzer and the other native indexers count UTF-8 units, and the
-            // protocol's own advice for them says so; take that as the default too.
+            PositionEncoding::UnspecifiedPositionEncoding => Self::assumed_for(tool),
+        }
+    }
+
+    /// What an indexer that leaves the encoding unspecified counts in.
+    ///
+    /// scip-typescript takes its columns from the TypeScript compiler, whose positions
+    /// index JavaScript strings, so they are UTF-16 code units. rust-analyzer and the
+    /// other native indexers count UTF-8 units, and the protocol's own advice for them
+    /// says so; that stays the default for every other tool.
+    fn assumed_for(tool: &str) -> Self {
+        match tool {
+            "scip-typescript" => Self::Utf16,
             _ => Self::Utf8,
         }
     }
@@ -241,6 +255,7 @@ impl ScipExtractor {
                 let encoding = Encoding::of(
                     doc.position_encoding
                         .enum_value_or(PositionEncoding::UnspecifiedPositionEncoding),
+                    tool,
                 );
                 (
                     path,
@@ -259,7 +274,6 @@ impl ScipExtractor {
     }
 
     /// The resolver recorded on the facts, such as `scip/rust-analyzer`.
-    #[must_use]
     pub fn resolvers(&self) -> impl Iterator<Item = &ResolverId> {
         self.documents
             .values()
@@ -601,6 +615,61 @@ mod tests {
             CommitId::new("c"),
             Vec::new(),
         )));
+    }
+
+    #[test]
+    fn an_unspecified_encoding_is_utf16_for_scip_typescript() {
+        let unspecified = PositionEncoding::UnspecifiedPositionEncoding;
+        assert_eq!(
+            Encoding::of(unspecified, "scip-typescript"),
+            Encoding::Utf16
+        );
+        assert_eq!(Encoding::of(unspecified, "rust-analyzer"), Encoding::Utf8);
+        assert_eq!(Encoding::of(unspecified, ""), Encoding::Utf8);
+        assert_eq!(
+            Encoding::of(
+                PositionEncoding::UTF8CodeUnitOffsetFromLineStart,
+                "scip-typescript"
+            ),
+            Encoding::Utf8
+        );
+        // `label` sits after an em dash, which is one UTF-16 unit but three UTF-8
+        // bytes; the TypeScript compiler reports its column in UTF-16 units.
+        let text = "const s = \"\u{2014}\"; render(label);\n";
+        let column = text
+            .encode_utf16()
+            .position(|u| u == u16::from(b'l'))
+            .unwrap();
+        let label = "scip-typescript npm ui 1.0.0 src/`view.ts`/label.";
+        let index = Index {
+            metadata: Some(Metadata {
+                tool_info: Some(ToolInfo {
+                    name: "scip-typescript".into(),
+                    ..Default::default()
+                })
+                .into(),
+                project_root: "file:///repo".into(),
+                ..Default::default()
+            })
+            .into(),
+            documents: vec![ScipDocument {
+                relative_path: "src/view.ts".into(),
+                occurrences: vec![occurrence(label, &[0, column as i32, column as i32 + 5], 0)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let unit = SourceUnit::new(
+            RepoId::new("r"),
+            RepoPath::new("src/view.ts"),
+            CommitId::new("c"),
+            text.as_bytes().to_vec(),
+        );
+        let set = ScipExtractor::from_index(&index)
+            .extract(&unit)
+            .expect("extracts");
+        let fact = set.resolved().next().expect("one fact");
+        assert_eq!(unit.slice(fact.span.bytes), "label");
     }
 
     #[test]
