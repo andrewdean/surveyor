@@ -12,16 +12,15 @@
 (module (expression_statement (assignment left: (identifier) @name)) @definition.const)
 
 (call function: (identifier) @name) @reference.call
-(call function: (attribute attribute: (identifier) @name)) @reference.call.method
+(call function: (attribute object: (_) @receiver attribute: (identifier) @name)) @reference.call.method
 
-(import_statement name: (dotted_name) @name) @reference.import
-(import_statement name: (aliased_import name: (dotted_name) @name)) @reference.import
+(import_statement) @name @reference.import
 ;; The whole statement is the name: the extractor expands `from m import a, b` into
 ;; one import per bound name.
 (import_from_statement) @name @reference.import
 
 (class_definition superclasses: (argument_list (identifier) @name)) @reference.extends
-(class_definition superclasses: (argument_list (attribute attribute: (identifier) @name))) @reference.extends
+(class_definition superclasses: (argument_list (attribute object: (_) @receiver attribute: (identifier) @name))) @reference.extends
 
 (type (identifier) @name) @reference.type
 

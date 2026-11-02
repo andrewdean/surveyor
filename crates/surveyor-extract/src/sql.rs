@@ -324,6 +324,8 @@ impl SqlExtractor {
                 scope: Vec::new(),
                 rule: RuleId::new(rule),
                 hash: unit.hash_of(span.bytes),
+                receiver: None,
+                binding: None,
             })
         };
         match stmt {

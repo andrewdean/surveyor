@@ -33,8 +33,9 @@
 ;; ---- references --------------------------------------------------------------
 
 (call_expression function: (identifier) @name) @reference.call
-(call_expression function: (member_expression property: (property_identifier) @name)) @reference.call.method
+(call_expression function: (member_expression object: (_) @receiver property: (property_identifier) @name)) @reference.call.method
 (new_expression constructor: (identifier) @name) @reference.type
+(new_expression constructor: (member_expression object: (_) @receiver property: (property_identifier) @name)) @reference.type
 
 ;; The whole statement is the name: the extractor expands `import { a, b } from "m"`
 ;; into one import per bound name.
@@ -45,6 +46,7 @@
   (#eq? @_r "require")) @reference.import
 
 (class_heritage (extends_clause value: (identifier) @name)) @reference.extends
+(class_heritage (extends_clause value: (member_expression object: (_) @receiver property: (property_identifier) @name))) @reference.extends
 (class_heritage (implements_clause (type_identifier) @name)) @reference.implements
 (extends_type_clause type: (type_identifier) @name) @reference.extends
 

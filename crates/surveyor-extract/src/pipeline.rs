@@ -319,6 +319,8 @@ fn query_facts(lit: &LiteralFact, summary: &StatementSummary) -> Vec<Fact> {
             scope: query_scope.clone(),
             rule: RuleId::new("sql.literal"),
             hash: ContentHash::of(&lit.value),
+            receiver: None,
+            binding: None,
         })
     });
     std::iter::once(declaration).chain(references).collect()

@@ -107,6 +107,9 @@ struct Builder<'a> {
     dirty_seeds: BTreeSet<usize>,
     /// Precisely resolved reference sites per file, sorted by start offset.
     bindings: HashMap<RepoPath, Vec<&'a ResolvedReference>>,
+    /// Classes, by file and name, that extend a type imported from outside the
+    /// repository; filled once imports are linked.
+    external_bases: HashMap<RepoPath, HashSet<String>>,
 }
 
 impl<'a> Builder<'a> {
@@ -138,6 +141,7 @@ impl<'a> Builder<'a> {
             seed_count: 0,
             dirty_seeds: BTreeSet::new(),
             bindings,
+            external_bases: HashMap::new(),
         }
     }
 
@@ -660,6 +664,7 @@ impl<'a> Builder<'a> {
             builtin: false,
             report: false,
             external_import: false,
+            inherits_external: false,
         };
         let Resolution::Linked {
             targets,
@@ -799,7 +804,29 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Records the classes whose base type comes from outside the repository, so a
+    /// `self` call inside them can be the base class's method.
+    fn external_bases(&mut self) {
+        let bases: Vec<(RepoPath, String)> = self
+            .sites(|role| *role == ReferenceRole::Extends)
+            .into_iter()
+            .filter_map(|(si, _, r)| {
+                let file = &self.input.fact_sets[si].path;
+                let external = self.index.imports_external(file, &r.name)
+                    || r.receiver
+                        .as_deref()
+                        .is_some_and(|root| self.index.imports_external(file, root));
+                let class = r.scope.last()?.clone();
+                external.then(|| (file.clone(), class))
+            })
+            .collect();
+        for (file, class) in bases {
+            self.external_bases.entry(file).or_default().insert(class);
+        }
+    }
+
     fn references(&mut self) {
+        self.external_bases();
         for (si, src, r) in self.sites(|role| *role != ReferenceRole::Import) {
             match r.role {
                 // A macro is never a function: `write!` does not call a `write`. Rust
@@ -948,17 +975,32 @@ impl<'a> Builder<'a> {
         };
         let ranked = rank(&self.index, &file, candidates, qualifier.as_deref());
         // A name the file imports from outside the repository is that dependency's,
-        // whatever declarations here share it.
+        // whatever declarations here share it; so is a name reached through such an
+        // import (`descriptor.Foo()`, `np.array()`).
         let external_import = self.index.imports_external(&file, &r.name)
             || r.path
                 .first()
                 .filter(|root| **root != r.name)
+                .is_some_and(|root| self.index.imports_external(&file, root))
+            || r.receiver
+                .as_deref()
                 .is_some_and(|root| self.index.imports_external(&file, root));
+        let on_self = r
+            .receiver
+            .as_deref()
+            .is_some_and(|root| matches!(root, "self" | "this" | "cls" | "Self"));
+        let inherits_external = method_call
+            && on_self
+            && self
+                .external_bases
+                .get(&file)
+                .is_some_and(|classes| r.scope.iter().rev().any(|name| classes.contains(name)));
         let site = Site {
             method_call,
             builtin: is_builtin_name(language.as_ref(), &r.name),
             report,
             external_import,
+            inherits_external,
         };
         match decide(&ranked, site, self.input.options.max_candidates) {
             Resolution::Silent => {}
@@ -1075,6 +1117,7 @@ impl<'a> Builder<'a> {
                 .entry(file.clone())
                 .or_default();
             names.insert(r.name.clone());
+            names.extend(r.binding.clone());
             // `import a.b` binds `a`; recording the root too covers that form.
             if let Some(root) = r.path.first().filter(|s| !matches!(s.as_str(), "." | "..")) {
                 names.insert(root.clone());
@@ -2634,7 +2677,7 @@ fn anything(schema: &str, table: &str) {
             ),
             unit(
                 "svc/app/gen/stub.py",
-                "from connectrpc.client import MethodInfo\nfrom google.protobuf import descriptor\nfrom app.db import connect\n\ndef make():\n    MethodInfo(1)\n    descriptor.Foo()\n    connect()\n",
+                "from connectrpc.client import MethodInfo, ConnectClient\nfrom google.protobuf import descriptor\nfrom google.protobuf import message as _message\nfrom app.db import connect\n\ndef make():\n    MethodInfo(1)\n    descriptor.Foo()\n    connect()\n\nclass RoadmapClient(ConnectClient):\n    def fetch(self):\n        return self.execute_unary(1)\n\nclass Envelope(_message.Message):\n    pass\n\nclass Plain:\n    def run(self):\n        self.missing()\n",
             ),
             unit(
                 "web/package.json",
@@ -2648,15 +2691,24 @@ fn anything(schema: &str, table: &str) {
         ];
         let (delta, _) = linked(&units);
         let gaps: Vec<&str> = delta.unresolved.iter().map(|u| u.name.as_str()).collect();
-        for external in ["MethodInfo", "descriptor", "pad"] {
+        for external in [
+            "MethodInfo",
+            "descriptor",
+            "Foo",
+            "pad",
+            "execute_unary",
+            "Message",
+        ] {
             assert!(
                 !gaps.contains(&external),
-                "{external} is imported from a dependency: {gaps:?}"
+                "{external} comes from a dependency: {gaps:?}"
             );
         }
-        // `descriptor.Foo()` is a method call whose receiver the Python pack does not
-        // keep, so the imported module cannot yet vouch for `Foo`.
-        assert_eq!(gaps, vec!["Foo"]);
+        assert_eq!(
+            gaps,
+            vec!["missing"],
+            "a self call in a class with no external base is still a gap"
+        );
         assert!(
             edge(
                 &delta,

@@ -44,6 +44,7 @@ enum CaptureRole {
     Name,
     Doc,
     Attr(String),
+    Receiver,
     Ignore,
 }
 
@@ -71,6 +72,7 @@ fn role_for_capture(name: &str) -> Result<CaptureRole, ExtractError> {
     match name {
         "name" => Ok(CaptureRole::Name),
         "doc" => Ok(CaptureRole::Doc),
+        "receiver" => Ok(CaptureRole::Receiver),
         _ => Err(unknown("capture")),
     }
 }
@@ -358,6 +360,7 @@ struct Captures<'t> {
     primary: Option<(usize, Node<'t>)>,
     name: Option<Node<'t>>,
     doc: Option<Node<'t>>,
+    receiver: Option<Node<'t>>,
     attrs: Vec<(String, Node<'t>)>,
 }
 
@@ -373,6 +376,7 @@ impl<'t> Captures<'t> {
                 }
                 CaptureRole::Name => acc.name = Some(cap.node),
                 CaptureRole::Doc => acc.doc = Some(cap.node),
+                CaptureRole::Receiver => acc.receiver = Some(cap.node),
                 CaptureRole::Attr(key) => acc.attrs.push((key.clone(), cap.node)),
                 CaptureRole::Ignore => {}
             }
@@ -407,7 +411,7 @@ fn collect(
                 raw.push_definition(site, kind.clone(), node, &captures, rule);
             }
             (CaptureRole::Reference(role), _) => {
-                raw.push_reference(site, role, node, captures.name, &rule);
+                raw.push_reference(site, role, node, captures.name, captures.receiver, &rule);
             }
             (CaptureRole::Literal(role), _) => raw.push_literal(site, role.clone(), node, rule),
             _ => {}
@@ -587,27 +591,32 @@ impl RawFacts {
         role: &ReferenceRole,
         node: Node<'_>,
         name_node: Option<Node<'_>>,
+        receiver_node: Option<Node<'_>>,
         rule: &RuleId,
     ) {
         let span = site.span_of(name_node.unwrap_or(node));
         let text = site.text(span);
-        let paths = match role {
+        let receiver = receiver_node.and_then(|n| receiver_root(site.text(site.span_of(n))));
+        let paths: Vec<(Vec<String>, Option<String>)> = match role {
             ReferenceRole::Import => expand_import(site.language, text),
-            _ => vec![reference_path(text)],
+            _ => vec![(reference_path(text), None)],
         };
         let hash = ContentHash::of(text);
-        self.sites.extend(paths.into_iter().filter_map(|path| {
-            let name = path.iter().rev().find(|s| !is_path_noise(s)).cloned()?;
-            Some(RawSite::Reference(ReferenceFact {
-                role: role.clone(),
-                name,
-                path,
-                span,
-                scope: Vec::new(),
-                rule: rule.clone(),
-                hash,
-            }))
-        }));
+        self.sites
+            .extend(paths.into_iter().filter_map(|(path, binding)| {
+                let name = path.iter().rev().find(|s| !is_path_noise(s)).cloned()?;
+                Some(RawSite::Reference(ReferenceFact {
+                    role: role.clone(),
+                    name,
+                    path,
+                    span,
+                    scope: Vec::new(),
+                    rule: rule.clone(),
+                    hash,
+                    receiver: receiver.clone(),
+                    binding,
+                }))
+            }));
     }
 
     fn push_literal(&mut self, site: Site<'_>, role: LiteralRole, node: Node<'_>, rule: RuleId) {
@@ -797,6 +806,23 @@ fn reference_path(text: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+/// The leading identifier of a receiver expression, when the expression starts with
+/// one that is not immediately called or indexed: `a` for `a.b.c`, `self` for
+/// `self.inner`, `None` for `f().g`, `(a).b` or `"x".len`.
+fn receiver_root(text: &str) -> Option<String> {
+    let text = text.trim_start();
+    let end = text
+        .char_indices()
+        .take_while(|(i, c)| c.is_alphanumeric() || *c == '_' || (*i > 0 && *c == '$'))
+        .map(|(i, c)| i + c.len_utf8())
+        .last()?;
+    let root = &text[..end];
+    let rest = text[end..].trim_start();
+    let starts_identifier = root.chars().next().is_some_and(|c| !c.is_ascii_digit());
+    let followed_by_access = rest.is_empty() || rest.starts_with(['.', ':', '?']);
+    (starts_identifier && followed_by_access).then(|| root.to_owned())
 }
 
 fn is_path_noise(segment: &str) -> bool {
@@ -1008,13 +1034,28 @@ fn clean_doc(raw: &str) -> String {
 }
 
 /// Expands an import clause into one or more referenced paths.
-fn expand_import(language: &Language, text: &str) -> Vec<Vec<String>> {
+/// Expands an import into the paths it names, each with the local name it binds when
+/// that differs from the path's last segment.
+fn expand_import(language: &Language, text: &str) -> Vec<(Vec<String>, Option<String>)> {
     match language {
-        Language::Rust => expand_rust_use(text),
+        Language::Rust => expand_rust_use(text)
+            .into_iter()
+            .map(|p| (p, None))
+            .collect(),
         Language::Python => python_import_paths(text),
         Language::TypeScript | Language::Tsx | Language::JavaScript => js_import_paths(text),
-        Language::Bash => vec![specifier_path(&unquote(text))],
-        _ => vec![reference_path(text)],
+        Language::Bash => vec![(specifier_path(&unquote(text)), None)],
+        _ => vec![(reference_path(text), None)],
+    }
+}
+
+/// Splits `name as alias` into the name and the alias, if any.
+fn name_and_alias(part: &str) -> Option<(&str, Option<&str>)> {
+    let words: Vec<&str> = part.split_whitespace().filter(|w| *w != "type").collect();
+    match words.as_slice() {
+        [name, "as", alias] => Some((name, Some(alias))),
+        [name] => Some((name, None)),
+        _ => None,
     }
 }
 
@@ -1023,13 +1064,21 @@ fn expand_import(language: &Language, text: &str) -> Vec<Vec<String>> {
 /// `from a.b import c, d as e` becomes `[a, b, c]` and `[a, b, d]`; `from . import x`
 /// becomes `[., x]`; `from m import *` and a plain module (`a.b`, as the
 /// `import a.b` patterns capture it) stay a module path.
-fn python_import_paths(text: &str) -> Vec<Vec<String>> {
-    let text = text.trim();
+fn python_import_paths(text: &str) -> Vec<(Vec<String>, Option<String>)> {
+    let text = text.trim().trim_end_matches(';').trim();
+    if let Some(list) = text.strip_prefix("import ") {
+        // `import a.b as c, d`: one module path per item, aliased or not.
+        return list
+            .split(',')
+            .filter_map(name_and_alias)
+            .map(|(module, alias)| (python_module_path(module), alias.map(str::to_owned)))
+            .collect();
+    }
     let Some((module, names)) = text
         .strip_prefix("from ")
         .and_then(|rest| rest.split_once(" import "))
     else {
-        return vec![python_module_path(text)];
+        return vec![(python_module_path(text), None)];
     };
     let module = python_module_path(module.trim());
     // Drop comments line by line before joining a parenthesized list.
@@ -1039,11 +1088,10 @@ fn python_import_paths(text: &str) -> Vec<Vec<String>> {
         .collect::<Vec<_>>()
         .join(" ")
         .replace(['(', ')', '\\'], " ");
-    let names: Vec<&str> = cleaned
+    let names: Vec<(&str, Option<&str>)> = cleaned
         .split(',')
-        .filter_map(|part| part.split_whitespace().next())
-        .map(|name| name.trim_end_matches(';'))
-        .filter(|name| !name.is_empty() && *name != "*")
+        .filter_map(name_and_alias)
+        .filter(|(name, _)| *name != "*")
         .collect();
     with_names(module, names)
 }
@@ -1053,13 +1101,13 @@ fn python_import_paths(text: &str) -> Vec<Vec<String>> {
 /// `import X, { a, b as c } from "m"` becomes `[m, X]`, `[m, a]` and `[m, b]`;
 /// `import * as ns from "@s/p"` becomes `[@s, p, ns]`; a bare specifier (`import
 /// "./side"`, `require("m")`) stays a module path.
-fn js_import_paths(text: &str) -> Vec<Vec<String>> {
+fn js_import_paths(text: &str) -> Vec<(Vec<String>, Option<String>)> {
     let text = text.trim().trim_end_matches(';').trim();
     if text.starts_with(['"', '\'', '`']) {
-        return vec![specifier_path(&unquote(text))];
+        return vec![(specifier_path(&unquote(text)), None)];
     }
     let Some(body) = text.strip_prefix("import") else {
-        return vec![specifier_path(&unquote(text))];
+        return vec![(specifier_path(&unquote(text)), None)];
     };
     let body = body.trim_start();
     let body = body.strip_prefix("type ").map_or(body, str::trim_start);
@@ -1068,35 +1116,37 @@ fn js_import_paths(text: &str) -> Vec<Vec<String>> {
         None => ("", body.trim()),
     };
     let module = specifier_path(&unquote(spec));
-    let names: Vec<&str> = clause
+    let names: Vec<(&str, Option<&str>)> = clause
         .split([',', '{', '}'])
         .map(str::trim)
         .filter(|part| !part.is_empty())
-        .filter_map(|part| {
-            let words: Vec<&str> = part.split_whitespace().filter(|w| *w != "type").collect();
-            match words.as_slice() {
-                ["*", "as", ns] => Some(*ns),
-                [name, "as", _] | [name] => Some(*name),
-                _ => None,
-            }
+        .filter_map(|part| match name_and_alias(part)? {
+            // `* as ns` binds the whole module as `ns`.
+            ("*", Some(ns)) => Some((ns, None)),
+            other => Some(other),
         })
         .collect();
     with_names(module, names)
 }
 
-/// One path per bound name under `module`, or the module alone when nothing is named.
-fn with_names(module: Vec<String>, names: Vec<&str>) -> Vec<Vec<String>> {
+/// One path per bound name under `module`, each with its alias, or the module alone
+/// when nothing is named.
+fn with_names(
+    module: Vec<String>,
+    names: Vec<(&str, Option<&str>)>,
+) -> Vec<(Vec<String>, Option<String>)> {
     if names.is_empty() {
-        return vec![module];
+        return vec![(module, None)];
     }
     names
         .into_iter()
-        .map(|name| {
-            module
+        .map(|(name, alias)| {
+            let path = module
                 .iter()
                 .cloned()
                 .chain(std::iter::once(name.to_owned()))
-                .collect()
+                .collect();
+            (path, alias.map(str::to_owned))
         })
         .collect()
 }
@@ -1541,29 +1591,92 @@ describe("server", () => { it("starts", () => {}); });
 
     #[test]
     fn imports_expand_to_the_names_they_bind() {
+        let path = |segments: &[&str]| segments.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        let plain = |segments: &[&str]| (path(segments), None::<String>);
         let p = |t: &str| python_import_paths(t);
-        assert_eq!(p("os.path"), vec![vec!["os", "path"]]);
+        assert_eq!(p("import os.path"), vec![plain(&["os", "path"])]);
+        assert_eq!(p("os.path"), vec![plain(&["os", "path"])]);
+        assert_eq!(
+            p("import pyarrow as pa, redis"),
+            vec![(path(&["pyarrow"]), Some("pa".into())), plain(&["redis"])]
+        );
         assert_eq!(
             p("from a.b import c, d as e"),
-            vec![vec!["a", "b", "c"], vec!["a", "b", "d"]]
+            vec![
+                plain(&["a", "b", "c"]),
+                (path(&["a", "b", "d"]), Some("e".into()))
+            ]
         );
-        assert_eq!(p("from . import x"), vec![vec![".", "x"]]);
+        assert_eq!(p("from . import x"), vec![plain(&[".", "x"])]);
         assert_eq!(
             p("from ..pkg import (\n    one,  # first\n    two,\n)"),
-            vec![vec!["..", "pkg", "one"], vec!["..", "pkg", "two"]]
+            vec![plain(&["..", "pkg", "one"]), plain(&["..", "pkg", "two"])]
         );
-        assert_eq!(p("from m import *"), vec![vec!["m"]]);
+        assert_eq!(p("from m import *"), vec![plain(&["m"])]);
         let j = |t: &str| js_import_paths(t);
         assert_eq!(
             j("import X, { a, b as c } from \"m\";"),
-            vec![vec!["m", "X"], vec!["m", "a"], vec!["m", "b"]]
+            vec![
+                plain(&["m", "X"]),
+                plain(&["m", "a"]),
+                (path(&["m", "b"]), Some("c".into()))
+            ]
         );
-        assert_eq!(j("import * as ns from '@s/p'"), vec![vec!["@s", "p", "ns"]]);
+        assert_eq!(
+            j("import * as ns from '@s/p'"),
+            vec![plain(&["@s", "p", "ns"])]
+        );
         assert_eq!(
             j("import type { T } from \"./t\""),
-            vec![vec![".", "t", "T"]]
+            vec![plain(&[".", "t", "T"])]
         );
-        assert_eq!(j("import \"./side\""), vec![vec![".", "side"]]);
-        assert_eq!(j("\"left-pad\""), vec![vec!["left-pad"]]);
+        assert_eq!(j("import \"./side\""), vec![plain(&[".", "side"])]);
+        assert_eq!(j("\"left-pad\""), vec![plain(&["left-pad"])]);
+    }
+
+    #[test]
+    fn receivers_keep_their_root() {
+        assert_eq!(receiver_root("descriptor"), Some("descriptor".into()));
+        assert_eq!(receiver_root("self.client"), Some("self".into()));
+        assert_eq!(
+            receiver_root("google.protobuf.message"),
+            Some("google".into())
+        );
+        assert_eq!(receiver_root("f()"), None);
+        assert_eq!(receiver_root("f().g"), None);
+        assert_eq!(receiver_root("(a)"), None);
+        assert_eq!(receiver_root("\"x\""), None);
+        assert_eq!(receiver_root("xs[0]"), None);
+        let src = "import descriptor\n\nclass A(google.protobuf.message.Message):\n    def run(self):\n        descriptor.Foo()\n        self.client.connect()\n        make().go()\n        plain()\n";
+        let facts = TreeSitterExtractor::new()
+            .extract(&unit("a.py", src))
+            .expect("parses");
+        let refs: Vec<_> = facts.references().collect();
+        let receiver_of = |name: &str| {
+            refs.iter()
+                .find(|r| r.name == name)
+                .map(|r| r.receiver.clone())
+                .expect(name)
+        };
+        assert_eq!(receiver_of("Foo"), Some("descriptor".into()));
+        assert_eq!(receiver_of("connect"), Some("self".into()));
+        assert_eq!(receiver_of("go"), None);
+        assert_eq!(receiver_of("plain"), None);
+        assert_eq!(receiver_of("Message"), Some("google".into()));
+        let ts = "class V extends React.Component { f() { this.setState({}); ns.helper(); } }\nnew ns.Thing();\n";
+        let facts = TreeSitterExtractor::new()
+            .extract(&unit("a.ts", ts))
+            .expect("parses");
+        let refs: Vec<_> = facts.references().collect();
+        let receiver_of = |name: &str| {
+            refs.iter()
+                .find(|r| r.name == name)
+                .map(|r| r.receiver.clone())
+                .expect(name)
+        };
+        assert_eq!(receiver_of("Component"), Some("React".into()));
+        assert_eq!(receiver_of("setState"), Some("this".into()));
+        assert_eq!(receiver_of("helper"), Some("ns".into()));
+        assert_eq!(receiver_of("Thing"), Some("ns".into()));
     }
 }

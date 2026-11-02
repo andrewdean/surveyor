@@ -46,7 +46,7 @@
 
 (call_expression function: (identifier) @name) @reference.call
 (call_expression function: (scoped_identifier) @name) @reference.call
-(call_expression function: (field_expression field: (field_identifier) @name)) @reference.call.method
+(call_expression function: (field_expression value: (_) @receiver field: (field_identifier) @name)) @reference.call.method
 (call_expression function: (generic_function function: (identifier) @name)) @reference.call
 (call_expression function: (generic_function function: (scoped_identifier) @name)) @reference.call
 (macro_invocation macro: (identifier) @name) @reference.call.macro

@@ -201,6 +201,8 @@ fn push_site(
         scope: scope_at(start),
         rule: RuleId::new(rule),
         hash: unit.hash_of(bytes),
+        receiver: None,
+        binding: None,
     });
 }
 

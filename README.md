@@ -48,7 +48,11 @@ for now). This checkout implements Phase 0 of that plan.
   c` and `import { c } from "./b"` link the file to module and symbol alike, and a
   name a file imports from outside the repository (a dependency, the standard
   library) is that dependency's, neither an edge nor a gap, even when something in
-  the repository shares the name. SQL references resolve against the schema the
+  the repository shares the name. References keep the root of their receiver
+  (`descriptor` in `descriptor.Foo()`, `_message` in `class Envelope(_message.Message)`),
+  so a name reached through an imported module is the module's too, and a `self`
+  or `this` call inside a class that extends a dependency's type is that base
+  class's method when nothing in the repository declares it. SQL references resolve against the schema the
   migrations declare; a table named without one, whether bare or behind a placeholder
   (`format!("DELETE FROM {schema}.events ...")`), resolves to every schema that declares
   it at confidence 1/n. String literals are decoded before parsing, so a query continued

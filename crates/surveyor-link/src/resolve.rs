@@ -278,9 +278,12 @@ pub(crate) struct Site {
     pub(crate) builtin: bool,
     /// Whether a miss should be reported as a gap.
     pub(crate) report: bool,
-    /// The name, or its path's root, is one the file imports from outside the
-    /// repository.
+    /// The name, its path's root or its receiver's root is one the file imports from
+    /// outside the repository.
     pub(crate) external_import: bool,
+    /// A call on `self`/`this` inside a class that extends a type from outside the
+    /// repository, so a method declared nowhere here is inherited from it.
+    pub(crate) inherits_external: bool,
 }
 
 /// Confidence of a method call resolved by name to a declaration in another file of
@@ -317,6 +320,9 @@ pub(crate) fn decide(ranked: &Ranked, site: Site, max_candidates: usize) -> Reso
         // A name imported from a dependency is that dependency's, whatever the
         // repository declares under the same name: neither an edge nor a gap.
         _ if site.external_import => Resolution::Silent,
+        // `self.execute_unary()` in a class that extends a dependency's type: the
+        // method is the base class's when nothing here declares it.
+        [] if site.inherits_external => Resolution::Silent,
         // A standard-library name (`expect`, `Result`, `map`) with no declaration the
         // reference points at is the std item, not a gap.
         [] if site.builtin => Resolution::Silent,
@@ -372,6 +378,7 @@ mod tests {
             builtin: false,
             report: true,
             external_import: true,
+            inherits_external: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::None), site, 8),
@@ -382,6 +389,28 @@ mod tests {
             decide(&ranked(&[(Tier::SameFile, 1)], Anchor::None), site, 8),
             Resolution::Silent,
             "no edge either, even to a same-named declaration next door"
+        );
+    }
+
+    #[test]
+    fn a_self_call_in_a_class_with_an_external_base_is_silent_only_when_undeclared() {
+        let site = Site {
+            method_call: true,
+            builtin: false,
+            report: true,
+            external_import: false,
+            inherits_external: true,
+        };
+        assert_eq!(
+            decide(&ranked(&[], Anchor::None), site, 8),
+            Resolution::Silent
+        );
+        assert!(
+            matches!(
+                decide(&ranked(&[(Tier::SameFile, 1)], Anchor::None), site, 8),
+                Resolution::Linked { .. }
+            ),
+            "a method declared here still links"
         );
     }
 
@@ -426,6 +455,7 @@ mod tests {
             builtin: false,
             report: true,
             external_import: false,
+            inherits_external: false,
         };
         let plain = |c: &[(Tier, usize)]| ranked(c, Anchor::None);
         assert_eq!(
@@ -452,6 +482,7 @@ mod tests {
         let quiet = Site {
             report: false,
             external_import: false,
+            inherits_external: false,
             ..free
         };
         assert_eq!(decide(&plain(&[]), quiet, 5), Resolution::Silent);
@@ -503,6 +534,7 @@ mod tests {
             builtin: false,
             report: true,
             external_import: false,
+            inherits_external: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::Mismatched), free, 5),
@@ -525,6 +557,7 @@ mod tests {
             builtin: true,
             report: true,
             external_import: false,
+            inherits_external: false,
         };
         assert_eq!(
             decide(&ranked(&[], Anchor::None), builtin, 5),
@@ -559,6 +592,7 @@ mod tests {
             builtin: false,
             report: true,
             external_import: false,
+            inherits_external: false,
         };
         let one = |tier| ranked(&[(tier, 1)], Anchor::None);
         assert_eq!(confidence_of(&decide(&one(Tier::SameFile), method, 5)), 1.0);

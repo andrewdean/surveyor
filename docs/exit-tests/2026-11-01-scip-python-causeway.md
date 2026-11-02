@@ -185,12 +185,30 @@ name matches to a repository declaration that an import of the same name from a
 dependency had shadowed. With all fifty-nine indexes loaded as well, the whole-graph
 gaps go from 13,295 to 11,126.
 
-What the rule does not reach is a name used through a receiver or qualifier the
-query packs do not keep: `self.execute_unary(...)` (446 sites, a method inherited from
-a `connectrpc` base class) and `class Foo(google.protobuf.message.Message)` in the
-`.pyi` stubs (908 sites) still appear as gaps, because the Python pack records only
-the final identifier of an attribute. Keeping the receiver root for method calls and
-attribute references is the next step for those.
+The second half followed in the next commit. References now keep the root of their
+receiver (`descriptor` in `descriptor.Foo()`, `_message` in
+`class Envelope(_message.Message)`, `self` in `self.execute_unary(...)`), imports
+record the alias they bind (`message as _message`), and two rules use that: a name
+reached through an imported dependency is the dependency's, and a `self`/`this` call
+inside a class that extends a dependency's type is the base class's method when
+nothing in the repository declares it. The receiver is never treated as a path
+qualifier, so a call on a local variable still resolves as before.
+
+| | before | after |
+|---|---|---|
+| gaps, whole graph | 30,655 | 24,939 |
+| gaps in `.py` files | 1,659 | 531 |
+| gaps in `.pyi` files | 908 | 0 |
+| gaps in `.ts` files | 2,101 | 1,630 |
+| gaps in `.rs` files | 23,003 | 19,798 |
+| `ambiguous` | 4,240 | 2,531 |
+| name-matched `CALLS`/`USES_TYPE` targets withdrawn | | 1,595 |
+
+Table 5: the receiver and inherited-base rules, name-only. `execute_unary` and
+`Message` left the gap list; `bind` (1,594 sites, `sqlx::query(...).bind(...)`) left
+the ambiguous list because its receiver root `sqlx` is a dependency. With all
+fifty-nine indexes loaded, the whole-graph gaps go from 11,126 to 8,919. The
+exit-test answers are unchanged in content.
 
 ***Recommendation:*** keep scip-python in the documented default set alongside
 rust-analyzer and scip-typescript; tell adopters that the index covers what their

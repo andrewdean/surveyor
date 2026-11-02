@@ -250,6 +250,17 @@ pub struct ReferenceFact {
     pub rule: RuleId,
     /// Hash of the referenced text, for evidence.
     pub hash: ContentHash,
+    /// Root identifier of the receiver the name hangs off (`descriptor` in
+    /// `descriptor.Foo()`, `self` in `self.client.send()`), when the receiver starts
+    /// with a plain identifier; `None` for a bare name or a receiver that is itself a
+    /// call or an expression. It is not a path qualifier: the linker uses it to tell
+    /// whose name this is, never to match a module.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receiver: Option<String>,
+    /// The local name an import binds when it differs from the last path segment
+    /// (`_message` in `from google.protobuf import message as _message`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<String>,
 }
 
 /// A string literal with a syntactic role.
