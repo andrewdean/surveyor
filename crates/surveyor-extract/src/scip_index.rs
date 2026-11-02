@@ -99,6 +99,8 @@ impl Occurrence {
 
 #[derive(Debug)]
 struct Document {
+    /// The indexer that wrote this document, named on every fact drawn from it.
+    resolver: ResolverId,
     encoding: Encoding,
     occurrences: Vec<Occurrence>,
 }
@@ -111,9 +113,13 @@ struct Definition {
     line: u32,
 }
 
-/// Emits resolved references from a SCIP index.
+/// Emits resolved references from one or more SCIP indexes.
+///
+/// Several indexes pool their declarations: a monorepo indexed one workspace at a
+/// time still resolves a call from one workspace to a declaration in another,
+/// because both indexes name that declaration by the same symbol.
+#[derive(Default)]
 pub struct ScipExtractor {
-    resolver: ResolverId,
     documents: HashMap<RepoPath, Document>,
     definitions: HashMap<String, Definition>,
 }
@@ -121,7 +127,6 @@ pub struct ScipExtractor {
 impl std::fmt::Debug for ScipExtractor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ScipExtractor")
-            .field("resolver", &self.resolver)
             .field("documents", &self.documents.len())
             .field("definitions", &self.definitions.len())
             .finish()
@@ -129,6 +134,31 @@ impl std::fmt::Debug for ScipExtractor {
 }
 
 impl ScipExtractor {
+    /// Reads every index in `paths` for the repository rooted at `repo_root`, pooling
+    /// their declarations so references resolve across the indexes.
+    ///
+    /// # Errors
+    /// Returns the first index that cannot be read or is not a SCIP index.
+    pub fn load_all(
+        paths: &[impl AsRef<Path>],
+        repo_root: Option<&Path>,
+    ) -> Result<Self, ExtractError> {
+        paths.iter().try_fold(Self::default(), |pool, path| {
+            Self::load_under(path, repo_root).map(|index| pool.merge(index))
+        })
+    }
+
+    /// Pools another index's documents and declarations into this one; the first
+    /// declaration of a symbol wins.
+    #[must_use]
+    fn merge(mut self, other: Self) -> Self {
+        self.documents.extend(other.documents);
+        for (symbol, definition) in other.definitions {
+            self.definitions.entry(symbol).or_insert(definition);
+        }
+        self
+    }
+
     /// Reads the index at `path`.
     ///
     /// # Errors
@@ -215,6 +245,7 @@ impl ScipExtractor {
                 (
                     path,
                     Document {
+                        resolver: resolver.clone(),
                         encoding,
                         occurrences,
                     },
@@ -222,7 +253,6 @@ impl ScipExtractor {
             })
             .collect();
         Self {
-            resolver,
             documents,
             definitions,
         }
@@ -230,8 +260,12 @@ impl ScipExtractor {
 
     /// The resolver recorded on the facts, such as `scip/rust-analyzer`.
     #[must_use]
-    pub fn resolver(&self) -> &ResolverId {
-        &self.resolver
+    pub fn resolvers(&self) -> impl Iterator<Item = &ResolverId> {
+        self.documents
+            .values()
+            .map(|d| &d.resolver)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
     }
 
     /// Number of documents the index covers.
@@ -338,7 +372,7 @@ fn percent_decode(text: &str) -> std::borrow::Cow<'_, str> {
 
 impl Extractor for ScipExtractor {
     fn id(&self) -> ExtractorId {
-        ExtractorId::new(self.resolver.as_str())
+        ExtractorId::new(PREFIX)
     }
 
     fn accepts(&self, unit: &SourceUnit) -> bool {
@@ -380,7 +414,7 @@ impl Extractor for ScipExtractor {
                         name,
                         span: unit.text_span(bytes),
                         target,
-                        resolver: self.resolver.clone(),
+                        resolver: document.resolver.clone(),
                         hash: ContentHash::of(unit.slice(bytes)),
                     })
                 })
@@ -482,9 +516,53 @@ mod tests {
     }
 
     #[test]
+    fn indexes_of_two_workspaces_pool_their_declarations() {
+        // `store.rs` is declared in the `core` workspace's index; the `app` workspace's
+        // index only references it, as an external symbol from its own point of view.
+        let pending = "rust-analyzer cargo outbox 0.1.0 store/impl#[Store]pending().";
+        let mut core = index();
+        core.metadata.as_mut().unwrap().project_root = "file:///repo/core".into();
+        let app = Index {
+            metadata: core.metadata.clone(),
+            documents: vec![ScipDocument {
+                relative_path: "src/main.rs".into(),
+                occurrences: vec![occurrence(pending, &[2, 10, 17], 0)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut app = app;
+        app.metadata.as_mut().unwrap().project_root = "file:///repo/app".into();
+        let pooled = ScipExtractor::from_index_under(&core, Some(Path::new("/repo"))).merge(
+            ScipExtractor::from_index_under(&app, Some(Path::new("/repo"))),
+        );
+        assert_eq!(pooled.document_count(), 3);
+        assert_eq!(
+            pooled.target(pending),
+            SymbolTarget::Declared {
+                file: RepoPath::new("core/src/store.rs"),
+                line: 3,
+                name: "pending".into(),
+            },
+            "a symbol declared in another workspace's index is in the repository"
+        );
+        let alone = ScipExtractor::from_index_under(&app, Some(Path::new("/repo")));
+        assert!(matches!(
+            alone.target(pending),
+            SymbolTarget::External { .. }
+        ));
+    }
+
+    #[test]
     fn occurrences_become_resolved_facts_with_declaration_lines() {
         let extractor = ScipExtractor::from_index(&index());
-        assert_eq!(extractor.resolver().as_str(), "scip/rust-analyzer");
+        assert_eq!(
+            extractor
+                .resolvers()
+                .map(ResolverId::as_str)
+                .collect::<Vec<_>>(),
+            vec!["scip/rust-analyzer"]
+        );
         assert_eq!(extractor.document_count(), 2);
         let relay = SourceUnit::new(
             RepoId::new("r"),
