@@ -91,6 +91,7 @@ fn index_and_answer_phase_zero_questions() {
         "Class",
         "Interface",
         "Table",
+        "View",
         "Column",
         "Index",
         "Constraint",
@@ -222,6 +223,29 @@ fn index_and_answer_phase_zero_questions() {
         "{readers:?}"
     );
 
+    // explain a view: it reads the table its query names, and code reads it.
+    let pending = surveyor(&store, &["explain", "cw_outbox.pending_outbox"]);
+    assert_eq!(pending["node"]["kind"], "View");
+    let view_reads = relations(&pending, "outgoing", "READS");
+    assert_eq!(view_reads.len(), 1, "{pending}");
+    assert_eq!(view_reads[0]["node"]["id"], "sql:cw_outbox.outbox");
+    assert_eq!(view_reads[0]["derivation"], "resolved");
+    assert!(
+        cited_text(view_reads[0]["evidence"][0].as_str().unwrap())
+            .contains("FROM cw_outbox.outbox")
+    );
+    assert!(
+        relations(&pending, "incoming", "READS")
+            .iter()
+            .any(|r| r["node"]["id"] == "rust:crates/api/src/main.rs::report_backlog"),
+        "{pending}"
+    );
+    assert!(
+        relations(&pending, "incoming", "MIGRATES")
+            .iter()
+            .any(|r| r["node"]["id"] == "file:migrations/0003_outbox_views.sql")
+    );
+
     // affected: changing the outbox table reaches the store, the relay, the API binary and the test.
     let affected = surveyor(&store, &["affected", "cw_outbox.outbox", "--depth", "4"]);
     let ids: Vec<&str> = affected["affected"]
@@ -237,9 +261,21 @@ fn index_and_answer_phase_zero_questions() {
         // `purge` names the table through `{schema}.outbox`, so the schema is unknown
         // until run time; `outbox` is declared in one schema, so the edge is certain.
         "rust:crates/outbox/src/store.rs::OutboxStore::purge",
+        // `report_backlog` reads the table through the `pending_outbox` view.
+        "sql:cw_outbox.pending_outbox",
+        "rust:crates/api/src/main.rs::report_backlog",
     ] {
         assert!(ids.contains(&expected), "{expected} missing from {ids:?}");
     }
+    let backlog = affected["affected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["node"]["id"] == "rust:crates/api/src/main.rs::report_backlog")
+        .expect("report_backlog is affected");
+    assert_eq!(backlog["depth"], 2, "{backlog}");
+    assert_eq!(backlog["via"]["kind"], "READS", "{backlog}");
+
     let purge = affected["affected"]
         .as_array()
         .unwrap()
@@ -407,10 +443,20 @@ fn index_and_answer_phase_zero_questions() {
         .find(|o| o["id"] == "api-has-no-sql")
         .expect("rule ran");
     assert_eq!(api["passed"], false);
-    let citation = api["violations"][0]["citation"].as_str().expect("citation");
+    let cited: Vec<String> = api["violations"]
+        .as_array()
+        .expect("violations")
+        .iter()
+        .map(|v| cited_text(v["citation"].as_str().expect("citation")))
+        .collect();
     assert!(
-        cited_text(citation).contains("cw_users.users"),
-        "{citation}"
+        cited.iter().any(|t| t.contains("cw_users.users")),
+        "{cited:?}"
+    );
+
+    assert!(
+        cited.iter().any(|t| t.contains("cw_outbox.pending_outbox")),
+        "{cited:?}"
     );
 
     // stats and unresolved are available; a second index replaces, not duplicates.

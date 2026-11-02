@@ -505,6 +505,7 @@ impl<'a> Builder<'a> {
             d.kind,
             NodeKind::Schema
                 | NodeKind::Table
+                | NodeKind::View
                 | NodeKind::Column
                 | NodeKind::Index
                 | NodeKind::Constraint
@@ -562,7 +563,7 @@ impl<'a> Builder<'a> {
                             self.push_edge_once(f, EdgeKind::Migrates, r.node, prov, Vec::new());
                         }
                     }
-                    NodeKind::Table => {
+                    NodeKind::Table | NodeKind::View => {
                         let schema = node
                             .qualified_name
                             .rsplit_once('.')
@@ -1394,10 +1395,11 @@ fn declaration_identity(set: &FactSet, d: &DeclarationFact) -> (NodeId, String) 
     let table = || d.scope.get(1).map_or("", String::as_str);
     match &d.kind {
         NodeKind::Schema => (sql_id(&[&d.name], None), d.name.clone()),
-        NodeKind::Table => (
+        NodeKind::Table | NodeKind::View => (
             sql_id(&[schema(), &d.name], None),
             format!("{}.{}", schema(), d.name),
         ),
+
         NodeKind::Column => (
             sql_id(&[schema(), table(), &d.name], None),
             format!("{}.{}.{}", schema(), table(), d.name),
@@ -2381,6 +2383,84 @@ mod tests {
                 .unresolved
                 .iter()
                 .all(|u| u.reason != UnresolvedReason::NoTable)
+        );
+    }
+
+    #[test]
+    fn a_view_reads_its_tables_and_code_that_selects_from_it_reaches_them() {
+        let units = [
+            unit(
+                "migrations/001.sql",
+                "CREATE SCHEMA cw;\nCREATE TABLE cw.outbox (id uuid, sent_at timestamptz);\n",
+            ),
+            unit(
+                "migrations/002.sql",
+                "CREATE OR REPLACE VIEW cw.pending_outbox AS\n  SELECT id FROM cw.outbox WHERE sent_at IS NULL;\n",
+            ),
+            unit(
+                "src/report.rs",
+                r#"fn backlog(schema: &str) {
+    let _ = sqlx::query("SELECT count(*) FROM cw.pending_outbox");
+    let _ = sqlx::query(&format!("SELECT count(*) FROM {schema}.pending_outbox"));
+}
+"#,
+            ),
+        ];
+        let (delta, _) = linked(&units);
+        let views: Vec<&Node> = delta
+            .nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::View)
+            .collect();
+        let [view] = views.as_slice() else {
+            panic!("one view node, found {views:?}");
+        };
+        assert_eq!(view.id.as_str(), "sql:cw.pending_outbox");
+        assert_eq!(view.qualified_name, "cw.pending_outbox");
+        let reads = edge(
+            &delta,
+            "sql:cw.pending_outbox",
+            &EdgeKind::Reads,
+            "sql:cw.outbox",
+        )
+        .expect("the view reads the table its query names");
+        assert_eq!(reads.provenance.derivation.kind(), DerivationKind::Resolved);
+        assert!((reads.provenance.confidence.get() - 1.0).abs() < f32::EPSILON);
+        assert!(
+            edge(
+                &delta,
+                "rust:src/report.rs::backlog",
+                &EdgeKind::Reads,
+                "sql:cw.pending_outbox"
+            )
+            .is_some(),
+            "code that selects from the view links to it, qualified or behind a placeholder"
+        );
+        assert!(
+            edge(
+                &delta,
+                "file:migrations/002.sql",
+                &EdgeKind::Migrates,
+                "sql:cw.pending_outbox"
+            )
+            .is_some()
+        );
+        assert!(
+            edge(
+                &delta,
+                "sql:cw",
+                &EdgeKind::Contains,
+                "sql:cw.pending_outbox"
+            )
+            .is_some()
+        );
+        assert!(
+            delta
+                .unresolved
+                .iter()
+                .all(|u| u.reason != UnresolvedReason::NoTable),
+            "{:?}",
+            delta.unresolved
         );
     }
 

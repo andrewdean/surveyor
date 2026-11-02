@@ -10,7 +10,6 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use globset::GlobSet;
 use ignore::WalkBuilder;
 use surveyor_model::{CommitId, ContentHash, Language, RepoId, RepoPath, SourceUnit};
 

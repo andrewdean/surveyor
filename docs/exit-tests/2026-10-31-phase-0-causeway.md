@@ -178,6 +178,23 @@ Ranked by how much they would mislead an agent:
   writes summarized as selects; both are fixed, leaving 212 `no-table` gaps that are
   real: views (`catalog_search_export_v1`, the `*_v1` family), `information_schema` and
   `pg_catalog` relations, which Surveyor does not yet declare.
+  **Views declared 2026-11-01.** `CREATE [OR REPLACE] VIEW` and `CREATE MATERIALIZED
+  VIEW` now produce `View` nodes that read the tables their query names, so code that
+  selects from a view links to it and `affected <table>` crosses the view. On Causeway
+  the `no-table` gaps fall from 212 to 105 and 20 views appear; `explain
+  catalog_search_export_v1` shows the view (29 migrations recreate it, merged into one
+  node) reading 29 relations, among them `articles`, `catalog_assets` and two other
+  views, and read by `fetch_row`, `fetch_many`, `fetch_all` and `reconcile_search_sync`
+  in `component/discovery/search/core` through `{schema}.catalog_search_export_v1`;
+  `affected articles --depth 2` reaches those four. `READS` falls from 1,610 to 1,528
+  because the reads of a view's query now hang off the one view node instead of each
+  migration file that recreated it. The 105 that remain are the five views Causeway
+  creates only inside `DO $$ ... EXECUTE format('CREATE VIEW %I.…')` blocks, which the
+  statement splitter cannot parse (`pure_class_concepts_v1`, `pure_property_terms_v1`,
+  `glossary_term_governance_v1`, `effective_dataset_governance_v1`,
+  `effective_column_governance_v1`, nine sites), `pg_catalog` and `information_schema`
+  relations, and tables that exist only in test fixtures and documentation examples
+  (`parties`, `titles`, `person_profile`, `concept_dataset_edges`, `identity_writes`).
 
 ## What this does not show
 

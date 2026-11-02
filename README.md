@@ -39,7 +39,10 @@ for now). This checkout implements Phase 0 of that plan.
   (`format!("DELETE FROM {schema}.events ...")`), resolves to every schema that declares
   it at confidence 1/n. String literals are decoded before parsing, so a query continued
   across lines with `\` reads as the one line the program sends, and names a statement
-  introduces itself (CTEs, table functions) are never mistaken for tables.
+  introduces itself (CTEs, table functions) are never mistaken for tables. A
+  `CREATE [OR REPLACE] VIEW` or `CREATE MATERIALIZED VIEW` declares a `View` node in
+  its schema with a `READS` edge to each table its query names, so code that selects
+  from the view links to the view and `affected <table>` reaches that code through it.
 - **Provenance.** Every edge carries a derivation (`syntactic`, `resolved`, `declared`,
   later `observed` and `inferred`), a confidence, and evidence: repository, file, byte
   span, lines, commit and a hash of the cited text.

@@ -1,8 +1,9 @@
 //! SQL extraction with `sqlparser`: schema from migrations, tables from statements.
 //!
 //! Whole `.sql` files are parsed statement by statement. `CREATE TABLE`, `ALTER TABLE
-//! ... ADD COLUMN`, `CREATE INDEX` and `CREATE SCHEMA` become declarations scoped by
-//! schema; every statement's table references become `Read` or `Write` references.
+//! ... ADD COLUMN`, `CREATE INDEX`, `CREATE SCHEMA` and `CREATE [MATERIALIZED] VIEW`
+//! become declarations scoped by schema; every statement's table references become
+//! `Read` or `Write` references, and a view's defining query reads its tables.
 //! [`summarize_sql`] does the same for an SQL string literal found in code, which the
 //! pipeline turns into a `Query` declaration.
 //!
@@ -212,7 +213,8 @@ fn summarize_statement(stmt: &Statement) -> StatementSummary {
         Statement::AlterTable(_) => "ALTER TABLE",
         Statement::CreateIndex(_) => "CREATE INDEX",
         Statement::CreateSchema { .. } => "CREATE SCHEMA",
-        Statement::CreateView { .. } => "CREATE VIEW",
+        Statement::CreateView(view) if view.materialized => "CREATE MATERIALIZED VIEW",
+        Statement::CreateView(_) => "CREATE VIEW",
         Statement::Drop { .. } => "DROP",
         Statement::Truncate { .. } => "TRUNCATE",
         Statement::Copy { .. } => "COPY",
@@ -389,6 +391,26 @@ impl SqlExtractor {
                     table,
                     "sql.alter-table",
                 ));
+            }
+            Statement::CreateView(view) => {
+                let own_name = object_name(&view.name);
+                let (schema, name) = self.split_table(&own_name);
+                let attrs =
+                    BTreeMap::from([("materialized".to_owned(), view.materialized.to_string())]);
+                set.facts
+                    .push(decl(NodeKind::View, name, vec![schema], attrs));
+                // The statement's relations include the view itself; the rest is
+                // what its query selects from.
+                set.facts.extend(
+                    summarize_statement(stmt)
+                        .reads
+                        .into_iter()
+                        .filter(|table| *table != own_name)
+                        .map(|table| self.split_table(&table))
+                        .map(|(schema, table)| {
+                            reference(ReferenceRole::Read, schema, table, "sql.view")
+                        }),
+                );
             }
             Statement::CreateIndex(index) => {
                 let (schema, table) = self.split_table(&object_name(&index.table_name));
@@ -638,6 +660,59 @@ mod tests {
         );
         assert_eq!(w.writes, vec!["cw.audit"]);
         assert_eq!(w.reads, vec!["cw.sessions"]);
+    }
+
+    #[test]
+    fn a_view_is_declared_and_reads_the_tables_its_query_names() {
+        let sql = "CREATE OR REPLACE VIEW cw.pending AS\n  SELECT o.id, u.email FROM cw.outbox o JOIN cw.users u ON u.id = o.user_id\n  WHERE o.sent_at IS NULL;\n\
+                   CREATE MATERIALIZED VIEW daily_counts AS WITH recent AS (SELECT * FROM events) SELECT count(*) FROM recent;";
+        let facts = SqlExtractor::new(SqlDialect::PostgreSql, "public")
+            .extract(&unit(sql))
+            .expect("parses");
+        let views: Vec<_> = facts
+            .declarations()
+            .filter(|d| d.kind == NodeKind::View)
+            .collect();
+        assert_eq!(views.len(), 2, "{views:?}");
+        let pending = &views[0];
+        assert_eq!(pending.name, "pending");
+        assert_eq!(pending.scope, vec!["cw".to_owned()]);
+        assert_eq!(
+            pending.signature.as_deref(),
+            Some("CREATE OR REPLACE VIEW cw.pending AS")
+        );
+        assert_eq!(
+            pending.attributes.get("materialized").map(String::as_str),
+            Some("false")
+        );
+        let daily = &views[1];
+        assert_eq!(daily.scope, vec!["public".to_owned()]);
+        assert_eq!(
+            daily.attributes.get("materialized").map(String::as_str),
+            Some("true")
+        );
+        let reads: Vec<(Vec<String>, String)> = facts
+            .references()
+            .filter(|r| r.role == ReferenceRole::Read)
+            .map(|r| (r.path.clone(), r.rule.to_string()))
+            .collect();
+        let path = |s: &str, t: &str| vec![s.to_owned(), t.to_owned()];
+        assert_eq!(
+            reads,
+            vec![
+                (path("cw", "outbox"), "sql.view".to_owned()),
+                (path("cw", "users"), "sql.view".to_owned()),
+                (path("public", "events"), "sql.view".to_owned()),
+            ],
+            "a view reads its tables, never itself or its CTEs"
+        );
+        assert!(facts.references().all(|r| r.role != ReferenceRole::Write));
+        let kind = summarize_sql(
+            "CREATE MATERIALIZED VIEW m AS SELECT 1 FROM t",
+            SqlDialect::PostgreSql,
+        )
+        .map(|s| s.kind);
+        assert_eq!(kind.as_deref(), Some("CREATE MATERIALIZED VIEW"));
     }
 
     #[test]

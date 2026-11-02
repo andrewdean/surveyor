@@ -19,9 +19,9 @@ pub(crate) enum Tier {
 pub(crate) struct SymbolIndex {
     /// Node index by short name.
     by_name: HashMap<String, Vec<usize>>,
-    /// Node index by `sql:` qualified table name (`schema.table`).
+    /// Node index by `sql:` qualified relation name (`schema.table`); views included.
     tables_by_qualified: HashMap<String, usize>,
-    /// Node indexes by bare table name.
+    /// Node indexes by bare relation name; views included.
     tables_by_name: HashMap<String, Vec<usize>>,
     /// Owning package node id per file.
     pub(crate) package_of_file: HashMap<RepoPath, String>,
@@ -38,16 +38,17 @@ pub(crate) struct SymbolIndex {
 /// Impl blocks are containers named after their type; they are never a target.
 pub(crate) fn is_nameable(kind: &NodeKind) -> bool {
     (kind.is_symbol() && *kind != NodeKind::Impl)
-        || matches!(kind, NodeKind::Module | NodeKind::Query | NodeKind::Table)
+        || kind.is_relation()
+        || matches!(kind, NodeKind::Module | NodeKind::Query)
 }
 
 impl SymbolIndex {
     pub(crate) fn insert(&mut self, idx: usize, node: &Node) {
-        let nameable = is_nameable(&node.kind) && node.kind != NodeKind::Table;
+        let nameable = is_nameable(&node.kind) && !node.kind.is_relation();
         if nameable {
             self.by_name.entry(node.name.clone()).or_default().push(idx);
         }
-        if node.kind == NodeKind::Table {
+        if node.kind.is_relation() {
             self.tables_by_qualified
                 .insert(node.qualified_name.clone(), idx);
             self.tables_by_name
@@ -61,11 +62,12 @@ impl SymbolIndex {
         self.by_name.get(name).map_or(&[], Vec::as_slice)
     }
 
-    /// The table `schema.name`, or every table called `name` when no schema is given.
+    /// The relation `schema.name`, or every relation called `name` when no schema is
+    /// given. A view is a relation like a table: code that selects from it links to it.
     ///
     /// A name without a schema comes from a `search_path` lookup or a templated
     /// `{schema}.name`; either way the schema is decided at run time, so each schema
-    /// that declares the table is a candidate.
+    /// that declares the relation is a candidate.
     pub(crate) fn tables(&self, schema: Option<&str>, name: &str) -> Vec<usize> {
         match schema {
             Some(s) => self
@@ -381,6 +383,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp, reason = "confidences are exact constants")]
     fn decisions_follow_the_rules() {
         let free = Site {
             method_call: false,
@@ -455,6 +458,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp, reason = "confidences are exact constants")]
     fn a_qualifier_that_names_no_declaration_is_a_gap_not_a_guess() {
         let free = Site {
             method_call: false,
@@ -508,6 +512,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp, reason = "confidences are exact constants")]
     fn method_calls_by_name_are_certain_only_in_their_own_file() {
         let method = Site {
             method_call: true,

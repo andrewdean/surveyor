@@ -6672,7 +6672,6 @@ version = "0.1.0"
 dependencies = [
  "rhai",
  "serde",
- "serde_json",
  "surveyor-graph",
  "surveyor-model",
 ]

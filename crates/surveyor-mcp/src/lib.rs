@@ -250,7 +250,8 @@ pub struct AffectedParams {
 pub struct FindParams {
     /// Name, qualified name or identifier fragment.
     pub query: String,
-    /// Restrict to a node kind such as `Function`, `Table`, `File`.
+    /// Restrict to a node kind such as `Function`, `Table`, `View`, `File`.
+
     #[serde(default)]
     pub kind: Option<String>,
     /// Maximum results (default 20).

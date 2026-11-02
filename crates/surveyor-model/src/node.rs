@@ -44,6 +44,8 @@ pub enum NodeKind {
     // Data
     Schema,
     Table,
+    /// A view or materialized view: a named query over tables, read like one.
+    View,
     Column,
     Index,
     Constraint,
@@ -119,6 +121,7 @@ impl NodeKind {
             Self::Variant => "Variant",
             Self::Schema => "Schema",
             Self::Table => "Table",
+            Self::View => "View",
             Self::Column => "Column",
             Self::Index => "Index",
             Self::Constraint => "Constraint",
@@ -192,6 +195,12 @@ impl NodeKind {
         )
     }
 
+    /// True for kinds a query names in `FROM`: tables and views.
+    #[must_use]
+    pub fn is_relation(&self) -> bool {
+        matches!(self, Self::Table | Self::View)
+    }
+
     /// True for kinds that name a type.
     #[must_use]
     pub fn is_type(&self) -> bool {
@@ -232,6 +241,7 @@ impl NodeKind {
             K::Variant,
             K::Schema,
             K::Table,
+            K::View,
             K::Column,
             K::Index,
             K::Constraint,

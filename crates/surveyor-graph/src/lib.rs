@@ -925,7 +925,8 @@ impl CodeGraph {
 fn kind_priority(kind: &NodeKind) -> u8 {
     match kind {
         k if k.is_symbol() => 0,
-        NodeKind::Table | NodeKind::Schema | NodeKind::Column => 1,
+        NodeKind::Table | NodeKind::View | NodeKind::Schema | NodeKind::Column => 1,
+
         NodeKind::Module | NodeKind::Package => 2,
         NodeKind::File => 3,
         _ => 4,
