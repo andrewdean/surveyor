@@ -407,6 +407,42 @@ impl CodeGraph {
             .collect()
     }
 
+    /// The nodes a question is about: `find` when the question is a name, otherwise
+    /// the nodes its identifier-like terms name, those matching the most terms first.
+    ///
+    /// `who calls OutboxEventSink` seeds on `OutboxEventSink`; `outbox relay drain`
+    /// seeds on every node one of those words names. Question words (`who`, `calls`,
+    /// `table`) are dropped, so a name that is also such a word is found only when it
+    /// is the whole query.
+    #[must_use]
+    pub fn seeds(&self, question: &str, limit: usize) -> Vec<&Node> {
+        let whole = self.find(question, None, limit);
+        if !whole.is_empty() {
+            return whole;
+        }
+        let terms: Vec<&str> = question
+            .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == ':' || c == '.'))
+            .map(|t| t.trim_matches(|c: char| c == ':' || c == '.'))
+            .filter(|t| t.len() >= 3 && !QUESTION_WORDS.contains(&t.to_lowercase().as_str()))
+            .collect();
+        let mut hits: HashMap<&NodeId, (usize, u8, &Node)> = HashMap::new();
+        for term in terms {
+            for (score, node) in self.scored(term, None).into_iter().take(limit * 4) {
+                let entry = hits.entry(&node.id).or_insert((0, score, node));
+                entry.0 += 1;
+                entry.1 = entry.1.min(score);
+            }
+        }
+        let mut ranked: Vec<(usize, u8, &Node)> = hits.into_values().collect();
+        ranked.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then(a.1.cmp(&b.1))
+                .then_with(|| kind_priority(&a.2.kind).cmp(&kind_priority(&b.2.kind)))
+                .then_with(|| a.2.id.cmp(&b.2.id))
+        });
+        ranked.into_iter().map(|(_, _, n)| n).take(limit).collect()
+    }
+
     /// Resolves a query to one node, or says why it cannot.
     ///
     /// An identifier resolves exactly. Otherwise the best-scoring matches are
@@ -932,6 +968,78 @@ impl CodeGraph {
 }
 
 /// Symbols rank above files and files above structure when a query matches several.
+/// Words a question is made of, never the name it asks about.
+const QUESTION_WORDS: &[&str] = &[
+    "who",
+    "what",
+    "where",
+    "which",
+    "how",
+    "why",
+    "when",
+    "does",
+    "did",
+    "the",
+    "and",
+    "for",
+    "that",
+    "this",
+    "with",
+    "from",
+    "into",
+    "are",
+    "was",
+    "were",
+    "can",
+    "could",
+    "should",
+    "calls",
+    "call",
+    "called",
+    "caller",
+    "callers",
+    "uses",
+    "use",
+    "used",
+    "using",
+    "reads",
+    "read",
+    "writes",
+    "write",
+    "written",
+    "touches",
+    "touch",
+    "handles",
+    "handled",
+    "handle",
+    "defines",
+    "defined",
+    "define",
+    "implements",
+    "implemented",
+    "depends",
+    "depend",
+    "table",
+    "function",
+    "method",
+    "type",
+    "struct",
+    "class",
+    "module",
+    "file",
+    "code",
+    "find",
+    "show",
+    "list",
+    "about",
+    "between",
+    "path",
+    "all",
+    "any",
+    "its",
+    "their",
+];
+
 fn kind_priority(kind: &NodeKind) -> u8 {
     match kind {
         k if k.is_symbol() => 0,
@@ -1167,6 +1275,33 @@ mod tests {
         assert!(
             matches!(g.lookup("no_such_name", None), Lookup::NotFound { similar } if similar.is_empty())
         );
+    }
+
+    #[test]
+    fn a_question_seeds_on_the_names_it_contains() {
+        let g = CodeGraph::new(
+            vec![
+                node("x/outbox.rs::OutboxEventSink", NodeKind::Trait),
+                node("x/relay.rs::drain", NodeKind::Function),
+                node("y/other.rs::Other", NodeKind::Struct),
+            ],
+            Vec::new(),
+        );
+        let names = |nodes: Vec<&Node>| nodes.iter().map(|n| n.name.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            names(g.seeds("OutboxEventSink", 5)),
+            vec!["OutboxEventSink"]
+        );
+        assert_eq!(
+            names(g.seeds("who calls OutboxEventSink?", 5)),
+            vec!["OutboxEventSink"]
+        );
+        let both = names(g.seeds("where does the outbox relay drain", 5));
+        assert!(
+            both.contains(&"OutboxEventSink".to_owned()) && both.contains(&"drain".to_owned()),
+            "{both:?}"
+        );
+        assert!(g.seeds("what is the weather", 5).is_empty());
     }
 
     #[test]

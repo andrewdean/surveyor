@@ -347,7 +347,7 @@ impl Surveyor {
     }
 
     #[tool(
-        description = "Scoped context for a question: the best-matching nodes and their relations, with citations. Use for 'where is X handled', 'what touches table Y'."
+        description = "Scoped context for a question or a name: the nodes the question names and their relations, with citations. Ask 'who calls X', 'what touches table Y' or just 'X'."
     )]
     async fn query_graph(
         &self,
@@ -355,7 +355,7 @@ impl Surveyor {
     ) -> Result<CallToolResult, McpError> {
         let limit = p.limit.unwrap_or(5).clamp(1, 50);
         let depth = p.depth.unwrap_or(1).clamp(0, 3);
-        let seeds = self.graph.find(&p.query, None, limit);
+        let seeds = self.graph.seeds(&p.query, limit);
         #[derive(Serialize)]
         struct Seed {
             node: NodeView,

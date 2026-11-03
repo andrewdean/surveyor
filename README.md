@@ -42,6 +42,10 @@ for now). This checkout implements Phase 0 of that plan.
   `scip-python` on its nine Python projects (14 s, 2.5 MB), ending with all fifty-nine
   indexes loaded at once: 55% of Causeway's edges resolved and gaps down from 40,539
   to 13,295.
+- **Questions.** `query_graph` over MCP takes a question or a name: a name is
+  looked up as `explain` would; a question such as `who calls OutboxEventSink` or
+  `what touches the event_outbox table` seeds on the identifier-like words it
+  contains, the nodes matching the most words first, with question words dropped.
 - **Linking.** Declarations become nodes with stable identifiers such as
   `rust:crates/outbox/src/relay.rs::Relay::drain` or `sql:cw_outbox.outbox`. References
   resolve by name within the same file, then package, then repository. A reference is
