@@ -62,7 +62,7 @@ fn role_for_capture(name: &str) -> Result<CaptureRole, ExtractError> {
                 Some(
                     language
                         .parse::<Language>()
-                        .map_err(|_| unknown("exposed language"))?,
+                        .map_err(|_unparsed| unknown("exposed language"))?,
                 ),
             ),
             None => (kind, None),
@@ -1718,7 +1718,7 @@ describe("server", () => { it("starts", () => {}); });
         assert!(
             facts
                 .declarations()
-                .any(|d| d.name == "sh" && d.attributes.get("language").is_none()),
+                .any(|d| d.name == "sh" && !d.attributes.contains_key("language")),
             "the plain Rust `sh` is still a Rust function"
         );
         assert!(
