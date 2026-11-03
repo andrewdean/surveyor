@@ -628,6 +628,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_relinked_file_sees_the_declarations_of_files_that_did_not_change() {
+        // Trait dispatch pairs a trait's methods with an implementation's; module
+        // imports name a symbol inside the imported file. Either side may be the one
+        // relinked, and the other is then known only from the seed.
+        let contract = "pub trait Drain {\n    fn drain(&mut self) -> usize;\n}\n";
+        let implementation = "pub struct Relay;\nimpl crate::a::Drain for Relay {\n    fn drain(&mut self) -> usize { 0 }\n}\n";
+        let before = vec![unit("src/a.rs", contract), unit("src/b.rs", implementation)];
+        let trait_side = vec![
+            unit("src/a.rs", &format!("// contract\n{contract}")),
+            unit("src/b.rs", implementation),
+        ];
+        check(&before, &trait_side);
+        let impl_side = vec![
+            unit("src/a.rs", contract),
+            unit("src/b.rs", &format!("// implementation\n{implementation}")),
+        ];
+        check(&before, &impl_side);
+
+        let importer = "import { x } from \"./b\";\nexport function y() { return x(); }\n";
+        let module = "export function x() { return 1; }\n";
+        let before = vec![unit("src/a.ts", importer), unit("src/b.ts", module)];
+        let after = vec![
+            unit("src/a.ts", &format!("// importer\n{importer}")),
+            unit("src/b.ts", module),
+        ];
+        check(&before, &after);
+    }
+
     /// Indexes `before`, applies the change to `after` incrementally, and checks the
     /// result against a fresh link of `after`.
     fn check(before: &[SourceUnit], after: &[SourceUnit]) -> UpdatePlan {

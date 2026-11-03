@@ -79,7 +79,8 @@ fn run(mut b: Builder<'_>) -> GraphDelta {
 /// A declaration node inside one file, with its parent by span containment.
 #[derive(Debug, Clone)]
 struct DeclRef {
-    set: usize,
+    /// The fact set that declared it; `None` for a declaration the seed carries.
+    set: Option<usize>,
     node: usize,
     span: TextSpan,
     parent: Option<usize>,
@@ -101,6 +102,9 @@ struct Builder<'a> {
     package_by_name: HashMap<String, usize>,
     /// Declaration nodes per file, sorted by span start, with parent links.
     decls_by_file: HashMap<RepoPath, Vec<DeclRef>>,
+    /// `DEFINES` and `IMPLEMENTS` edges the seed carries, for dispatch across the
+    /// boundary between relinked and untouched files.
+    seed_links: Vec<(usize, EdgeKind, usize)>,
     /// Nodes below this index came from the seed and are reported only when changed.
     seed_count: usize,
     /// Seed nodes a pass changed.
@@ -138,6 +142,7 @@ impl<'a> Builder<'a> {
             package_dirs: Vec::new(),
             package_by_name: HashMap::new(),
             decls_by_file: HashMap::new(),
+            seed_links: Vec::new(),
             seed_count: 0,
             dirty_seeds: BTreeSet::new(),
             bindings,
@@ -153,8 +158,24 @@ impl<'a> Builder<'a> {
     fn absorb(&mut self, seed: Seed) {
         for node in seed.nodes {
             let path = node.file().cloned();
+            let span = node.span();
             let idx = self.push_node(node);
             let node = &self.nodes[idx];
+            // A declaration the seed carries is looked up by file like a fresh one:
+            // a relinked file's precise bindings, module imports, receivers and
+            // dispatch all name declarations in files that did not change.
+            let declares = !matches!(
+                node.kind,
+                NodeKind::File | NodeKind::Package | NodeKind::Workspace
+            );
+            if let (true, Some(file), Some(span)) = (declares, path.clone(), span) {
+                self.decls_by_file.entry(file).or_default().push(DeclRef {
+                    set: None,
+                    node: idx,
+                    span,
+                    parent: None,
+                });
+            }
             match (&node.kind, path) {
                 (NodeKind::File, Some(path)) => {
                     self.file_nodes.insert(path, idx);
@@ -209,6 +230,9 @@ impl<'a> Builder<'a> {
                         .entry(s.id.to_string())
                         .or_default()
                         .insert(d.id.to_string());
+                }
+                (EdgeKind::Defines | EdgeKind::Implements, _, _) => {
+                    self.seed_links.push((src, edge.kind.clone(), dst));
                 }
                 _ => {}
             }
@@ -484,7 +508,7 @@ impl<'a> Builder<'a> {
                 .declarations()
                 .filter(|d| !matches!(d.kind, NodeKind::Package | NodeKind::Workspace))
                 .map(|d| DeclRef {
-                    set: si,
+                    set: Some(si),
                     node: self.declaration_node(set, d),
                     span: d.span,
                     parent: None,
@@ -559,7 +583,9 @@ impl<'a> Builder<'a> {
             let refs = self.decls_by_file[&file].clone();
             let file_node = self.file_nodes.get(&file).copied();
             for r in &refs {
-                let set = &self.input.fact_sets[r.set];
+                // A seed declaration already has its structural edges.
+                let Some(si) = r.set else { continue };
+                let set = &self.input.fact_sets[si];
                 let node = self.nodes[r.node].clone();
                 let (span, hash) = (r.span, node.content_hash);
                 match node.kind {
@@ -1547,17 +1573,25 @@ impl<'a> Builder<'a> {
     /// callers of its contract.
     fn dispatch(&mut self) {
         let position = |id: &NodeId| self.node_pos.get(id).copied();
+        let seeded = |kind: EdgeKind| {
+            self.seed_links
+                .iter()
+                .filter(move |(_, k, _)| *k == kind)
+                .map(|(s, _, d)| (*s, *d))
+        };
         let implements: Vec<(usize, usize)> = self
             .edges
             .iter()
             .filter(|e| e.kind == EdgeKind::Implements)
             .filter_map(|e| Some((position(&e.src)?, position(&e.dst)?)))
+            .chain(seeded(EdgeKind::Implements))
             .collect();
         let children: HashMap<usize, Vec<usize>> = self
             .edges
             .iter()
             .filter(|e| e.kind == EdgeKind::Defines)
             .filter_map(|e| Some((position(&e.src)?, position(&e.dst)?)))
+            .chain(seeded(EdgeKind::Defines))
             .fold(HashMap::new(), |mut acc, (parent, child)| {
                 acc.entry(parent).or_default().push(child);
                 acc

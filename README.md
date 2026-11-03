@@ -140,6 +140,19 @@ and append; the rest is extraction and relinking of the listed files. After the 
 updates in sequence the dataset was compared node by node and edge by edge, including
 citations, with a fresh index of the final tree: identical.
 
+The Phase 1 exit test (`docs/exit-tests/2026-11-03-phase-1.md`, 2026-11-03, release
+build) replayed Causeway's last twenty commits through `surveyor update`: 0.9 to 4.6 s
+per incremental step (median 1.0 s) and 5.4 s for each of the two commits that changed
+a manifest and fell back to a full index; with all 62 SCIP indexes loaded, 1.1 to
+3.2 s and 4.0 s. After the twenty steps the dataset holds exactly the edges and gaps of
+a cold index of the same tree on the name tier, and exactly its gaps with indexes, the
+only edge differences being 27 calls among overloaded Rhai functions whose identifiers
+swap between runs (an open defect) and 0.04% of edges where the index, built at the
+last commit, described a declaration that had not yet moved into place when a file was
+relinked. The same run answered twelve questions on Cairn with no profile and no
+adapter, eleven correctly and one as an honest refusal, and verified all 247 spans the
+answers cite. Cold index of Causeway at that commit: 3.5 to 9.4 s depending on load.
+
 Cairn with and without a SCIP index from `rust-analyzer scip` (15 s to generate, 3.8 MB,
 74 Rust documents; the checkout also holds a TypeScript extension and shell scripts the
 index does not cover):

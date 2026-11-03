@@ -1,0 +1,442 @@
+# Cairn answers, name tier (store without an index), surveyor f1f021f and later
+### explain Dimension --limit 12
+Error: "Dimension" is ambiguous: 2 nodes match it equally well. Repeat with one of their identifiers:
+  Enum cairn-domain/src/dimension.rs:27-33
+             rust:cairn-domain/src/dimension.rs::Dimension
+  Module cairn-domain/src/lib.rs:7-7
+             rust:cairn-domain/src/lib.rs::dimension
+
+### affected parse_dimension --depth 2
+affected by a change to Function parse_dimension (depth 2): 9 nodes
+depth 1 (1):
+  Function parse_skill_metadata                                  via CALLS cairn-resolve/src/skill.rs:339
+depth 2 (8):
+  Test tests::parse_sample_skill                             via CALLS cairn-resolve/src/skill.rs:553
+  Test tests::reject_missing_required_fields                 via CALLS cairn-resolve/src/skill.rs:610
+  Test tests::invalid_zone_id_is_dropped                     via CALLS cairn-resolve/src/skill.rs:717
+  Test tests::skill_without_zone_fields_has_empty_defa…      via CALLS cairn-resolve/src/skill.rs:693
+  Test tests::parses_ctx_zone_for_archetype                  via CALLS cairn-resolve/src/skill.rs:673
+  Test tests::parse_minimal_skill                            via CALLS cairn-resolve/src/skill.rs:596
+  Function parse_skill_file                                      via CALLS cairn-resolve/src/skill.rs:430
+  Test tests::parses_ctx_zones_for_atom                      via CALLS cairn-resolve/src/skill.rs:650
+
+### affected validate_runnable --depth 2
+affected by a change to Function validate_runnable (depth 2): 10 nodes
+depth 1 (9):
+  Function run_runnable_validation                               via CALLS cairn-cli/src/commands/resolve.rs:727
+  File cairn-cli/src/commands/resolve.rs                0.50 via IMPORTS cairn-cli/src/commands/resolve.rs:18 [syntactic 0.50]
+  Test tests::zone_mismatch_propagates                       via CALLS cairn-resolve/src/runnable_validation.rs:313
+  Test tests::unknown_profile_propagates_through_profi…      via CALLS cairn-resolve/src/runnable_validation.rs:329
+  Test tests::missing_profile_skips_deployment_check         via CALLS cairn-resolve/src/runnable_validation.rs:390
+  Test tests::missing_archetype_flagged                      via CALLS cairn-resolve/src/runnable_validation.rs:296
+  Test tests::unknown_deployment_target_flagged              via CALLS cairn-resolve/src/runnable_validation.rs:347
+  Test tests::clean_runnable_produces_clean_report           via CALLS cairn-resolve/src/runnable_validation.rs:280
+  Test tests::issue_count_aggregates_across_validators       via CALLS cairn-resolve/src/runnable_validation.rs:365
+depth 2 (1):
+  Function run                                                   via CALLS cairn-cli/src/commands/resolve.rs:341
+
+### explain RunnableReport --limit 12
+Struct RunnableReport
+  id        rust:cairn-resolve/src/runnable_validation.rs::RunnableReport
+  location  cairn-resolve/src/runnable_validation.rs:21-34
+  signature pub struct RunnableReport
+  doc       Combined validation report for a single runnable.
+members (4):
+  Method is_clean                                 cairn-resolve/src/runnable_validation.rs:39-44
+  Method has_blocking                             cairn-resolve/src/runnable_validation.rs:50-58
+  Method issue_count                              cairn-resolve/src/runnable_validation.rs:62-64
+  Method from                                     cairn-cli/src/commands/resolve.rs:112-133
+outgoing:
+  -> USES_TYPE (4)
+     Struct RunnableName                                 cairn-resolve/src/runnable_validation.rs:23
+     Enum DeploymentIssue                              cairn-resolve/src/runnable_validation.rs:27
+     Enum ProfileIssue                                 cairn-resolve/src/runnable_validation.rs:29
+     Enum ZoneIssue                                    cairn-resolve/src/runnable_validation.rs:25
+incoming:
+  <- CONTAINS (1)
+     File cairn-resolve/src/runnable_validation.rs     cairn-resolve/src/runnable_validation.rs:21-34
+  <- IMPORTS (1)
+     File cairn-cli/src/commands/resolve.rs            cairn-cli/src/commands/resolve.rs:18 [syntactic 0.50]
+  <- USES_TYPE (5)
+     Impl RunnableValidationSummary#impl(From)         cairn-cli/src/commands/resolve.rs:111
+     Method RunnableValidationSummary::from              cairn-cli/src/commands/resolve.rs:112
+     Function run_runnable_validation                      cairn-cli/src/commands/resolve.rs:707
+     Impl RunnableReport#impl                          cairn-resolve/src/runnable_validation.rs:36-65
+     Function validate_runnable                            cairn-resolve/src/runnable_validation.rs:83
+
+### affected validate_profile_binding --depth 2
+affected by a change to Function validate_profile_binding (depth 2): 20 nodes
+depth 1 (11):
+  Test tests::unknown_profile_errors                         via CALLS cairn-resolve/src/profile_binding.rs:355
+  Function validate_runnable                                     via CALLS cairn-resolve/src/runnable_validation.rs:104
+  Test tests::role_keyed_pin_is_advisory_v0                  via CALLS cairn-resolve/src/profile_binding.rs:449
+  Test tests::pin_match_passes                               via CALLS cairn-resolve/src/profile_binding.rs:416
+  Test tests::forbidden_atom_loaded_errors                   via CALLS cairn-resolve/src/profile_binding.rs:400
+  Test tests::pin_violation_errors                           via CALLS cairn-resolve/src/profile_binding.rs:431
+  Test tests::missing_realization_for_mandatory_trait_…      via CALLS cairn-resolve/src/profile_binding.rs:386
+  Test tests::multiple_issues_all_reported                   via CALLS cairn-resolve/src/profile_binding.rs:464
+  Test tests::mandatory_trait_with_realization_passes        via CALLS cairn-resolve/src/profile_binding.rs:375
+  File cairn-resolve/src/runnable_validation.rs              via IMPORTS cairn-resolve/src/runnable_validation.rs:16
+  Test tests::empty_profile_passes                           via CALLS cairn-resolve/src/profile_binding.rs:364
+depth 2 (9):
+  Function run_runnable_validation                               via CALLS cairn-cli/src/commands/resolve.rs:727
+  File cairn-cli/src/commands/resolve.rs                0.50 via IMPORTS cairn-cli/src/commands/resolve.rs:18 [syntactic 0.50]
+  Test tests::zone_mismatch_propagates                       via CALLS cairn-resolve/src/runnable_validation.rs:313
+  Test tests::unknown_profile_propagates_through_profi…      via CALLS cairn-resolve/src/runnable_validation.rs:329
+  Test tests::missing_profile_skips_deployment_check         via CALLS cairn-resolve/src/runnable_validation.rs:390
+  Test tests::missing_archetype_flagged                      via CALLS cairn-resolve/src/runnable_validation.rs:296
+  Test tests::unknown_deployment_target_flagged              via CALLS cairn-resolve/src/runnable_validation.rs:347
+  Test tests::clean_runnable_produces_clean_report           via CALLS cairn-resolve/src/runnable_validation.rs:280
+  Test tests::issue_count_aggregates_across_validators       via CALLS cairn-resolve/src/runnable_validation.rs:365
+
+### affected validate_deployment_target --depth 2
+affected by a change to Function validate_deployment_target (depth 2): 17 nodes
+depth 1 (8):
+  Test tests::incompatible_atom_loaded_errors                via CALLS cairn-resolve/src/deployment_check.rs:386
+  Test tests::matching_target_with_no_atoms_passes           via CALLS cairn-resolve/src/deployment_check.rs:329
+  Test tests::unknown_target_errors                          via CALLS cairn-resolve/src/deployment_check.rs:310
+  Test tests::missing_mandatory_atom_errors                  via CALLS cairn-resolve/src/deployment_check.rs:364
+  File cairn-resolve/src/runnable_validation.rs              via IMPORTS cairn-resolve/src/runnable_validation.rs:14
+  Function validate_runnable                                     via CALLS cairn-resolve/src/runnable_validation.rs:95
+  Test tests::criticality_exceeding_target_max_errors        via CALLS cairn-resolve/src/deployment_check.rs:344
+  Test tests::multiple_issues_all_reported                   via CALLS cairn-resolve/src/deployment_check.rs:406
+depth 2 (9):
+  Function run_runnable_validation                               via CALLS cairn-cli/src/commands/resolve.rs:727
+  File cairn-cli/src/commands/resolve.rs                0.50 via IMPORTS cairn-cli/src/commands/resolve.rs:18 [syntactic 0.50]
+  Test tests::zone_mismatch_propagates                       via CALLS cairn-resolve/src/runnable_validation.rs:313
+  Test tests::unknown_profile_propagates_through_profi…      via CALLS cairn-resolve/src/runnable_validation.rs:329
+  Test tests::missing_profile_skips_deployment_check         via CALLS cairn-resolve/src/runnable_validation.rs:390
+  Test tests::missing_archetype_flagged                      via CALLS cairn-resolve/src/runnable_validation.rs:296
+  Test tests::unknown_deployment_target_flagged              via CALLS cairn-resolve/src/runnable_validation.rs:347
+  Test tests::clean_runnable_produces_clean_report           via CALLS cairn-resolve/src/runnable_validation.rs:280
+  Test tests::issue_count_aggregates_across_validators       via CALLS cairn-resolve/src/runnable_validation.rs:365
+
+### explain ZoneIssue --limit 12
+Enum ZoneIssue
+  id        rust:cairn-resolve/src/zone_check.rs::ZoneIssue
+  location  cairn-resolve/src/zone_check.rs:24-47
+  signature pub enum ZoneIssue
+  doc       A zone-related issue discovered during resolution.
+members (4):
+  Variant ArchetypeZoneMismatch                    cairn-resolve/src/zone_check.rs:26-35
+  Variant AtomZoneMismatch                         cairn-resolve/src/zone_check.rs:37-46
+  Method is_blocking                              cairn-resolve/src/zone_check.rs:53-55
+  Method fmt                                      cairn-resolve/src/zone_check.rs:59-85
+outgoing:
+  -> DEFINES (2)
+     Variant ZoneIssue::ArchetypeZoneMismatch             cairn-resolve/src/zone_check.rs:26-35
+     Variant ZoneIssue::AtomZoneMismatch                  cairn-resolve/src/zone_check.rs:37-46
+incoming:
+  <- CONTAINS (1)
+     File cairn-resolve/src/zone_check.rs              cairn-resolve/src/zone_check.rs:24-47
+  <- IMPORTS (1)
+     File cairn-resolve/src/runnable_validation.rs     cairn-resolve/src/runnable_validation.rs:17
+  <- USES_TYPE (4)
+     Struct RunnableReport                               cairn-resolve/src/runnable_validation.rs:25
+     Impl ZoneIssue#impl                               cairn-resolve/src/zone_check.rs:49-56
+     Impl ZoneIssue#impl(Display)                      cairn-resolve/src/zone_check.rs:58-86
+     Function validate_zone_compatibility                  cairn-resolve/src/zone_check.rs:103
+
+### affected RunnableSet --depth 1
+affected by a change to Struct RunnableSet (depth 1): 4 nodes
+depth 1 (4):
+  File cairn-manifest/src/manifest.rs                   0.50 via IMPORTS cairn-manifest/src/manifest.rs:11-17 [syntactic 0.50]
+  Impl RunnableSet#impl                                      via USES_TYPE cairn-domain/src/runnable.rs:151-201
+  Method CairnManifest::build_runnable_set                     via USES_TYPE cairn-manifest/src/manifest.rs:222
+  File cairn-domain/src/lib.rs                               via IMPORTS cairn-domain/src/lib.rs:30
+
+### explain build_profile_registry --limit 12
+Method CairnManifest::build_profile_registry
+  id        rust:cairn-manifest/src/manifest.rs::CairnManifest::build_profile_registry
+  location  cairn-manifest/src/manifest.rs:184-204
+  signature pub fn build_profile_registry(&self) -> Result<ProfileRegistry, ManifestError>
+  doc       Build a `ProfileRegistry` from declared profiles.
+outgoing:
+  -> CALLS (3)
+     Method ManifestError::validation_failed             cairn-manifest/src/manifest.rs:200
+     Method ProfileRegistry::new                         cairn-manifest/src/manifest.rs:185
+     Method ProfileSpec::to_profile                      cairn-manifest/src/manifest.rs:189
+  -> TESTED_BY (4)
+     Test tests::build_profile_registry_rejects_dupli… cairn-manifest/src/manifest.rs:1283
+     Test tests::build_profile_registry_rejects_inval… cairn-manifest/src/manifest.rs:1312
+     Test tests::build_profile_registry_role_keyed_pi… cairn-manifest/src/manifest.rs:1239
+     Test tests::build_profile_registry_succeeds       cairn-manifest/src/manifest.rs:1226
+  -> USES_TYPE (2)
+     Struct ManifestError                                cairn-manifest/src/manifest.rs:184
+     Struct ProfileRegistry                              cairn-manifest/src/manifest.rs:184
+incoming:
+  <- CALLS (5)
+     Function run_runnable_validation                      cairn-cli/src/commands/resolve.rs:719 [syntactic 0.75]
+     Test tests::build_profile_registry_rejects_dupli… cairn-manifest/src/manifest.rs:1283
+     Test tests::build_profile_registry_rejects_inval… cairn-manifest/src/manifest.rs:1312
+     Test tests::build_profile_registry_role_keyed_pi… cairn-manifest/src/manifest.rs:1239
+     Test tests::build_profile_registry_succeeds       cairn-manifest/src/manifest.rs:1226
+  <- DEFINES (1)
+     Impl CairnManifest#impl                           cairn-manifest/src/manifest.rs:184-204
+
+### path cairn-cli/src/commands/resolve.rs::run validate_zone_compatibility --directed
+path from run to validate_zone_compatibility (3 hops, every hop certain):
+  Function run  (cairn-cli/src/commands/resolve.rs:145-524)
+  -> CALLS Function run_runnable_validation  (cairn-cli/src/commands/resolve.rs:341)
+  -> CALLS Function validate_runnable  (cairn-cli/src/commands/resolve.rs:727)
+  -> CALLS Function validate_zone_compatibility  (cairn-resolve/src/runnable_validation.rs:90)
+
+### affected at_or_above --depth 1
+Error: "at_or_above" is ambiguous: 5 nodes match it equally well. Repeat with one of their identifiers:
+  Method cairn-domain/src/context.rs:54-56
+             rust:cairn-domain/src/context.rs::Exposure::at_or_above
+  Method cairn-domain/src/profile.rs:117-119
+             rust:cairn-domain/src/profile.rs::Strictness::at_or_above
+  Method cairn-domain/src/context.rs:148-152
+             rust:cairn-domain/src/context.rs::ContextAxes::at_or_above
+  Method cairn-domain/src/context.rs:103-105
+             rust:cairn-domain/src/context.rs::Sensitivity::at_or_above
+  Method cairn-domain/src/criticality.rs:61-63
+             rust:cairn-domain/src/criticality.rs::Criticality::at_or_above
+
+### affected ContextAxes::at_or_above --depth 1
+affected by a change to Method ContextAxes::at_or_above (depth 1): 4 nodes
+depth 1 (4):
+  Test tests::context_axes_at_or_above_requires_all_th… 0.33 via CALLS cairn-domain/src/context.rs:219 [syntactic 0.33]
+  Test tests::sensitivity_ordering                      0.33 via CALLS cairn-domain/src/context.rs:202 [syntactic 0.33]
+  Test tests::exposure_ordering                         0.33 via CALLS cairn-domain/src/context.rs:177 [syntactic 0.33]
+  Test tests::context_axes_at_or_above_partial_fails    0.33 via CALLS cairn-domain/src/context.rs:235 [syntactic 0.33]
+
+### explain rust:cairn-domain/src/dimension.rs::Dimension --limit 14
+Enum Dimension
+  id        rust:cairn-domain/src/dimension.rs::Dimension
+  location  cairn-domain/src/dimension.rs:27-33
+  signature pub enum Dimension
+  doc       Skill dimension — distinguishes atoms from compound archetypes.
+members (6):
+  Variant Atom                                     cairn-domain/src/dimension.rs:30
+  Variant Archetype                                cairn-domain/src/dimension.rs:32
+  Method parse                                    cairn-domain/src/dimension.rs:41-47
+  Method is_archetype                             cairn-domain/src/dimension.rs:51-53
+  Method is_atom                                  cairn-domain/src/dimension.rs:57-59
+  Method fmt                                      cairn-domain/src/dimension.rs:63-68
+outgoing:
+  -> DEFINES (2)
+     Variant Dimension::Archetype                         cairn-domain/src/dimension.rs:32
+     Variant Dimension::Atom                              cairn-domain/src/dimension.rs:30
+incoming:
+  <- CONTAINS (1)
+     File cairn-domain/src/dimension.rs                cairn-domain/src/dimension.rs:27-33
+  <- IMPORTS (2)
+     File cairn-domain/src/lib.rs                      cairn-domain/src/lib.rs:23
+     File cairn-resolve/src/skill.rs                   cairn-resolve/src/skill.rs:9-12 [syntactic 0.50]
+  <- USES_TYPE (5)
+     Impl Dimension#impl                               cairn-domain/src/dimension.rs:35-60
+     Impl Dimension#impl(Display)                      cairn-domain/src/dimension.rs:62-69
+     Test tests::serde_uses_kebab_case                 cairn-domain/src/dimension.rs:118
+     Struct SkillMetadata                                cairn-resolve/src/skill.rs:101
+     Function parse_dimension                              cairn-resolve/src/skill.rs:348
+
+### query from --kind Method
+6 nodes
+Method ResolutionError::from                              cairn-domain/src/error.rs:293-295
+           rust:cairn-domain/src/error.rs::ResolutionError::from
+Method RunnableValidationSummary::from                    cairn-cli/src/commands/resolve.rs:112-133
+           rust:cairn-cli/src/commands/resolve.rs::RunnableValidationSummary::from
+Method CairnLockfile::from_yaml                           cairn-manifest/src/lockfile.rs:134-136
+           rust:cairn-manifest/src/lockfile.rs::CairnLockfile::from_yaml
+Method ConflictGroup::from_trait                          cairn-domain/src/traits.rs:94-96
+           rust:cairn-domain/src/traits.rs::ConflictGroup::from_trait
+Method GovernanceLevel::try_from                          cairn-domain/src/types.rs:20-25
+           rust:cairn-domain/src/types.rs::GovernanceLevel::try_from
+Method SkillCache::from_manifest                          cairn-mcp/src/state.rs:27-85
+
+### explain RunnableValidationSummary --limit 10
+Struct RunnableValidationSummary
+  id        rust:cairn-cli/src/commands/resolve.rs::RunnableValidationSummary
+  location  cairn-cli/src/commands/resolve.rs:102-109
+  signature struct RunnableValidationSummary
+  doc       Per-runnable validation summary surfaced in the JSON resolve report.
+members (1):
+  Method from                                     cairn-cli/src/commands/resolve.rs:112-133
+incoming:
+  <- CONTAINS (1)
+     File cairn-cli/src/commands/resolve.rs            cairn-cli/src/commands/resolve.rs:102-109
+  <- USES_TYPE (2)
+     Struct ResolveReport                                cairn-cli/src/commands/resolve.rs:94
+     Impl RunnableValidationSummary#impl(From)         cairn-cli/src/commands/resolve.rs:111-134
+
+### explain validate_runnable --limit 20
+Function validate_runnable
+  id        rust:cairn-resolve/src/runnable_validation.rs::validate_runnable
+  location  cairn-resolve/src/runnable_validation.rs:77-113
+  signature pub fn validate_runnable( runnable: &Runnable, composed_atoms: &[&SkillEntry], zones: &ZoneRegistry, deployment_targets: &DeploymentTargetRegistry, profiles: &ProfileRegistry, ) -> RunnableReport
+  doc       Validate a single runnable against the resolved atom set.
+outgoing:
+  -> CALLS (3)
+     Function validate_deployment_target                   cairn-resolve/src/runnable_validation.rs:95
+     Function validate_profile_binding                     cairn-resolve/src/runnable_validation.rs:104
+     Function validate_zone_compatibility                  cairn-resolve/src/runnable_validation.rs:90
+  -> TESTED_BY (7)
+     Test tests::clean_runnable_produces_clean_report  cairn-resolve/src/runnable_validation.rs:280
+     Test tests::issue_count_aggregates_across_valida… cairn-resolve/src/runnable_validation.rs:365
+     Test tests::missing_archetype_flagged             cairn-resolve/src/runnable_validation.rs:296
+     Test tests::missing_profile_skips_deployment_che… cairn-resolve/src/runnable_validation.rs:390
+     Test tests::unknown_deployment_target_flagged     cairn-resolve/src/runnable_validation.rs:347
+     Test tests::unknown_profile_propagates_through_p… cairn-resolve/src/runnable_validation.rs:329
+     Test tests::zone_mismatch_propagates              cairn-resolve/src/runnable_validation.rs:313
+  -> USES_TYPE (6)
+     Struct DeploymentTargetRegistry                     cairn-resolve/src/runnable_validation.rs:81
+     Struct ProfileRegistry                              cairn-resolve/src/runnable_validation.rs:82
+     Struct Runnable                                     cairn-resolve/src/runnable_validation.rs:78
+     Struct ZoneRegistry                                 cairn-resolve/src/runnable_validation.rs:80
+     Struct SkillEntry                                   cairn-resolve/src/runnable_validation.rs:79
+     Struct RunnableReport                               cairn-resolve/src/runnable_validation.rs:83
+incoming:
+  <- CALLS (8)
+     Function run_runnable_validation                      cairn-cli/src/commands/resolve.rs:727
+     Test tests::clean_runnable_produces_clean_report  cairn-resolve/src/runnable_validation.rs:280
+     Test tests::issue_count_aggregates_across_valida… cairn-resolve/src/runnable_validation.rs:365
+     Test tests::missing_archetype_flagged             cairn-resolve/src/runnable_validation.rs:296
+     Test tests::missing_profile_skips_deployment_che… cairn-resolve/src/runnable_validation.rs:390
+     Test tests::unknown_deployment_target_flagged     cairn-resolve/src/runnable_validation.rs:347
+     Test tests::unknown_profile_propagates_through_p… cairn-resolve/src/runnable_validation.rs:329
+     Test tests::zone_mismatch_propagates              cairn-resolve/src/runnable_validation.rs:313
+  <- CONTAINS (1)
+     File cairn-resolve/src/runnable_validation.rs     cairn-resolve/src/runnable_validation.rs:77-113
+  <- IMPORTS (1)
+     File cairn-cli/src/commands/resolve.rs            cairn-cli/src/commands/resolve.rs:18 [syntactic 0.50]
+
+
+# After the fixes
+### [p1-cairn] explain Dimension --limit 3
+Enum Dimension
+  id        rust:cairn-domain/src/dimension.rs::Dimension
+  location  cairn-domain/src/dimension.rs:27-33
+  signature pub enum Dimension
+  doc       Skill dimension — distinguishes atoms from compound archetypes.
+members (6):
+
+### [p1-cairn] explain RunnableReport --limit 6
+Struct RunnableReport
+  id        rust:cairn-resolve/src/runnable_validation.rs::RunnableReport
+  location  cairn-resolve/src/runnable_validation.rs:21-34
+  signature pub struct RunnableReport
+  doc       Combined validation report for a single runnable.
+members (3):
+  Method is_clean                                 cairn-resolve/src/runnable_validation.rs:39-44
+  Method has_blocking                             cairn-resolve/src/runnable_validation.rs:50-58
+  Method issue_count                              cairn-resolve/src/runnable_validation.rs:62-64
+
+### [p1-cairn] affected validate_runnable --depth 1
+affected by a change to Function validate_runnable (depth 1): 9 nodes
+depth 1 (9):
+  Function run_runnable_validation                               via CALLS cairn-cli/src/commands/resolve.rs:727
+  File cairn-cli/src/commands/resolve.rs                     via IMPORTS cairn-cli/src/commands/resolve.rs:18
+  Test tests::zone_mismatch_propagates                       via CALLS cairn-resolve/src/runnable_validation.rs:313
+
+### [p1-cairn] affected RunnableSet --depth 1
+affected by a change to Struct RunnableSet (depth 1): 4 nodes
+depth 1 (4):
+  File cairn-manifest/src/manifest.rs                        via IMPORTS cairn-manifest/src/manifest.rs:11-17
+  Impl RunnableSet#impl                                      via USES_TYPE cairn-domain/src/runnable.rs:151-201
+  Method CairnManifest::build_runnable_set                     via USES_TYPE cairn-manifest/src/manifest.rs:222
+  File cairn-domain/src/lib.rs                               via IMPORTS cairn-domain/src/lib.rs:30
+
+### [p1-cairn] explain Drain --limit 2
+Error: no node matches "Drain"
+
+### [p1-cairn-scip] affected ContextAxes::at_or_above --depth 1
+affected by a change to Method ContextAxes::at_or_above (depth 1): 2 nodes
+depth 1 (2):
+  Test tests::context_axes_at_or_above_requires_all_th…      via CALLS cairn-domain/src/context.rs:219 [resolved]
+  Test tests::context_axes_at_or_above_partial_fails         via CALLS cairn-domain/src/context.rs:235 [resolved]
+
+
+# With the rust-analyzer index
+### affected ContextAxes::at_or_above --depth 1
+affected by a change to Method ContextAxes::at_or_above (depth 1): 2 nodes
+depth 1 (2):
+  Test tests::context_axes_at_or_above_requires_all_th…      via CALLS cairn-domain/src/context.rs:219 [resolved]
+  Test tests::context_axes_at_or_above_partial_fails         via CALLS cairn-domain/src/context.rs:235 [resolved]
+
+### affected validate_runnable --depth 1
+affected by a change to Function validate_runnable (depth 1): 9 nodes
+depth 1 (9):
+  Function run_runnable_validation                               via CALLS cairn-cli/src/commands/resolve.rs:727 [resolved]
+  File cairn-cli/src/commands/resolve.rs                0.50 via IMPORTS cairn-cli/src/commands/resolve.rs:18 [syntactic 0.50]
+  Test tests::zone_mismatch_propagates                       via CALLS cairn-resolve/src/runnable_validation.rs:313 [resolved]
+  Test tests::unknown_profile_propagates_through_profi…      via CALLS cairn-resolve/src/runnable_validation.rs:329 [resolved]
+  Test tests::missing_profile_skips_deployment_check         via CALLS cairn-resolve/src/runnable_validation.rs:390 [resolved]
+  Test tests::missing_archetype_flagged                      via CALLS cairn-resolve/src/runnable_validation.rs:296 [resolved]
+  Test tests::unknown_deployment_target_flagged              via CALLS cairn-resolve/src/runnable_validation.rs:347 [resolved]
+  Test tests::clean_runnable_produces_clean_report           via CALLS cairn-resolve/src/runnable_validation.rs:280 [resolved]
+  Test tests::issue_count_aggregates_across_validators       via CALLS cairn-resolve/src/runnable_validation.rs:365 [resolved]
+
+### affected RunnableSet --depth 1
+affected by a change to Struct RunnableSet (depth 1): 4 nodes
+depth 1 (4):
+  File cairn-manifest/src/manifest.rs                   0.50 via IMPORTS cairn-manifest/src/manifest.rs:11-17 [syntactic 0.50]
+  Impl RunnableSet#impl                                      via USES_TYPE cairn-domain/src/runnable.rs:151-201
+  Method CairnManifest::build_runnable_set                     via USES_TYPE cairn-manifest/src/manifest.rs:222 [resolved]
+  File cairn-domain/src/lib.rs                               via IMPORTS cairn-domain/src/lib.rs:30
+
+### explain rust:cairn-domain/src/dimension.rs::Dimension --limit 14
+Enum Dimension
+  id        rust:cairn-domain/src/dimension.rs::Dimension
+  location  cairn-domain/src/dimension.rs:27-33
+  signature pub enum Dimension
+  doc       Skill dimension — distinguishes atoms from compound archetypes.
+members (6):
+  Variant Atom                                     cairn-domain/src/dimension.rs:30
+  Variant Archetype                                cairn-domain/src/dimension.rs:32
+  Method parse                                    cairn-domain/src/dimension.rs:41-47
+  Method is_archetype                             cairn-domain/src/dimension.rs:51-53
+  Method is_atom                                  cairn-domain/src/dimension.rs:57-59
+  Method fmt                                      cairn-domain/src/dimension.rs:63-68
+outgoing:
+  -> DEFINES (2)
+     Variant Dimension::Archetype                         cairn-domain/src/dimension.rs:32
+     Variant Dimension::Atom                              cairn-domain/src/dimension.rs:30
+incoming:
+  <- CONTAINS (1)
+     File cairn-domain/src/dimension.rs                cairn-domain/src/dimension.rs:27-33
+  <- IMPORTS (2)
+     File cairn-domain/src/lib.rs                      cairn-domain/src/lib.rs:23
+     File cairn-resolve/src/skill.rs                   cairn-resolve/src/skill.rs:9-12 [syntactic 0.50]
+  <- USES_TYPE (5)
+     Impl Dimension#impl                               cairn-domain/src/dimension.rs:35-60
+     Impl Dimension#impl(Display)                      cairn-domain/src/dimension.rs:62-69
+     Test tests::serde_uses_kebab_case                 cairn-domain/src/dimension.rs:118 [resolved]
+     Struct SkillMetadata                                cairn-resolve/src/skill.rs:101 [resolved]
+     Function parse_dimension                              cairn-resolve/src/skill.rs:348 [resolved]
+
+### affected parse_dimension --depth 1
+affected by a change to Function parse_dimension (depth 1): 1 nodes
+depth 1 (1):
+  Function parse_skill_metadata                                  via CALLS cairn-resolve/src/skill.rs:339 [resolved]
+
+### explain build_profile_registry --limit 8
+Method CairnManifest::build_profile_registry
+  id        rust:cairn-manifest/src/manifest.rs::CairnManifest::build_profile_registry
+  location  cairn-manifest/src/manifest.rs:184-204
+  signature pub fn build_profile_registry(&self) -> Result<ProfileRegistry, ManifestError>
+  doc       Build a `ProfileRegistry` from declared profiles.
+outgoing:
+  -> CALLS (4)
+     Method ManifestError::validation_failed             cairn-manifest/src/manifest.rs:200 [resolved]
+     Method ProfileRegistry::insert                      cairn-manifest/src/manifest.rs:191 [resolved]
+     Method ProfileRegistry::new                         cairn-manifest/src/manifest.rs:185 [resolved]
+     Method ProfileSpec::to_profile                      cairn-manifest/src/manifest.rs:189 [resolved]
+  -> TESTED_BY (4)
+     Test tests::build_profile_registry_rejects_dupli… cairn-manifest/src/manifest.rs:1283 [resolved]
+     Test tests::build_profile_registry_rejects_inval… cairn-manifest/src/manifest.rs:1312 [resolved]
+     Test tests::build_profile_registry_role_keyed_pi… cairn-manifest/src/manifest.rs:1239 [resolved]
+     Test tests::build_profile_registry_succeeds       cairn-manifest/src/manifest.rs:1226 [resolved]
+  -> USES_TYPE (2)
+     Struct ManifestError                                cairn-manifest/src/manifest.rs:184 [resolved]
+     Struct ProfileRegistry                              cairn-manifest/src/manifest.rs:184 [resolved]
+incoming:
+
+### unresolved --limit 5
+error: unexpected argument '--limit' found
+
+Usage: surveyor unresolved [OPTIONS]
+
+For more information, try '--help'.
+

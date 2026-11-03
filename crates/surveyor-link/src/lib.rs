@@ -42,7 +42,7 @@ pub use linker::{Seed, link, relink};
 ///
 /// Part of the engine fingerprint a dataset records, so `surveyor update` knows that
 /// facts linked by an older build cannot be mixed with new ones.
-pub const LINK_REVISION: u32 = 13;
+pub const LINK_REVISION: u32 = 14;
 
 #[doc(inline)]
 pub use update::{ChangedFiles, RelinkReason, UpdatePlan, is_manifest, plan_update};
