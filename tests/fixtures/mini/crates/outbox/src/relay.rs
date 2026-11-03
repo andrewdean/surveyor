@@ -33,6 +33,15 @@ impl Drain for Relay {
     }
 }
 
+/// How many rows a relay has sent, for reports.
+pub struct DrainSummary(pub usize);
+
+impl From<&Relay> for DrainSummary {
+    fn from(_relay: &Relay) -> Self {
+        DrainSummary(0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

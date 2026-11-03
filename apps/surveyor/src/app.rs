@@ -6,7 +6,9 @@ use std::time::Instant;
 
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
-use surveyor_extract::{Extraction, Profile, Repository, extract_paths, extract_repository_with};
+use surveyor_extract::{
+    Extraction, Profile, Repository, extract_paths_using, extract_repository_with, extractors_with,
+};
 use surveyor_graph::{CodeGraph, EdgeFilter, Lookup, PathMode, Reach};
 use surveyor_link::{ChangedFiles, FileEntry, LinkInput, link, plan_update, relink};
 use surveyor_model::{EdgeKind, Fact, GraphStats, LiteralRole, NodeKind, RepoId, RepoPath};
@@ -672,7 +674,8 @@ async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow
     if !p.store.exists() {
         return full(cli, p, out, "no dataset", started).await;
     }
-    let store = open_store(&p.store, &scip_indexes(&profile, &p.root, &[])?).await?;
+    let indexes = scip_indexes(&profile, &p.root, &[])?;
+    let store = open_store(&p.store, &indexes).await?;
     let Some(snapshot) = store.snapshot(repo.id()).await? else {
         return full(cli, p, out, "repository not indexed", started).await;
     };
@@ -728,7 +731,7 @@ async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow
         return Ok(());
     }
 
-    match incremental(&repo, &profile, &store, &known, &changed, args).await? {
+    match incremental(&repo, &profile, &store, &known, &changed, args, &indexes).await? {
         Incremental::Applied {
             snapshot,
             relinked,
@@ -774,10 +777,15 @@ async fn incremental(
     known: &[FileRecord],
     changed: &ChangedFiles,
     args: &UpdateArgs,
+    scip: &[PathBuf],
 ) -> anyhow::Result<Incremental> {
     let started = Instant::now();
+    // The same extractors as a full index, precise tier included, so the files
+    // re-extracted here keep the bindings the indexes give them.
+    let extractors = extractors_with(profile, repo.root(), scip).context("load extractors")?;
     // Probe: link the changed files alone to learn the declarations they now hold.
-    let first = extract_paths(repo, profile, changed.to_extract()).context("extract")?;
+    let first =
+        extract_paths_using(&extractors, repo, profile, changed.to_extract()).context("extract")?;
     let (probe_files, _) = file_entries(&first);
     let probe = link(
         &LinkInput::new(repo.id().clone(), repo.commit().clone())
@@ -793,7 +801,11 @@ async fn incremental(
         .iter()
         .map(|f| (f.path.clone(), f.names.clone()))
         .collect();
-    let plan = plan_update(&nodes, &edges, &names, changed, &probe);
+    let unresolved = store
+        .unresolved(repo.id())
+        .await
+        .context("load unresolved references")?;
+    let plan = plan_update(&nodes, &edges, &names, &unresolved, changed, &probe);
     tracing::info!(
         relink = plan.relink.len(),
         drop_files = plan.drop_files.len(),
@@ -812,7 +824,8 @@ async fn incremental(
         )));
     }
 
-    let second = extract_paths(repo, profile, plan.relink_unchanged()).context("extract")?;
+    let second = extract_paths_using(&extractors, repo, profile, plan.relink_unchanged())
+        .context("extract")?;
     let mut extraction = first;
     extraction.units.extend(second.units);
     extraction.fact_sets.extend(second.fact_sets);

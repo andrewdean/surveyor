@@ -817,7 +817,7 @@ fn members_of<'a>(graph: &'a CodeGraph, node: &Node) -> Vec<&'a Node> {
     if node.kind.is_type() {
         let uses = EdgeFilter::default().with_kinds(vec![EdgeKind::UsesType]);
         for imp in graph.neighbors(&node.id, Direction::Incoming, &uses) {
-            if imp.node.kind == NodeKind::Impl {
+            if imp.node.kind == NodeKind::Impl && impl_is_for(imp.node, node) {
                 out.extend(
                     graph
                         .neighbors(&imp.node.id, Direction::Outgoing, &structural)
@@ -830,6 +830,17 @@ fn members_of<'a>(graph: &'a CodeGraph, node: &Node) -> Vec<&'a Node> {
     out.sort_by_key(|a| a.lines());
     out.dedup_by(|a, b| a.id == b.id);
     out
+}
+
+/// Whether an impl block is written for `ty`. An impl's name is its self type
+/// followed by `#impl`, so `impl From<&Report> for Summary` belongs to `Summary`
+/// although it also uses `Report`.
+fn impl_is_for(imp: &Node, ty: &Node) -> bool {
+    [imp.name.as_str(), imp.qualified_name.as_str()]
+        .into_iter()
+        .filter_map(|name| name.split("#impl").next())
+        .filter_map(|self_type| self_type.rsplit("::").next())
+        .any(|self_type| self_type == ty.name)
 }
 
 fn print_groups(label: &str, items: &[Neighbor<'_>], limit: usize, outgoing: bool) {

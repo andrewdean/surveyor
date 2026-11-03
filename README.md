@@ -28,7 +28,13 @@ for now). This checkout implements Phase 0 of that plan.
   or a local binding is neither an edge nor a gap. No index, no change. Several
   indexes pool their declarations and are re-rooted under the workspace each was
   built from, so a monorepo indexed one Cargo workspace at a time still resolves
-  calls across workspaces; `docs/exit-tests/2026-11-01-scip-causeway.md` measures
+  calls across workspaces. An index built in another checkout (a CI job, a clone at
+  another path) is re-rooted where its documents exist under this one, so indexes
+  produced on the default branch serve every developer's clone; an index none of
+  whose documents exist here is reported and ignored. `surveyor update` re-extracts
+  changed files with the same indexes, so the precise tier survives between
+  refreshes instead of eroding one commit at a time.
+  `docs/exit-tests/2026-11-01-scip-causeway.md` measures
   the cost and the gain on Causeway's fourteen workspaces. The companion note
   `2026-11-01-scip-typescript-causeway.md` does the same for `scip-typescript` on its
   thirty-seven TypeScript projects, which cost 33 s and 10 MB of index and resolve
@@ -78,7 +84,8 @@ for now). This checkout implements Phase 0 of that plan.
   hashes otherwise), re-extracts the changed files, and relinks only the files whose
   resolution the change can affect: the changed files, files whose edges were resolved
   against a declaration whose text changed, files that reference a name whose set of
-  declarations changed, and files whose edges lost an endpoint. Everything else stays
+  declarations changed, files whose edges lost an endpoint, and files with an
+  unresolved reference naming a declaration in a changed file. Everything else stays
   as it was. A manifest change, or a change that would relink more than half the
   files, falls back to a full index. The result equals a fresh index of the same tree.
 - **Compute.** Neighbors by edge kind, reverse impact to a depth with the confidence

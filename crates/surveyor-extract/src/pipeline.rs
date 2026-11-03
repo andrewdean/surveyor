@@ -104,10 +104,7 @@ pub fn extract_repository_with(
     profile: &Profile,
     scip: &[impl AsRef<Path>],
 ) -> Result<Extraction, ExtractError> {
-    let mut extractors = default_extractors(profile)?;
-    if !scip.is_empty() {
-        extractors.push(Box::new(ScipExtractor::load_all(scip, Some(repo.root()))?));
-    }
+    let extractors = extractors_with(profile, repo.root(), scip)?;
     let units = repo.units(profile)?;
     Ok(Extraction {
         commit: Some(repo.commit().clone()),
@@ -115,15 +112,51 @@ pub fn extract_repository_with(
     })
 }
 
+/// The extractors for `profile`, with the precise tier from the SCIP indexes at
+/// `scip` re-rooted under `repo_root`. Built once per run: an index loads in
+/// milliseconds, but an update extracts twice.
+///
+/// # Errors
+/// Returns an error when the profile selects an unknown language pack or an index
+/// cannot be read.
+pub fn extractors_with(
+    profile: &Profile,
+    repo_root: &Path,
+    scip: &[impl AsRef<Path>],
+) -> Result<Extractors, ExtractError> {
+    let mut extractors = default_extractors(profile)?;
+    if !scip.is_empty() {
+        extractors.push(Box::new(ScipExtractor::load_all(scip, Some(repo_root))?));
+    }
+    Ok(extractors)
+}
+
 /// Reads `paths` from `repo` and extracts facts from them, for incremental update.
 ///
 /// Paths that are missing or binary are skipped without error.
+///
+/// # Errors
+/// Returns an error when the profile selects an unknown language pack or a path
+/// cannot be read.
 pub fn extract_paths<'a>(
     repo: &Repository,
     profile: &Profile,
     paths: impl IntoIterator<Item = &'a RepoPath>,
 ) -> Result<Extraction, ExtractError> {
-    let extractors = default_extractors(profile)?;
+    extract_paths_using(&default_extractors(profile)?, repo, profile, paths)
+}
+
+/// Like [`extract_paths`], with `extractors` from [`extractors_with`], so that an
+/// incremental update keeps the precise tier for the files it re-extracts.
+///
+/// # Errors
+/// Returns an error when a path cannot be read.
+pub fn extract_paths_using<'a>(
+    extractors: &Extractors,
+    repo: &Repository,
+    profile: &Profile,
+    paths: impl IntoIterator<Item = &'a RepoPath>,
+) -> Result<Extraction, ExtractError> {
     let units = paths
         .into_iter()
         .filter(|p| repo.root().join(p.as_str()).is_file())
@@ -132,7 +165,7 @@ pub fn extract_paths<'a>(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Extraction {
         commit: Some(repo.commit().clone()),
-        ..extract_units(&extractors, &units, profile.sql.dialect)
+        ..extract_units(extractors, &units, profile.sql.dialect)
     })
 }
 
@@ -391,6 +424,48 @@ mod tests {
         let record = &extraction.units[0];
         assert_eq!(record.bytes, 20);
         assert_eq!(record.lines, 2);
+    }
+
+    #[test]
+    fn extractors_with_an_index_keep_the_precise_tier_for_re_extracted_paths() {
+        use protobuf::Message;
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("src")).expect("dirs");
+        let wide = "// 0123456789012345678901234567890\n".repeat(3);
+        std::fs::write(dir.path().join("src/relay.rs"), &wide).expect("file");
+        std::fs::write(dir.path().join("src/store.rs"), &wide).expect("file");
+        let index_path = dir.path().join("index.scip");
+        let bytes = crate::scip_index::tests::index()
+            .write_to_bytes()
+            .expect("bytes");
+        std::fs::write(&index_path, bytes).expect("index");
+        let profile = Profile::default();
+        let repo = Repository::open_with(dir.path(), None, &profile).expect("repo");
+        let paths = [RepoPath::new("src/relay.rs")];
+        let name_only = extract_paths(&repo, &profile, &paths).expect("extract");
+        assert!(
+            name_only
+                .fact_sets
+                .iter()
+                .all(|s| s.extractor.as_str() != "scip"),
+            "without indexes only the syntactic tier runs"
+        );
+        // The index was built at `/repo`, another checkout: it re-roots where its
+        // documents exist, and the re-extracted path keeps its precise facts.
+        let extractors = extractors_with(&profile, dir.path(), &[&index_path]).expect("extractors");
+        let precise = extract_paths_using(&extractors, &repo, &profile, &paths).expect("extract");
+        assert!(
+            precise
+                .fact_sets
+                .iter()
+                .any(|s| s.extractor.as_str() == "scip" && s.path.as_str() == "src/relay.rs"),
+            "{:?}",
+            precise
+                .fact_sets
+                .iter()
+                .map(|s| (s.extractor.to_string(), s.path.to_string()))
+                .collect::<Vec<_>>()
+        );
     }
 
     fn extract(src: &str) -> FactSet {

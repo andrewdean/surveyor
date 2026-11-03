@@ -228,7 +228,9 @@ impl ScipExtractor {
             "{PREFIX}/{}",
             if tool.is_empty() { "unknown" } else { tool }
         ));
-        let prefix = repo_root.and_then(|root| project_prefix(&index.metadata.project_root, root));
+        let sample = index.documents.first().map(|d| d.relative_path.as_str());
+        let prefix =
+            repo_root.and_then(|root| project_prefix(&index.metadata.project_root, root, sample));
         let mut definitions: HashMap<String, Definition> = HashMap::new();
         let documents: HashMap<RepoPath, Document> = index
             .documents
@@ -336,7 +338,7 @@ fn line_starts(text: &str) -> Vec<usize> {
 /// compared both as written and canonicalized, so a symlinked checkout still matches.
 /// `None` when the project is the repository itself or lies outside it; the latter is
 /// logged, since every document of such an index will go unmatched.
-fn project_prefix(project_root: &str, repo_root: &Path) -> Option<String> {
+fn project_prefix(project_root: &str, repo_root: &Path, sample: Option<&str>) -> Option<String> {
     let project =
         Path::new(percent_decode(project_root.strip_prefix("file://")?).as_ref()).to_path_buf();
     let roots = std::iter::once(repo_root.to_path_buf())
@@ -345,7 +347,19 @@ fn project_prefix(project_root: &str, repo_root: &Path) -> Option<String> {
     let relative = roots
         .iter()
         .find_map(|root| project.strip_prefix(root).ok())
-        .map(|rel| rel.to_string_lossy().trim_matches('/').to_owned());
+        .map(|rel| rel.to_string_lossy().trim_matches('/').to_owned())
+        .or_else(|| {
+            // Built from another checkout (a CI job, a clone at another path): the
+            // documents still fit where one of them exists under this repository.
+            let found = suffix_under(&project, repo_root, sample?)?;
+            tracing::info!(
+                project = %project.display(),
+                repo = %repo_root.display(),
+                under = %found,
+                "SCIP index was built at another path; re-rooted where its documents exist"
+            );
+            Some(found)
+        });
     match relative {
         Some(rel) if rel.is_empty() => None,
         Some(rel) => Some(rel),
@@ -353,11 +367,26 @@ fn project_prefix(project_root: &str, repo_root: &Path) -> Option<String> {
             tracing::warn!(
                 project = %project.display(),
                 repo = %repo_root.display(),
-                "SCIP index project is outside the repository; its documents will not match"
+                "SCIP index project is outside the repository and none of its documents exist under it; the index will not match"
             );
             None
         }
     }
+}
+
+/// The shortest suffix of `project`'s path, the empty suffix being the repository
+/// root itself, at which `sample` exists under `repo_root`.
+fn suffix_under(project: &Path, repo_root: &Path, sample: &str) -> Option<String> {
+    let parts: Vec<&str> = project
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+    (0..=parts.len())
+        .map(|k| parts[parts.len() - k..].join("/"))
+        .find(|prefix| repo_root.join(prefix).join(sample).is_file())
 }
 
 /// Decodes `%XX` escapes in a URI path; anything else passes through unchanged.
@@ -442,7 +471,7 @@ impl Extractor for ScipExtractor {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use scip::types::{Document as ScipDocument, Metadata, Occurrence as ScipOccurrence, ToolInfo};
     use surveyor_model::{CommitId, RepoId};
 
@@ -459,7 +488,7 @@ mod tests {
 
     /// Two files: `store.rs` declares `pending`; `relay.rs` calls it, calls a local
     /// closure, and names a type from the standard library.
-    fn index() -> Index {
+    pub(crate) fn index() -> Index {
         let pending = "rust-analyzer cargo outbox 0.1.0 store/impl#[Store]pending().";
         let string = "rust-analyzer cargo alloc https://github.com/rust-lang/rust/library/alloc string/String#";
         Index {
@@ -522,10 +551,45 @@ mod tests {
                 .documents
                 .contains_key(&RepoPath::new("src/relay.rs"))
         );
-        assert_eq!(project_prefix("file:///repo", Path::new("/repo")), None);
         assert_eq!(
-            project_prefix("file:///repo/crates/", Path::new("/repo")),
+            project_prefix("file:///repo", Path::new("/repo"), None),
+            None
+        );
+        assert_eq!(
+            project_prefix("file:///repo/crates/", Path::new("/repo"), None),
             Some("crates".to_owned())
+        );
+    }
+
+    #[test]
+    fn an_index_built_at_another_checkout_is_rerooted_where_its_documents_exist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for file in ["apps/my svc/src/relay.rs", "apps/my svc/src/store.rs"] {
+            let path = dir.path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).expect("dirs");
+            std::fs::write(&path, "").expect("file");
+        }
+        let mut index = index();
+        index.metadata.as_mut().unwrap().project_root = "file:///ci/work/repo/apps/my%20svc".into();
+        let under = ScipExtractor::from_index_under(&index, Some(dir.path()));
+        assert!(
+            under
+                .documents
+                .contains_key(&RepoPath::new("apps/my svc/src/relay.rs")),
+            "the documents sit at the suffix of the project path that exists here"
+        );
+        // The project was the repository itself: its documents sit at the root.
+        for file in ["src/relay.rs", "src/store.rs"] {
+            let path = dir.path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).expect("dirs");
+            std::fs::write(&path, "").expect("file");
+        }
+        index.metadata.as_mut().unwrap().project_root = "file:///ci/work/repo".into();
+        let at_root = ScipExtractor::from_index_under(&index, Some(dir.path()));
+        assert!(
+            at_root
+                .documents
+                .contains_key(&RepoPath::new("src/relay.rs"))
         );
     }
 

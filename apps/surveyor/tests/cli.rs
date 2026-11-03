@@ -129,6 +129,38 @@ fn index_and_answer_phase_zero_questions() {
     assert!(indexed["edges_by_derivation"]["resolved"].as_u64().unwrap() > 0);
     assert!(indexed["edges_by_derivation"]["declared"].as_u64().unwrap() > 0);
 
+    // explain a type: an impl written for another type that only mentions this one
+    // (`impl From<&Relay> for DrainSummary`) contributes no members to it.
+    let relay = surveyor(&store, &["explain", "Relay"]);
+    let member_names: Vec<&str> = relay["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        member_names.contains(&"publish") && !member_names.contains(&"from"),
+        "{member_names:?}"
+    );
+    let summary = surveyor(&store, &["explain", "DrainSummary"]);
+    assert!(
+        summary["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["name"] == "from"),
+        "{summary}"
+    );
+
+    // a `use` of a symbol from another crate names the crate and the symbol as one
+    // binding, so the import edge is certain.
+    let drain_trait = surveyor(&store, &["explain", "Drain"]);
+    let import = relations(&drain_trait, "incoming", "IMPORTS")
+        .into_iter()
+        .find(|r| r["node"]["id"] == "file:crates/api/src/main.rs")
+        .expect("api imports Drain");
+    assert_eq!(import["confidence"], 1.0, "{import}");
+
     // explain: the relay's drain method calls publish and reads the outbox through the store.
     let drain = surveyor(&store, &["explain", "Relay::drain"]);
     assert_eq!(

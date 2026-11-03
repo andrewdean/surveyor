@@ -69,6 +69,8 @@ pub enum RelinkReason {
     NameChanged(String),
     /// One of its edges lost an endpoint.
     DanglingEdge(EdgeId),
+    /// One of its references found no declaration and names one in a changed file.
+    GapNamed(String),
 }
 
 impl RelinkReason {
@@ -81,6 +83,7 @@ impl RelinkReason {
             Self::DeclarationChanged(id) => format!("declaration changed: {id}"),
             Self::NameChanged(name) => format!("name changed: {name}"),
             Self::DanglingEdge(id) => format!("dangling edge: {id}"),
+            Self::GapNamed(name) => format!("gap names: {name}"),
         }
     }
 }
@@ -162,6 +165,7 @@ pub fn plan_update<S: BuildHasher>(
     nodes: &[Node],
     edges: &[Edge],
     names: &HashMap<RepoPath, Vec<String>, S>,
+    unresolved: &[surveyor_model::Unresolved],
     changed: &ChangedFiles,
     probe: &GraphDelta,
 ) -> UpdatePlan {
@@ -200,6 +204,25 @@ pub fn plan_update<S: BuildHasher>(
         }
         if let Some(name) = closeness.affected_name(file, referenced, &changed_names) {
             relink.insert(file.clone(), RelinkReason::NameChanged(name.to_owned()));
+        }
+    }
+
+    // Rule 3b: a reference that found no declaration may find one now that a file
+    // declaring its name changed. An added declaration is caught above by name; this
+    // catches one that moved, which is what a precise index pairs by, at the cost of
+    // one relink per such gap at most.
+    let declared_in_changed: HashSet<&str> = old
+        .values()
+        .chain(new.values())
+        .map(|d| d.name.as_str())
+        .collect();
+    for gap in unresolved {
+        let file = &gap.site.file;
+        if relink.contains_key(file) || !has_facts(file) {
+            continue;
+        }
+        if declared_in_changed.contains(gap.name.as_str()) {
+            relink.insert(file.clone(), RelinkReason::GapNamed(gap.name.clone()));
         }
     }
 
@@ -581,6 +604,30 @@ mod tests {
         ]
     }
 
+    #[test]
+    fn a_gap_naming_a_declaration_in_a_changed_file_is_relinked() {
+        // `a.rs` calls `foo` through a qualifier nothing declares, so the call is a
+        // gap; `b.rs` declares `foo`. A change above `foo` moves it without changing
+        // it, which name matching ignores but a precise index pairs by line.
+        let before = vec![
+            unit("src/a.rs", "pub fn a() { zzz::foo(); }\n"),
+            unit("src/b.rs", "pub fn foo() {}\n"),
+        ];
+        let after = vec![
+            unit("src/a.rs", "pub fn a() { zzz::foo(); }\n"),
+            unit("src/b.rs", "// moved down\n\npub fn foo() {}\n"),
+        ];
+        let plan = check(&before, &after);
+        assert!(
+            matches!(
+                plan.relink.get(&RepoPath::new("src/a.rs")),
+                Some(RelinkReason::GapNamed(name)) if name == "foo"
+            ),
+            "{:?}",
+            plan.relink
+        );
+    }
+
     /// Indexes `before`, applies the change to `after` incrementally, and checks the
     /// result against a fresh link of `after`.
     fn check(before: &[SourceUnit], after: &[SourceUnit]) -> UpdatePlan {
@@ -623,6 +670,7 @@ mod tests {
             &full_before.nodes,
             &full_before.edges,
             &names,
+            &full_before.unresolved,
             &changed,
             &probe,
         );

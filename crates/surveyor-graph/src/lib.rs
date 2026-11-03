@@ -426,7 +426,7 @@ impl CodeGraph {
             return Lookup::Exact(first);
         }
         let qualified = query.contains("::") || query.contains('/') || query.contains('.');
-        if best == 3 && qualified {
+        if best == 4 && qualified {
             return Lookup::NotFound {
                 similar: scored.into_iter().map(|(_, n)| n).take(10).collect(),
             };
@@ -458,8 +458,9 @@ impl CodeGraph {
     }
 
     /// Every match of `query`, ranked: 0 identifier, 1 exact name or qualified
-    /// name, 2 qualified name or identifier ending with the query, 3 same simple
-    /// name, 4 substring.
+    /// name, 2 the same ignoring case, 3 qualified name or identifier ending with
+    /// the query, 4 same simple name, 5 substring. Case decides between a type and
+    /// the module named after it: `Dimension` is the enum, `dimension` the module.
     fn scored(&self, query: &str, kind: Option<&NodeKind>) -> Vec<(u8, &Node)> {
         let q = query.trim();
         if q.is_empty() {
@@ -479,12 +480,14 @@ impl CodeGraph {
         let by_name = self.by_name.get(&last).into_iter().flatten().map(|ix| {
             let n = &self.nodes[self.graph[*ix]];
             let qn = n.qualified_name.to_lowercase();
-            let score = if qn == ql || n.name.to_lowercase() == ql {
+            let score = if n.qualified_name == q || n.name == q {
                 1
-            } else if qn.ends_with(&ql) || n.id.as_str().to_lowercase().ends_with(&ql) {
+            } else if qn == ql || n.name.to_lowercase() == ql {
                 2
-            } else {
+            } else if qn.ends_with(&ql) || n.id.as_str().to_lowercase().ends_with(&ql) {
                 3
+            } else {
+                4
             };
             (score, n)
         });
@@ -495,7 +498,7 @@ impl CodeGraph {
                 n.qualified_name.to_lowercase().contains(&ql)
                     || n.id.as_str().to_lowercase().contains(&ql)
             })
-            .map(|n| (4u8, n));
+            .map(|n| (5u8, n));
 
         let mut seen: HashSet<&NodeId> = HashSet::new();
         let mut scored: Vec<(u8, &Node)> = exact_id
@@ -1164,6 +1167,24 @@ mod tests {
         assert!(
             matches!(g.lookup("no_such_name", None), Lookup::NotFound { similar } if similar.is_empty())
         );
+    }
+
+    #[test]
+    fn exact_case_outranks_a_name_that_differs_only_in_case() {
+        let g = CodeGraph::new(
+            vec![
+                node("x/dimension.rs::dimension", NodeKind::Module),
+                node("x/dimension.rs::Dimension", NodeKind::Enum),
+            ],
+            Vec::new(),
+        );
+        assert!(
+            matches!(g.lookup("Dimension", None), Lookup::Unique(n) if n.kind == NodeKind::Enum)
+        );
+        assert!(
+            matches!(g.lookup("dimension", None), Lookup::Unique(n) if n.kind == NodeKind::Module)
+        );
+        assert!(matches!(g.lookup("DIMENSION", None), Lookup::Ambiguous(c) if c.len() == 2));
     }
 
     #[test]

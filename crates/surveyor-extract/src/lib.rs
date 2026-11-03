@@ -59,8 +59,8 @@ pub use manifest::ManifestExtractor;
 pub use markdown::MarkdownExtractor;
 #[doc(inline)]
 pub use pipeline::{
-    Extraction, UnitRecord, default_extractors, extract_paths, extract_repository,
-    extract_repository_with, extract_units,
+    Extraction, UnitRecord, default_extractors, extract_paths, extract_paths_using,
+    extract_repository, extract_repository_with, extract_units, extractors_with,
 };
 #[doc(inline)]
 pub use profile::{

@@ -1252,19 +1252,17 @@ impl<'a> Builder<'a> {
             .entry(file.clone())
             .or_default()
             .extend(targets.iter().map(|&t| self.nodes[t].id.to_string()));
-        // A module and the symbol imported from it are one binding, not alternatives;
-        // only same-kind targets share the confidence between them.
+        // A module, the package it belongs to and the symbol imported from it are one
+        // binding, not alternatives; only same-kind targets share the confidence.
         let alternatives = targets
             .iter()
-            .filter(|&&t| self.nodes[t].kind == NodeKind::File)
-            .count()
-            .max(
-                targets
-                    .iter()
-                    .filter(|&&t| self.nodes[t].kind != NodeKind::File)
-                    .count(),
-            )
-            .max(1);
+            .fold(HashMap::<&NodeKind, usize>::new(), |mut by_kind, &t| {
+                *by_kind.entry(&self.nodes[t].kind).or_default() += 1;
+                by_kind
+            })
+            .into_values()
+            .max()
+            .unwrap_or(1);
         let confidence = Confidence::new(1.0 / alternatives as f32);
         for dst in targets {
             let set = &self.input.fact_sets[si];
