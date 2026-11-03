@@ -275,6 +275,10 @@ pub(crate) enum Resolution {
 
 /// How a reference was written, as far as resolution cares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "six independent facts about one site; no two of them form a state"
+)]
 pub(crate) struct Site {
     /// Method call through a receiver, so the target depends on an unknown type.
     pub(crate) method_call: bool,

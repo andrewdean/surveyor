@@ -1173,16 +1173,20 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn link_import(&mut self, si: usize, src: usize, r: &ReferenceFact) {
-        let set = &self.input.fact_sets[si];
-        let file = set.path.clone();
-        let language = set.language.clone();
-        let relative = r.path.first().is_some_and(|s| s == "." || s == "..");
-
-        let targets: Vec<usize> = match language {
+    /// What an import statement names, by the language's rules: a repository
+    /// module and the symbol inside it, a package, or nothing the repository holds.
+    fn import_targets(
+        &self,
+        language: Option<&Language>,
+        file: &RepoPath,
+        relative: bool,
+        src: usize,
+        r: &ReferenceFact,
+    ) -> Vec<usize> {
+        match language {
             Some(Language::TypeScript | Language::Tsx | Language::JavaScript) => {
                 if relative {
-                    self.module_targets(&file, &r.path, language.as_ref())
+                    self.module_targets(file, &r.path, language)
                 } else {
                     self.npm_package(&r.path).into_iter().collect()
                 }
@@ -1190,19 +1194,15 @@ impl<'a> Builder<'a> {
             Some(Language::Bash | Language::Rhai) => {
                 // `source ./x.sh` resolves against the working directory, which is
                 // usually the repository root; try the script's directory first.
-                self.resolve_relative_file(&file, &r.path, language.as_ref())
+                self.resolve_relative_file(file, &r.path, language)
                     .or_else(|| {
-                        self.resolve_relative_file(
-                            &RepoPath::new("root"),
-                            &r.path,
-                            language.as_ref(),
-                        )
+                        self.resolve_relative_file(&RepoPath::new("root"), &r.path, language)
                     })
                     .into_iter()
                     .collect()
             }
             Some(Language::Python) => {
-                let found = self.module_targets(&file, &r.path, language.as_ref());
+                let found = self.module_targets(file, &r.path, language);
                 if found.is_empty() {
                     r.path
                         .first()
@@ -1213,9 +1213,18 @@ impl<'a> Builder<'a> {
                     found
                 }
             }
-            Some(Language::Rust) => self.rust_import_targets(src, &file, r),
+            Some(Language::Rust) => self.rust_import_targets(src, file, r),
             _ => Vec::new(),
-        };
+        }
+    }
+
+    fn link_import(&mut self, si: usize, src: usize, r: &ReferenceFact) {
+        let set = &self.input.fact_sets[si];
+        let file = set.path.clone();
+        let language = set.language.clone();
+        let relative = r.path.first().is_some_and(|s| s == "." || s == "..");
+
+        let targets = self.import_targets(language.as_ref(), &file, relative, src, r);
         let root = r
             .path
             .first()
