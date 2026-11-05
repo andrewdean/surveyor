@@ -1,0 +1,36 @@
+# Formula/surveyor.rb of the andrewdean/homebrew-tap repository:
+#   brew install andrewdean/tap/surveyor
+# Rendered by packaging/homebrew/render-formula.sh in
+# https://github.com/andrewdean/surveyor from this template; edit the template, not the tap.
+class Surveyor < Formula
+  desc "Code intelligence graph with provenance, from the command line or over MCP"
+  homepage "https://github.com/andrewdean/surveyor"
+  version "@VERSION@"
+  license "Apache-2.0"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/andrewdean/surveyor/releases/download/v@VERSION@/surveyor-@VERSION@-aarch64-apple-darwin.tar.gz"
+      sha256 "@SHA_AARCH64_APPLE_DARWIN@"
+    end
+    on_intel do
+      url "https://github.com/andrewdean/surveyor/releases/download/v@VERSION@/surveyor-@VERSION@-x86_64-apple-darwin.tar.gz"
+      sha256 "@SHA_X86_64_APPLE_DARWIN@"
+    end
+  end
+
+  on_linux do
+    on_intel do
+      url "https://github.com/andrewdean/surveyor/releases/download/v@VERSION@/surveyor-@VERSION@-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "@SHA_X86_64_UNKNOWN_LINUX_GNU@"
+    end
+  end
+
+  def install
+    bin.install "surveyor"
+  end
+
+  test do
+    assert_match "surveyor #{version}", shell_output("#{bin}/surveyor --version")
+  end
+end

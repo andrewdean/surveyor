@@ -5,7 +5,15 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Surveyor command line: index a repository and ask it questions"
+
+# `cargo binstall surveyor --git https://github.com/andrewdean/surveyor` fetches the
+# archive release.yml attaches to the v<version> release for the host's target.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "{ name }-{ version }-{ target }/{ bin }{ binary-ext }"
 
 [[bin]]
 name = "surveyor"

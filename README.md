@@ -179,11 +179,29 @@ and `SkillId::as_str` in `cairn-domain`. Calls into dependencies, previously 1,0
 `no-declaration` gaps such as `create_dir_all` and `from_utf8_lossy`, are recognized
 as external and reported as neither edges nor gaps.
 
-## Use
+## Install
+
+Prebuilt binaries for Apple silicon, Intel macOS and x86_64 Linux are attached to each
+[GitHub release](https://github.com/andrewdean/surveyor/releases). Any one of these puts
+`surveyor` on the path:
 
 ```bash
-cargo build --release
+brew install andrewdean/tap/surveyor
 ```
+
+```bash
+cargo binstall surveyor --git https://github.com/andrewdean/surveyor
+```
+
+```bash
+cargo install --git https://github.com/andrewdean/surveyor --tag v0.1.0 surveyor
+```
+
+`cargo install` builds from source and needs `protoc` on the path (the Lance crates
+compile their protobuf schemas), as does a checkout built with `cargo build --release`.
+`docs/install.md` has the details, the verification steps and how a release is cut.
+
+## Use
 
 Index a checkout (the dataset lands in `<repo>/.surveyor`, or wherever `--store` points):
 
@@ -310,7 +328,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 ```
 
-`mise run ci` runs the same gate plus `cargo deny` and `cargo machete`.
+`mise run ci` runs the same gate plus `cargo deny` and `cargo machete`; `.github/workflows/ci.yml`
+runs it on every pull request and push to `main`, and `release.yml` runs it again before
+building the release archives for a `v*` tag.
 
 ## Not yet
 
