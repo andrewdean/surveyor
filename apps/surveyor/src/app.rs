@@ -119,6 +119,17 @@ pub enum Command {
     Mcp,
     /// Score plain-English questions against the starting nodes they should find.
     Eval(EvalArgs),
+    /// Rank nodes for a plain-English question: what `query_graph` starts from.
+    Search(SearchArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SearchArgs {
+    /// A question in plain English, or a name.
+    pub question: String,
+    /// Maximum results.
+    #[arg(long, default_value_t = 10)]
+    pub limit: usize,
 }
 
 #[derive(Debug, Args)]
@@ -515,15 +526,24 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Eval(a) => {
             let (_, graph, _) = open_graph(&cli, &p).await?;
             let questions = eval::load(&a.questions)?;
+            let started = Instant::now();
+            let index = surveyor_search::TextIndex::build(graph.nodes());
+            tracing::info!(
+                documents = index.len(),
+                ms = started.elapsed().as_millis() as u64,
+                "text index built"
+            );
             let ids = |nodes: Vec<&surveyor_model::Node>| -> Vec<String> {
                 nodes.iter().map(|n| n.id.to_string()).collect()
             };
+            let seeds =
+                |ask: &str, limit: usize| surveyor_search::seeds(&graph, &index, ask, limit);
             let scored = questions
                 .question
                 .iter()
                 .map(|q| {
-                    let top = ids(graph.seeds(&q.ask, a.limit.max(1)));
-                    let deep = ids(graph.seeds(&q.ask, eval::DEEP_RANK));
+                    let top = ids(seeds(&q.ask, a.limit.max(1)));
+                    let deep = ids(seeds(&q.ask, eval::DEEP_RANK));
                     eval::score(q, &top, &deep, |id| {
                         graph.node(&surveyor_model::NodeId::new(id)).is_some()
                     })
@@ -534,6 +554,13 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 Output::Json => render::print_json(&summary),
                 Output::Text => eval::print_text(&summary, &a.questions),
             }
+            Ok(())
+        }
+        Command::Search(a) => {
+            let (_, graph, _) = open_graph(&cli, &p).await?;
+            let index = surveyor_search::TextIndex::build(graph.nodes());
+            let found = surveyor_search::ranked(&graph, &index, &a.question, a.limit.max(1));
+            out.ranked(&found);
             Ok(())
         }
         Command::Mcp => {

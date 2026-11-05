@@ -382,6 +382,41 @@ impl Output {
         }
     }
 
+    /// Nodes ranked for a question, with the score when the ranking was by text.
+    pub fn ranked(self, found: &[(Option<f32>, &Node)]) {
+        if self == Self::Json {
+            #[derive(Serialize)]
+            struct View {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                score: Option<f32>,
+                node: NodeView,
+            }
+            print_json(
+                &found
+                    .iter()
+                    .map(|(score, n)| View {
+                        score: *score,
+                        node: NodeView::of(n),
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            return;
+        }
+        if found.is_empty() {
+            println!("no matches");
+        }
+        for (score, n) in found {
+            let score = score.map_or_else(|| "  name".to_owned(), |s| format!("{s:6.2}"));
+            println!(
+                "{score} {:<10} {:<50} {}",
+                n.kind,
+                n.qualified_name,
+                location(n)
+            );
+            println!("                  {}", n.id);
+        }
+    }
+
     pub fn explain(self, graph: &CodeGraph, node: &Node, limit: usize) {
         let all = EdgeFilter::default();
         let out = graph.neighbors(&node.id, Direction::Outgoing, &all);

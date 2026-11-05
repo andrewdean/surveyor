@@ -27,6 +27,7 @@ use surveyor_graph::{
 };
 use surveyor_model::{Edge, EdgeKind, Node, NodeId, NodeKind, RepoId};
 use surveyor_rules::RuleSet;
+use surveyor_search::TextIndex;
 use surveyor_store::LanceStore;
 
 /// Shared state behind the tool handlers.
@@ -34,6 +35,8 @@ use surveyor_store::LanceStore;
 pub struct Surveyor {
     store: LanceStore,
     graph: Arc<CodeGraph>,
+    /// BM25 over the nodes' text; what a question seeds on.
+    index: TextIndex,
     repo: RepoId,
     root: PathBuf,
     rules: RuleSet,
@@ -146,7 +149,9 @@ fn parse_kinds(kinds: &[String]) -> Result<Vec<EdgeKind>, McpError> {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct QueryGraphParams {
-    /// A question or a symbol name; names are matched exactly, then by suffix, then as substrings.
+    /// A question in plain English, ranked against names, paths, doc comments, task
+    /// descriptions and document headings, or a symbol name, matched exactly, then by
+    /// suffix, then as a substring.
     pub query: String,
     /// Maximum seed nodes to expand (default 5).
     #[serde(default)]
@@ -272,9 +277,11 @@ impl Surveyor {
         root: PathBuf,
         rules: RuleSet,
     ) -> Self {
+        let index = TextIndex::build(graph.nodes());
         Self {
             store,
             graph: Arc::new(graph),
+            index,
             repo,
             root,
             rules,
@@ -347,7 +354,7 @@ impl Surveyor {
     }
 
     #[tool(
-        description = "Scoped context for a question or a name: the nodes the question names and their relations, with citations. Ask 'who calls X', 'what touches table Y' or just 'X'."
+        description = "Scoped context for a question or a name: the nodes the question is about and their relations, with citations. Ask in plain English ('where is development data loaded'), 'who calls X', 'what touches table Y' or just 'X'."
     )]
     async fn query_graph(
         &self,
@@ -355,7 +362,7 @@ impl Surveyor {
     ) -> Result<CallToolResult, McpError> {
         let limit = p.limit.unwrap_or(5).clamp(1, 50);
         let depth = p.depth.unwrap_or(1).clamp(0, 3);
-        let seeds = self.graph.seeds(&p.query, limit);
+        let seeds = surveyor_search::seeds(&self.graph, &self.index, &p.query, limit);
         #[derive(Serialize)]
         struct Seed {
             node: NodeView,

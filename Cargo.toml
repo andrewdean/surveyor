@@ -17,6 +17,7 @@ surveyor-extract = { path = "crates/surveyor-extract" }
 surveyor-link    = { path = "crates/surveyor-link" }
 surveyor-store   = { path = "crates/surveyor-store" }
 surveyor-graph   = { path = "crates/surveyor-graph" }
+surveyor-search  = { path = "crates/surveyor-search" }
 surveyor-mcp     = { path = "crates/surveyor-mcp" }
 surveyor-rules   = { path = "crates/surveyor-rules" }
 
@@ -56,6 +57,7 @@ futures      = "0.3"
 
 # compute
 petgraph = { version = "0.8", default-features = false, features = ["std", "stable_graph"] }
+rust-stemmers = "1.2"
 
 # runtime and interfaces
 tokio              = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "io-util", "signal", "sync", "time", "fs"] }

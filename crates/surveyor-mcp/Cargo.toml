@@ -11,6 +11,7 @@ description = "Surveyor MCP server over rmcp"
 surveyor-model.workspace = true
 surveyor-store.workspace = true
 surveyor-graph.workspace = true
+surveyor-search.workspace = true
 surveyor-rules.workspace = true
 rmcp.workspace = true
 schemars.workspace = true

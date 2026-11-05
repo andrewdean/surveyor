@@ -48,9 +48,15 @@ for now). This checkout implements Phase 0 of that plan.
   indexes loaded at once: 55% of Causeway's edges resolved and gaps down from 40,539
   to 13,295.
 - **Questions.** `query_graph` over MCP takes a question or a name: a name is
-  looked up as `explain` would; a question such as `who calls OutboxEventSink` or
-  `what touches the event_outbox table` seeds on the identifier-like words it
-  contains, the nodes matching the most words first, with question words dropped.
+  looked up as `explain` would; a question such as `where is development data
+  loaded` or `what breaks if I change the advisory lock key derivation` is ranked by
+  BM25F over every node's name, scope, path, signature, doc comment, task
+  description and document headings (`surveyor-search`), identifiers split at case
+  changes and underscores, words stemmed, stopwords dropped, each field normalized
+  against its own average length so a well-described task is not outweighed by a
+  one-word name. The search picks the starting nodes only; the answer is the graph
+  around them, with citations. `surveyor search <question>` shows the ranking and
+  `surveyor eval <questions.toml>` scores it (`docs/eval/`).
 - **Linking.** Declarations become nodes with stable identifiers such as
   `rust:crates/outbox/src/relay.rs::Relay::drain` or `sql:cw_outbox.outbox`. References
   resolve by name within the same file, then package, then repository. A reference is

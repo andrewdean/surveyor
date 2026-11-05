@@ -15,10 +15,11 @@ expect = [
   "rust:jobs/causeway-seed/src/main.rs::SeedProfile",
   "rhai:.mise/rhai/causeway/loaders.rhai::run_loader",
   "task:mise/devdata:load",
+  "task:mise/dev:data:load",
   "task:mise/dev:data:bootstrap",
   "rust:crates/causeway-testkit/src/isolation.rs::in_workspace",
 ]
-note = "asked on 2026-11-05; the user also says 'test data' where the repository says development data, seed and fixtures"
+note = "asked on 2026-11-05; the user also says 'test data' where the repository says development data, seed and fixtures. dev:data:load (the load subset of the loader chain) was added after the BM25 run surfaced it"
 
 [[question]]
 ask = "where is test data created and how is it loaded"
@@ -26,6 +27,7 @@ expect = [
   "rust:jobs/causeway-seed/src/main.rs::SeedProfile",
   "rhai:.mise/rhai/causeway/loaders.rhai::run_loader",
   "task:mise/devdata:load",
+  "task:mise/dev:data:load",
   "task:mise/dev:data:bootstrap",
 ]
 note = "the same question in the user's words: 'test data' never appears in the repository"
@@ -81,12 +83,17 @@ ask = "how is a container given its default taxonomy home"
 expect = [
   "task:mise/ops:catalog:placements:backfill",
   "file:component/catalog/core/migrations/0051_taxonomy_placements.sql",
+  "rust:component/catalog/core/src/placements.rs::PgPlacementRepo::default_home_for",
 ]
-note = "'home' is the task description's word; the code says placement"
+note = "'home' is the task description's word; the code says placement. default_home_for (the read the platform proposes a home with) was added after the BM25 run surfaced it"
 
 [[question]]
 ask = "how are unity catalog tables registered as catalog assets"
-expect = ["rust:jobs/causeway-metadata-worker/src/main.rs::sync_unity_catalog"]
+expect = [
+  "rust:jobs/causeway-metadata-worker/src/main.rs::sync_unity_catalog",
+  "rust:crates/causeway-metadata-ops/src/unity_catalog_sync.rs::upsert_catalog_asset_for",
+]
+note = "upsert_catalog_asset_for (the write that makes a table an asset) was added after the BM25 run surfaced it"
 
 [[question]]
 ask = "what happens when the databricks warehouse is asleep during the sync"
@@ -131,7 +138,10 @@ ask = "how is search quality measured against judged queries"
 expect = [
   "rust:component/discovery/search/core/src/evaluation.rs::evaluate",
   "rust:component/discovery/search/core/src/evaluation.rs::JudgedQuery",
+  "task:mise/search:quality:check",
+  "doc:docs/search-quality/README.md",
 ]
+note = "the task and the README were added after the BM25 run surfaced them; both are where an engineer would start"
 
 [[question]]
 ask = "how do I run the database migrations"
@@ -197,7 +207,9 @@ expect = [
   "rust:crates/catalog-search-domain/src/lib.rs::MAX_SEMANTIC_CANDIDATES",
   "rust:crates/catalog-search-domain/src/lib.rs::MAX_SEMANTIC_PREDICATES",
   "rust:crates/catalog-search-domain/src/lib.rs::MAX_SEMANTIC_EXPANSION_LATENCY",
+  "rust:crates/catalog-search-domain/src/lib.rs::SemanticCandidateLimit",
 ]
+note = "SemanticCandidateLimit (the newtype that enforces the cap) was added after the BM25 run surfaced it"
 
 [[question]]
 ask = "how does the outbox publish events to kafka or valkey"
@@ -205,7 +217,10 @@ expect = [
   "rust:crates/causeway-metadata-ops/src/event_outbox.rs::OutboxEventSink",
   "rust:crates/causeway-metadata-ops/src/event_outbox.rs::KafkaOutboxEventSink",
   "rust:crates/causeway-metadata-ops/src/event_outbox.rs::ValkeyOutboxEventSink",
+  "rust:crates/causeway-metadata-ops/src/event_outbox.rs::KafkaOutboxEventSink::publish",
+  "rust:crates/causeway-metadata-ops/src/event_outbox.rs::ValkeyOutboxEventSink::publish",
 ]
+note = "the two publish methods were added after the BM25 run surfaced them"
 
 [[question]]
 ask = "where are coherence gate waivers recorded"

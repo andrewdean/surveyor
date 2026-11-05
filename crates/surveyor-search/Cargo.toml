@@ -1,0 +1,16 @@
+[package]
+name = "surveyor-search"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Surveyor text retrieval: BM25 over node text, picking the nodes a question starts from"
+
+[dependencies]
+surveyor-model.workspace = true
+surveyor-graph.workspace = true
+rust-stemmers.workspace = true
+
+[lints]
+workspace = true
