@@ -144,9 +144,11 @@ fn decls<'a>(
 
 /// Nameable declarations grouped by name: `name -> {(id, kind)}`.
 fn by_name(decls: &HashMap<NodeId, Decl>) -> HashMap<&str, BTreeSet<(&NodeId, &NodeKind)>> {
+    // Tasks are not reference targets, but a command literal names them, so a task
+    // that appears or vanishes relinks the files whose commands name it.
     decls
         .iter()
-        .filter(|(_, d)| is_nameable(&d.kind))
+        .filter(|(_, d)| is_nameable(&d.kind) || d.kind == NodeKind::Task)
         .fold(HashMap::new(), |mut acc, (id, d)| {
             acc.entry(d.name.as_str())
                 .or_default()

@@ -89,6 +89,19 @@ for now). This checkout implements Phase 0 of that plan.
   `CREATE [OR REPLACE] VIEW` or `CREATE MATERIALIZED VIEW` declares a `View` node in
   its schema with a `READS` edge to each table its query names, so code that selects
   from the view links to the view and `affected <table>` reaches that code through it.
+- **Tasks and the commands that run them.** A mise task `RUNS` the script its `run =`
+  names, the task a `mise run <task>` entry names and the `main` of the cargo package a
+  `cargo run -p <crate>` entry (or a bare binary name) names; a file task runs its own
+  file; `depends` is `DEPENDS_ON`. In a Rhai script, `proc::shell(["mise", "run",
+  "x"])` is read as the command it spells, and a run helper's arguments
+  (`mise_run(.., "devdata:validate", ..)`, `cargo_run(.., "jobs/Cargo.toml",
+  "causeway-seed", ..)`) as the task or binary they name. The script-side edges are
+  syntactic and say so: the command text is an attribute of the edge, a spelled-out
+  command is confidence 1 and a helper argument 0.75, and a name no task or package
+  bears makes neither an edge nor a gap. So `get_neighbors` on Causeway's
+  `run_loader` reaches the `devdata:validate` task and the `causeway-seed` binary, and
+  the loader chain walks from `dev:data:bootstrap` to its script, to `devdata:load`, to
+  `loaders.rhai` and on.
 - **Provenance.** Every edge carries a derivation (`syntactic`, `resolved`, `declared`,
   later `observed` and `inferred`), a confidence, and evidence: repository, file, byte
   span, lines, commit and a hash of the cited text.

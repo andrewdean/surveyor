@@ -626,6 +626,9 @@ fn referenced_names(extraction: &Extraction) -> BTreeMap<RepoPath, Vec<String>> 
                     let cited = l.value.trim_start_matches("./").trim_end_matches('/');
                     entry.insert(cited.to_owned());
                 }
+                Fact::Literal(l) if l.role == LiteralRole::Command => {
+                    entry.extend(surveyor_link::command_names(&l.value));
+                }
                 _ => {}
             }
         }

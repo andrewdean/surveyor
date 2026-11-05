@@ -25,12 +25,15 @@
 
 // Rust guideline compliant 2026-02-21
 
+mod command;
 mod ids;
 mod input;
 mod linker;
 mod resolve;
 mod update;
 
+#[doc(inline)]
+pub use command::{CommandTarget, command_names, command_targets, mise_task_id};
 #[doc(inline)]
 pub use ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id, task_id};
 #[doc(inline)]
@@ -42,7 +45,7 @@ pub use linker::{Seed, link, relink};
 ///
 /// Part of the engine fingerprint a dataset records, so `surveyor update` knows that
 /// facts linked by an older build cannot be mixed with new ones.
-pub const LINK_REVISION: u32 = 16;
+pub const LINK_REVISION: u32 = 17;
 
 #[doc(inline)]
 pub use update::{ChangedFiles, RelinkReason, UpdatePlan, is_manifest, plan_update};

@@ -3,15 +3,18 @@
 //! The language ships an AST, so no grammar is needed: script functions become
 //! declarations, function calls become `Call` references, and `import` statements
 //! become `Import` references. The `//` comment block right above a function is its
-//! documentation. Rhai reports line and column positions; byte spans are recovered
-//! from the source text.
+//! documentation. A call's string arguments that spell a command (`proc::shell(["mise",
+//! "run", "x"])`) or hand a task or crate to a run helper (`mise_run(.., "x", ..)`,
+//! `cargo_run(.., "jobs/Cargo.toml", "seed", ..)`) become `Command` literals, so the
+//! linker can draw the edge from a script to the task or binary it runs. Rhai reports
+//! line and column positions; byte spans are recovered from the source text.
 
 use std::collections::BTreeMap;
 
 use rhai::{ASTNode, Engine, Expr, Position, Stmt};
 use surveyor_model::{
-    ByteSpan, CallForm, DeclarationFact, ExtractorId, Fact, FactSet, Language, NodeKind,
-    ReferenceFact, ReferenceRole, RuleId, SourceUnit,
+    ByteSpan, CallForm, ContentHash, DeclarationFact, ExtractorId, Fact, FactSet, Language,
+    LiteralFact, LiteralRole, NodeKind, ReferenceFact, ReferenceRole, RuleId, SourceUnit,
 };
 
 use crate::{ExtractError, Extractor};
@@ -52,6 +55,9 @@ impl RhaiExtractor {
         let mut engine = Engine::new_raw();
         // Task scripts nest closures and maps deeper than the default limit of 64.
         engine.set_max_expr_depths(256, 256);
+        // The optimizer folds a constant array such as `["mise", "run", "x"]` into one
+        // opaque value; the literal has to stay visible to be read as a command.
+        engine.set_optimization_level(rhai::OptimizationLevel::None);
         let ast = engine
             .compile(text)
             .map_err(|e| ExtractError::parse(e.to_string()))?;
@@ -111,6 +117,7 @@ impl RhaiExtractor {
         };
 
         let mut sites: Vec<ReferenceFact> = Vec::new();
+        let mut commands: Vec<LiteralFact> = Vec::new();
         let mut visit = |path: &[ASTNode<'_>]| -> bool {
             let Some(node) = path.last() else { return true };
             match node {
@@ -127,6 +134,32 @@ impl RhaiExtractor {
                         .map(|m| m.name.to_string())
                         .collect();
                     path.push(name.clone());
+                    for (value, rule, at) in command_arguments(&name, &call.args) {
+                        if let Some(start) = lines.offset(at) {
+                            // The argument token: a quoted string, or an array up to
+                            // its closing bracket; never past the end of its line.
+                            let rest = text.get(start..).unwrap_or_default();
+                            let line_end = rest.find('\n').unwrap_or(rest.len());
+                            let token_end = if rest.starts_with('[') {
+                                rest.find(']').map_or(line_end, |i| i + 1)
+                            } else {
+                                let quote = rest.chars().next().unwrap_or('"');
+                                rest[quote.len_utf8()..]
+                                    .find(quote)
+                                    .map_or(line_end, |i| i + 2 * quote.len_utf8())
+                            };
+                            let end = start + token_end.min(line_end);
+                            let bytes = ByteSpan::new(start as u64, end as u64);
+                            commands.push(LiteralFact {
+                                role: LiteralRole::Command,
+                                hash: ContentHash::of(&value),
+                                value,
+                                span: unit.text_span(bytes),
+                                scope: scope_at(start),
+                                rule: RuleId::new(rule),
+                            });
+                        }
+                    }
                     push_site(
                         &mut sites,
                         unit,
@@ -169,8 +202,99 @@ impl RhaiExtractor {
         // `walk` covers top-level statements and every function body.
         ast.walk(&mut visit);
         set.facts.extend(sites.into_iter().map(Fact::Reference));
+        // In source order, whatever order the walk met them in.
+        commands.sort_by_key(|c| c.span.bytes.start);
+        set.facts.extend(commands.into_iter().map(Fact::Literal));
         Ok(set)
     }
+}
+
+/// The commands a call's arguments spell, each with the rule that read it and the
+/// position of the argument: `(command, rule, position)`.
+///
+/// Two readings. A string or array constant that starts with `mise run` or
+/// `cargo run` is the command itself (`rhai.command`), whatever the call. An argument
+/// of a run helper, a call whose name contains `run`, `task`, `shell` or `exec`, is
+/// read by shape (`rhai.run-arg`): a `Cargo.toml` path followed by a string is a
+/// package to `cargo run`, and a bare `a:b` task name is a task to `mise run`.
+fn command_arguments(call: &str, args: &[Expr]) -> Vec<(String, &'static str, Position)> {
+    let constant = |e: &Expr| -> Option<(String, Position)> {
+        match e {
+            Expr::StringConstant(s, pos) => Some((s.to_string(), *pos)),
+            Expr::Array(items, pos) => {
+                let words: Vec<String> = items
+                    .iter()
+                    .map_while(|i| match i {
+                        Expr::StringConstant(s, _) => Some(s.to_string()),
+                        _ => None,
+                    })
+                    .collect();
+                (!words.is_empty()).then(|| (words.join(" "), *pos))
+            }
+            _ => None,
+        }
+    };
+    let mut out = Vec::new();
+    let constants: Vec<(String, Position)> = args.iter().filter_map(constant).collect();
+    for (value, pos) in &constants {
+        if value.starts_with("mise run ") || value.starts_with("cargo run ") {
+            out.push((value.clone(), "rhai.command", *pos));
+        }
+    }
+    let lower = call.to_lowercase();
+    let helper = ["run", "task", "shell", "exec"]
+        .iter()
+        .any(|w| lower.contains(w));
+    if !helper || !out.is_empty() {
+        return out;
+    }
+    let string_args: Vec<(String, Position)> = args
+        .iter()
+        .filter_map(|e| match e {
+            Expr::StringConstant(s, pos) => Some((s.to_string(), *pos)),
+            _ => None,
+        })
+        .collect();
+    if let Some(i) = string_args
+        .iter()
+        .position(|(v, _)| v.ends_with("Cargo.toml"))
+        && let Some((package, _)) = string_args.get(i + 1)
+        && is_package_name(package)
+    {
+        let (manifest, pos) = &string_args[i];
+        out.push((
+            format!("cargo run --manifest-path {manifest} -p {package}"),
+            "rhai.run-arg",
+            *pos,
+        ));
+        return out;
+    }
+    out.extend(
+        string_args
+            .iter()
+            .filter(|(v, _)| is_task_name(v))
+            .map(|(v, pos)| (format!("mise run {v}"), "rhai.run-arg", *pos)),
+    );
+    out
+}
+
+/// `a:b` or `a:b:c`: a namespaced task name, never a path or a sentence.
+fn is_task_name(value: &str) -> bool {
+    value.contains(':')
+        && value.len() >= 3
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_' | '.'))
+        && !value.starts_with(':')
+        && !value.ends_with(':')
+}
+
+/// A cargo package name: letters, digits, `-` and `_`.
+fn is_package_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
 }
 
 #[expect(
@@ -391,6 +515,58 @@ mod tests {
             "the blank line keeps the file header out"
         );
         assert_eq!(docs["bare"], None);
+    }
+
+    #[test]
+    fn commands_in_call_arguments_become_command_literals() {
+        let src = "fn run_loader(key, ctx) {\n    mise_run(ctx.repo, ctx.vars, \"devdata:validate\", []);\n    dd::cargo_run(ctx.repo, ctx.vars, \"jobs/Cargo.toml\", \"causeway-seed\", [\"--profile\", \"people\"], #{});\n    dd::task_run(ctx.repo, ctx.vars, \"ops:metadata:process\");\n    print(\"not: a task\");\n}\n\nproc::shell([\"mise\", \"run\", \"devdata:load\"], #{ dir: \"x\" });\n";
+        let unit = SourceUnit::new(
+            RepoId::new("r"),
+            RepoPath::new("loaders.rhai"),
+            CommitId::new("c"),
+            src.into(),
+        );
+        let facts = RhaiExtractor::new().extract(&unit).expect("compiles");
+        let commands: Vec<(String, String, Vec<String>)> = facts
+            .literals()
+            .map(|l| (l.value.clone(), l.rule.to_string(), l.scope.clone()))
+            .collect();
+        assert_eq!(
+            commands,
+            vec![
+                (
+                    "mise run devdata:validate".to_owned(),
+                    "rhai.run-arg".to_owned(),
+                    vec!["run_loader".to_owned()]
+                ),
+                (
+                    "cargo run --manifest-path jobs/Cargo.toml -p causeway-seed".to_owned(),
+                    "rhai.run-arg".to_owned(),
+                    vec!["run_loader".to_owned()]
+                ),
+                (
+                    "mise run ops:metadata:process".to_owned(),
+                    "rhai.run-arg".to_owned(),
+                    vec!["run_loader".to_owned()]
+                ),
+                (
+                    "mise run devdata:load".to_owned(),
+                    "rhai.command".to_owned(),
+                    Vec::new()
+                ),
+            ]
+        );
+        let first = facts.literals().next().expect("literal");
+        assert_eq!(first.span.lines.start, 2);
+        assert_eq!(unit.slice(first.span.bytes), "\"devdata:validate\"");
+        let cargo = facts.literals().nth(1).expect("literal");
+        assert_eq!(unit.slice(cargo.span.bytes), "\"jobs/Cargo.toml\"");
+        let last = facts.literals().last().expect("literal");
+        assert_eq!(last.span.lines.start, 8);
+        assert_eq!(
+            unit.slice(last.span.bytes),
+            "[\"mise\", \"run\", \"devdata:load\"]"
+        );
     }
 
     #[test]

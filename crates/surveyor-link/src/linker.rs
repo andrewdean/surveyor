@@ -8,11 +8,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use surveyor_model::{
     ByteSpan, CallForm, Confidence, ContentHash, DeclarationFact, DeclaredRelation, DeclaredSource,
-    Edge, EdgeId, EdgeKind, Evidence, FactSet, GrammarId, GraphDelta, Language, LiteralRole, Node,
-    NodeId, NodeKind, Provenance, ReferenceFact, ReferenceRole, RepoPath, ResolvedReference,
-    ResolverId, RuleId, SourceLocation, SymbolTarget, TextSpan, Unresolved, UnresolvedReason,
+    Edge, EdgeId, EdgeKind, Evidence, FactSet, GrammarId, GraphDelta, Language, LiteralFact,
+    LiteralRole, Node, NodeId, NodeKind, Provenance, ReferenceFact, ReferenceRole, RepoPath,
+    ResolvedReference, ResolverId, RuleId, SourceLocation, SymbolTarget, TextSpan, Unresolved,
+    UnresolvedReason,
 };
 
+use crate::command::CommandTarget;
 use crate::ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id, task_id};
 use crate::input::LinkInput;
 use crate::resolve::{Resolution, Site, SymbolIndex, Tier, decide, decide_table, is_method, rank};
@@ -72,6 +74,7 @@ fn run(mut b: Builder<'_>) -> GraphDelta {
     b.references();
     b.dispatch();
     b.literals();
+    b.commands();
     b.tests();
     b.finish()
 }
@@ -319,6 +322,20 @@ impl<'a> Builder<'a> {
             .with_attributes(attributes);
         if self.edge_ids.insert(edge.id.clone()) {
             self.edges.push(edge);
+        }
+    }
+
+    /// Like [`Self::push_edge_once`], with facts about the relationship itself.
+    fn push_edge_once_with(
+        &mut self,
+        src: usize,
+        kind: EdgeKind,
+        dst: usize,
+        provenance: Provenance,
+        attributes: BTreeMap<String, String>,
+    ) {
+        if self.pair_seen.insert((src, kind.clone(), dst)) {
+            self.push_edge_with(src, kind, dst, provenance, Vec::new(), attributes);
         }
     }
 
@@ -1626,6 +1643,123 @@ impl<'a> Builder<'a> {
             })
     }
 
+    // ---- pass 6b: commands -----------------------------------------------------------
+
+    /// `RUNS` edges from the declaration holding a command to what the command names:
+    /// a mise task, a cargo package's binary `main`, a script file.
+    ///
+    /// A task's `run =` entry and a file task's own path are declared by the task
+    /// file. A script's `proc::shell(["mise", "run", "x"])` is syntactic and certain
+    /// about the name; a helper's argument (`mise_run(.., "x", ..)`,
+    /// `cargo_run(.., "jobs/Cargo.toml", "seed", ..)`) is read as a task or a binary
+    /// by the helper's name and argument shapes, so it carries confidence 0.75. A
+    /// bare program name that happens to be a package's binary is 0.75 as well.
+    fn commands(&mut self) {
+        let literals: Vec<(usize, LiteralFact)> = self
+            .input
+            .fact_sets
+            .iter()
+            .enumerate()
+            .flat_map(|(si, set)| {
+                set.literals()
+                    .filter(|l| {
+                        l.role == LiteralRole::Command
+                            || (l.role == LiteralRole::Path && l.rule.as_str() == "mise.file-task")
+                    })
+                    .map(move |l| (si, l.clone()))
+            })
+            .collect();
+        for (si, lit) in literals {
+            let set = &self.input.fact_sets[si];
+            let Some(src) = self.enclosing(&set.path, lit.span) else {
+                continue;
+            };
+            let targets = if lit.role == LiteralRole::Path {
+                vec![(CommandTarget::Path(lit.value.clone()), 1.0f32)]
+            } else {
+                let inferred = lit.rule.as_str() == "rhai.run-arg";
+                crate::command::command_targets(&lit.value)
+                    .into_iter()
+                    .map(|t| match t {
+                        CommandTarget::Program(_) => (t, 0.75),
+                        _ if inferred => (t, 0.75),
+                        _ => (t, 1.0),
+                    })
+                    .collect()
+            };
+            for (target, confidence) in targets {
+                let Some(dst) = self.command_target(&target) else {
+                    continue;
+                };
+                if dst == src {
+                    continue;
+                }
+                let set = &self.input.fact_sets[si];
+                let prov = if lit.rule.as_str().starts_with("mise.") {
+                    self.declared(
+                        DeclaredSource::Other("mise".into()),
+                        &set.path,
+                        lit.span,
+                        lit.hash,
+                    )
+                } else {
+                    self.syntactic(set, &lit.rule, lit.span, lit.hash)
+                }
+                .with_confidence(Confidence::new(confidence));
+                let mut attributes = BTreeMap::new();
+                attributes.insert("command".to_owned(), lit.value.clone());
+                self.push_edge_once_with(src, EdgeKind::Runs, dst, prov, attributes);
+            }
+        }
+    }
+
+    /// The node a command target names, if the repository holds it.
+    fn command_target(&self, target: &CommandTarget) -> Option<usize> {
+        match target {
+            CommandTarget::Task(name) => self
+                .node_pos
+                .get(&crate::command::mise_task_id(name))
+                .copied(),
+            CommandTarget::Path(path) => self.file_nodes.get(&RepoPath::new(path)).copied(),
+            CommandTarget::Binary { package, bin } => self.binary_main(package, bin.as_deref()),
+            // A program on the path is a package's binary only when a package of
+            // that name has a `main`; `cargo` and `cwsh` name nothing here.
+            CommandTarget::Program(name) => {
+                let pkg = self.package_by_name.get(&package_key("cargo", name))?;
+                self.binary_main_of(*pkg, None)
+            }
+        }
+    }
+
+    /// The `main` function of a cargo package's binary, else the package node.
+    fn binary_main(&self, package: &str, bin: Option<&str>) -> Option<usize> {
+        let pkg = *self.package_by_name.get(&package_key("cargo", package))?;
+        self.binary_main_of(pkg, bin)
+    }
+
+    fn binary_main_of(&self, pkg: usize, bin: Option<&str>) -> Option<usize> {
+        let dir = self
+            .package_dirs
+            .iter()
+            .find(|(_, idx)| *idx == pkg)
+            .map(|(dir, _)| dir.as_str())?;
+        let join = |rel: &str| {
+            if dir.is_empty() {
+                rel.to_owned()
+            } else {
+                format!("{dir}/{rel}")
+            }
+        };
+        let candidates = bin
+            .map(|b| join(&format!("src/bin/{b}.rs")))
+            .into_iter()
+            .chain(std::iter::once(join("src/main.rs")));
+        candidates
+            .map(|path| symbol_id(Some(&Language::Rust), &RepoPath::new(path), "main"))
+            .find_map(|id| self.node_pos.get(&id).copied())
+            .or(Some(pkg))
+    }
+
     // ---- pass 7: dispatch ------------------------------------------------------------
 
     /// `Trait::m -DISPATCHES_TO-> Impl::m` for every method an implementation defines
@@ -2542,6 +2676,80 @@ mod tests {
             )
             .is_none(),
             "a README beside a manifest documents the package, not each file"
+        );
+    }
+
+    #[test]
+    fn commands_link_tasks_scripts_and_binaries_with_runs_edges() {
+        let extractors =
+            surveyor_extract::default_extractors(&surveyor_extract::Profile::default())
+                .expect("extractors");
+        let units = [
+            unit(
+                "mise.toml",
+                "[tasks.bootstrap]\nrun = \"scripts/bootstrap.rhai\"\n\n[tasks.\"db:migrate\"]\nrun = \"sqlx migrate run\"\n\n[tasks.seed]\nrun = \"cargo run -p api -- seed\"\n\n[tasks.check]\nrun = \"api check --strict\"\n",
+            ),
+            unit(
+                "scripts/bootstrap.rhai",
+                "proc::shell([\"mise\", \"run\", \"db:migrate\"], #{});\n\nfn seed(ctx) {\n    cargo_run(ctx.repo, ctx.vars, \"Cargo.toml\", \"api\", [], #{});\n    mise_run(ctx.repo, ctx.vars, \"db:migrate\", []);\n    mise_run(ctx.repo, ctx.vars, \"no:such:task\", []);\n}\n",
+            ),
+            unit("Cargo.toml", "[package]\nname = \"api\"\n"),
+            unit("src/main.rs", "fn main() {}\n"),
+            unit(
+                ".mise/tasks/lint",
+                "#!/bin/sh\n#MISE description=\"Lint\"\necho lint\n",
+            ),
+        ];
+        let extraction = extract_units(&extractors, &units, SqlDialect::PostgreSql);
+        assert!(extraction.errors.is_empty(), "{:?}", extraction.errors);
+        let (delta, _) = linked_from(extraction);
+        let runs = |src: &str, dst: &str| {
+            edge(&delta, src, &EdgeKind::Runs, dst)
+                .unwrap_or_else(|| panic!("{src} RUNS {dst} missing"))
+        };
+
+        let declared = runs("task:mise/bootstrap", "file:scripts/bootstrap.rhai");
+        assert_eq!(
+            declared.provenance.derivation.kind(),
+            DerivationKind::Declared
+        );
+        assert!((declared.provenance.confidence.get() - 1.0).abs() < f32::EPSILON);
+        assert_eq!(
+            declared.attributes.get("command").map(String::as_str),
+            Some("scripts/bootstrap.rhai")
+        );
+        let shell = runs("file:scripts/bootstrap.rhai", "task:mise/db:migrate");
+        assert_eq!(
+            shell.provenance.derivation.kind(),
+            DerivationKind::Syntactic
+        );
+        assert!((shell.provenance.confidence.get() - 1.0).abs() < f32::EPSILON);
+        let inferred = runs(
+            "rhai:scripts/bootstrap.rhai::seed",
+            "rust:src/main.rs::main",
+        );
+        assert!((inferred.provenance.confidence.get() - 0.75).abs() < f32::EPSILON);
+        assert_eq!(
+            inferred.attributes.get("command").map(String::as_str),
+            Some("cargo run --manifest-path Cargo.toml -p api")
+        );
+        let helper = runs("rhai:scripts/bootstrap.rhai::seed", "task:mise/db:migrate");
+        assert!((helper.provenance.confidence.get() - 0.75).abs() < f32::EPSILON);
+        let task_bin = runs("task:mise/seed", "rust:src/main.rs::main");
+        assert!((task_bin.provenance.confidence.get() - 1.0).abs() < f32::EPSILON);
+        let program = runs("task:mise/check", "rust:src/main.rs::main");
+        assert!((program.provenance.confidence.get() - 0.75).abs() < f32::EPSILON);
+        runs("task:mise/lint", "file:.mise/tasks/lint");
+        assert!(
+            !delta
+                .edges
+                .iter()
+                .any(|e| e.dst.as_str().contains("no:such:task")),
+            "an unknown task makes no edge and no node"
+        );
+        assert!(
+            delta.unresolved.iter().all(|u| u.name != "no:such:task"),
+            "and no gap: a command is not a reference"
         );
     }
 

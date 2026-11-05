@@ -9,3 +9,7 @@ run = "sqlx migrate run --source migrations"
 [tasks.ship]
 description = "Migrate, then deploy"
 depends = ["db:migrate", "deploy"]
+
+[tasks.bootstrap]
+description = "Bring a development database up: migrate, then seed"
+run = "scripts/bootstrap.rhai"
