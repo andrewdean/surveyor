@@ -131,6 +131,45 @@ git clone --depth 1 https://github.com/Homebrew/brew "$tmp/brew"
 "$tmp/brew/bin/surveyor" --version
 ```
 
-## Record of the first release (2026-11-04)
+## Record of the first release (2026-11-04 to 2026-11-05)
 
-Filled in below once `v0.1.0` is published.
+What happened, in order, so the next release and the Causeway wiring can cite it.
+
+1. `7d5378a` added `ci.yml`, `release.yml`, the binstall metadata, the formula
+   template and this note; the gate was green locally first.
+2. Andrew created the empty public repository `andrewdean/surveyor`; `main` was pushed to
+   it. The first CI run (41963024498) passed.
+3. A manual run of `release.yml` (41963042417) rehearsed the pipeline: the cold gate took
+   55 minutes on the Ubuntu runner and each target build about 30 minutes after it. The
+   `aarch64-apple-darwin` artifact was downloaded, its checksum verified, and its binary
+   run on an Apple silicon Mac.
+4. `10ebf08` (a README path fix) was pushed and tagged `v0.1.0`. Run 42043171310
+   published <https://github.com/andrewdean/surveyor/releases/tag/v0.1.0> with:
+
+   | Asset | Size |
+   |---|---|
+   | `surveyor-0.1.0-aarch64-apple-darwin.tar.gz` | 76 MB |
+   | `surveyor-0.1.0-x86_64-apple-darwin.tar.gz` | 81 MB |
+   | `surveyor-0.1.0-x86_64-unknown-linux-gnu.tar.gz` | 85 MB |
+   | `SHA256SUMS` | 330 bytes |
+
+5. `cargo binstall --no-confirm surveyor --git https://github.com/andrewdean/surveyor`
+   into an empty `CARGO_HOME`, with an empty environment, downloaded the arm64 archive and
+   installed a binary that prints `surveyor 0.1.0`.
+6. `packaging/homebrew/render-formula.sh 0.1.0` produced `Formula/surveyor.rb`;
+   `andrewdean/homebrew-tap` was created from it (commit `29a6896`).
+   `brew install andrewdean/tap/surveyor` in a fresh Homebrew clone under a throwaway
+   prefix tapped the repository from GitHub, installed the archive, printed
+   `surveyor 0.1.0`, and passed `brew test surveyor`. The prefix was deleted afterwards.
+
+Things learned on the way:
+
+- Homebrew refuses a prefix under its temporary directory (`/private/tmp` on macOS) and
+  its build sandbox fails a self-check there too; put a throwaway prefix under `$HOME`.
+- `arduino/setup-protoc` downloads `protoc` from GitHub releases on every run; one run
+  failed on a 504 and passed on the next push. Rerun the job when that happens.
+- The release binary is 218 MB (Lance, DataFusion and the Tree-sitter grammars);
+  `strip` would take it to 173 MB at the cost of symbol names in backtraces. The release
+  profile was left as it was.
+- The Linux archive is built on Ubuntu 22.04 and links glibc 2.35, so it runs on Debian
+  12 and Ubuntu 22.04 or newer.
