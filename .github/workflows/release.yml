@@ -27,7 +27,7 @@ jobs:
     outputs:
       version: ${{ steps.read.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Read the workspace version and compare it with the tag
         id: read
         run: |
@@ -56,7 +56,7 @@ jobs:
     env:
       ARCHIVE: surveyor-${{ needs.version.outputs.version }}-${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: arduino/setup-protoc@v3
         with:

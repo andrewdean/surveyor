@@ -24,7 +24,7 @@ jobs:
     name: Gate
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # The lance crates compile their protobuf schemas in build scripts.
       - uses: arduino/setup-protoc@v3
