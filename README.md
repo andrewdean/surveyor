@@ -206,7 +206,7 @@ compile their protobuf schemas), as does a checkout built with `cargo build --re
 Index a checkout (the dataset lands in `<repo>/.surveyor`, or wherever `--store` points):
 
 ```bash
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway index
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway index
 ```
 
 With a SCIP index from the language's own tooling, calls and type uses resolve
@@ -220,18 +220,18 @@ surveyor --repo-root ~/dev/cairn --store ~/.surveyor/cairn index --scip /tmp/cai
 After a commit, or while editing, bring the dataset up to date without a full index:
 
 ```bash
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway update
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway update
 ```
 
 Ask it questions:
 
 ```bash
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway explain Relay::drain
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway affected cw_catalog.asset --depth 3
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway path crates/api/src/main.rs::main cw_outbox.outbox
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway hubs
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway source rust:crates/a/src/lib.rs::Relay::drain
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway nodes --kind Function --in crates/outbox --without TESTED_BY
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway explain Relay::drain
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway affected cw_catalog.asset --depth 3
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway path crates/api/src/main.rs::main cw_outbox.outbox
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway hubs
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway source rust:crates/a/src/lib.rs::Relay::drain
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway nodes --kind Function --in crates/outbox --without TESTED_BY
 ```
 
 A name that several declarations share is refused with their identifiers rather than
@@ -247,7 +247,7 @@ how to ask set questions such as "which functions in this crate have no test".
 Check the repository's rules, or extra ones, and exit 1 on a failure:
 
 ```bash
-surveyor --repo-root ~/dev/causeway --store ~/.surveyor/causeway check --rules ./my-rules
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway check --rules ./my-rules
 ```
 
 A rule is a Rhai file:
