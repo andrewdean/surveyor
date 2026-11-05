@@ -32,7 +32,7 @@ mod resolve;
 mod update;
 
 #[doc(inline)]
-pub use ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id};
+pub use ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id, task_id};
 #[doc(inline)]
 pub use input::{FileEntry, LinkInput, LinkOptions};
 #[doc(inline)]
@@ -42,7 +42,7 @@ pub use linker::{Seed, link, relink};
 ///
 /// Part of the engine fingerprint a dataset records, so `surveyor update` knows that
 /// facts linked by an older build cannot be mixed with new ones.
-pub const LINK_REVISION: u32 = 15;
+pub const LINK_REVISION: u32 = 16;
 
 #[doc(inline)]
 pub use update::{ChangedFiles, RelinkReason, UpdatePlan, is_manifest, plan_update};

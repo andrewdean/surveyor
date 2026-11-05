@@ -31,6 +31,13 @@ nodes. The twelve unknown identifiers of the baseline are the mise tasks
 | Stage | Ranking | hit@5 | recall@5 | MRR@20 | unknown ids |
 |---|---|---:|---:|---:|---:|
 | baseline (2026-11-05) | name match: exact, suffix, substring per word | 1/29 (3%) | 0.02 | 0.11 | 12 |
+| 2. wider index | same matcher over 426 `Task` and 289 `Document` nodes more | 1/29 (3%) | 0.02 | 0.11 | 0 |
+
+Widening the index (stage 2) adds the mise tasks (345 from `.mise/toml/*.toml` and
+`mise.toml`, 81 file tasks under `.mise/tasks/`), a `Document` node per Markdown file
+outside the design and runbook globs, doc comments on Rhai functions and section
+headings on every document. Every expected identifier now exists, but the name
+matcher cannot reach the new text: it only sees names, so the scores do not move.
 
 The baseline's one hit is "how does the loader registry decide the run order", where
 `order` is a function name. The two questions from the 2026-11-05 session that

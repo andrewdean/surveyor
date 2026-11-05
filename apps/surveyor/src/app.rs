@@ -149,11 +149,10 @@ pub struct UpdateArgs {
 pub struct Query {
     /// A name, qualified name or node identifier.
     pub query: String,
-    /// Restrict to a node kind, such as `Function`, `Table` or `View`.
+    /// Restrict to a node kind, such as `Function`, `Table`, `View`, `Task` or `Document`.
     #[arg(long)]
     pub kind: Option<NodeKind>,
     /// Maximum results.
-
     #[arg(long, default_value_t = 20)]
     pub limit: usize,
 }

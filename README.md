@@ -13,7 +13,12 @@ for now). This checkout implements Phase 0 of that plan.
 - **Extraction.** Rust, TypeScript, TSX, JavaScript, Python and Bash through Tree-sitter
   query packs in `languages/`; SQL files and SQL string literals through `sqlparser`;
   Rhai through the `rhai` crate's AST; `Cargo.toml`, `package.json` and `pyproject.toml`;
-  Markdown design documents and runbooks. A Rust host's `register_fn("name", ..)` and
+  mise tasks from `mise.toml`, the files under `.mise/` and the file tasks under
+  `.mise/tasks/` (a `Task` node per task, named as `mise run` names it, with its
+  description, `run` and `depends`); Markdown design documents, runbooks and every
+  other Markdown document, each with its first paragraph and section headings. A
+  function's doc comment travels with its node in every language, including the
+  `//` block above a Rhai function. A Rust host's `register_fn("name", ..)` and
   `set_native_fn("name", ..)` declare a function Rhai scripts call by that name
   (`rhai:modules/proc.rs::sh`), so `proc::sh(..)` in a script resolves to the
   registration and `affected` crosses from the host into every script that calls it. Rust macro arguments are re-parsed so calls

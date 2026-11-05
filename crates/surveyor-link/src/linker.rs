@@ -13,7 +13,7 @@ use surveyor_model::{
     ResolverId, RuleId, SourceLocation, SymbolTarget, TextSpan, Unresolved, UnresolvedReason,
 };
 
-use crate::ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id};
+use crate::ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id, task_id};
 use crate::input::LinkInput;
 use crate::resolve::{Resolution, Site, SymbolIndex, Tier, decide, decide_table, is_method, rank};
 
@@ -645,7 +645,7 @@ impl<'a> Builder<'a> {
                             }
                         }
                     }
-                    NodeKind::Design | NodeKind::Runbook => {
+                    NodeKind::Design | NodeKind::Runbook | NodeKind::Document => {
                         if let Some(f) = file_node {
                             let prov =
                                 self.declared(DeclaredSource::FrontMatter, &file, span, hash);
@@ -754,6 +754,7 @@ impl<'a> Builder<'a> {
             let set = &self.input.fact_sets[si];
             let src_id = match r.src_kind {
                 NodeKind::Package => package_id(&r.src_name),
+                NodeKind::Task => task_id(&r.src_name),
                 _ => NodeId::new(r.src_name.clone()),
             };
             let Some(&src) = self.node_pos.get(&src_id) else {
@@ -761,6 +762,7 @@ impl<'a> Builder<'a> {
             };
             let dst = match r.dst_kind {
                 NodeKind::Package => Some(self.ensure_external_package(&r.dst_name)),
+                NodeKind::Task => self.node_pos.get(&task_id(&r.dst_name)).copied(),
                 _ => self.node_pos.get(&NodeId::new(r.dst_name.clone())).copied(),
             };
             let Some(dst) = dst else { continue };
@@ -1563,6 +1565,50 @@ impl<'a> Builder<'a> {
                 let prov = self.declared(DeclaredSource::Citation, &set.path, span, hash);
                 self.push_edge_once(target, kind.clone(), doc, prov, Vec::new());
             }
+            self.readme_describes_its_directory(doc, &self.input.fact_sets[si].path.clone());
+        }
+    }
+
+    /// A `README` documents the package whose manifest shares its directory, else the
+    /// files beside it: a question that lands on the README reaches the code it is
+    /// about through these edges.
+    fn readme_describes_its_directory(&mut self, doc: usize, path: &RepoPath) {
+        let is_readme = path
+            .file_name()
+            .is_some_and(|n| n.to_ascii_lowercase().starts_with("readme"));
+        if !is_readme {
+            return;
+        }
+        let dir = path.parent().to_owned();
+        let Some(ev) = self.evidence_of(doc) else {
+            return;
+        };
+        let prov = Provenance::declared(DeclaredSource::Other("readme".into()), ev);
+        let package = self
+            .package_dirs
+            .iter()
+            .find(|(d, _)| *d == dir)
+            .map(|(_, idx)| *idx);
+        let targets: Vec<usize> = if let Some(pkg) = package {
+            vec![pkg]
+        } else {
+            let mut siblings: Vec<(&RepoPath, usize)> = self
+                .file_nodes
+                .iter()
+                .filter(|(p, _)| p.parent() == dir && *p != path)
+                .map(|(p, i)| (p, *i))
+                .collect();
+            siblings.sort();
+            siblings.into_iter().map(|(_, i)| i).collect()
+        };
+        for target in targets {
+            self.push_edge_once(
+                target,
+                EdgeKind::DocumentedBy,
+                doc,
+                prov.clone(),
+                Vec::new(),
+            );
         }
     }
 
@@ -1728,7 +1774,14 @@ fn declaration_identity(set: &FactSet, d: &DeclarationFact) -> (NodeId, String) 
             sql_id(&[schema(), table()], Some(&d.name)),
             format!("{}.{}#{}", schema(), table(), d.name),
         ),
-        NodeKind::Design | NodeKind::Runbook => (doc_id(&set.path), d.name.clone()),
+        NodeKind::Design | NodeKind::Runbook | NodeKind::Document => {
+            (doc_id(&set.path), d.name.clone())
+        }
+        // A task is known by the name its runner takes: `task:mise/devdata:load`.
+        NodeKind::Task => {
+            let runner = d.attributes.get("runner").map_or("task", String::as_str);
+            (task_id(&format!("{runner}/{}", d.name)), d.name.clone())
+        }
         NodeKind::Query => {
             let fp8: String = d
                 .attributes
@@ -2372,6 +2425,124 @@ mod tests {
             .edges
             .iter()
             .find(|e| e.src.as_str() == src && &e.kind == kind && e.dst.as_str() == dst)
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture, every task and document edge checked in order"
+    )]
+    fn mise_tasks_and_markdown_documents_become_nodes_with_their_edges() {
+        let extractors =
+            surveyor_extract::default_extractors(&surveyor_extract::Profile::default())
+                .expect("extractors");
+        let units = [
+            unit(
+                "mise.toml",
+                "[tasks.deploy]\ndescription = \"Roll the relay out\"\nrun = \"scripts/deploy.rhai\"\n\n[tasks.ship]\ndepends = [\"deploy\", \"db:migrate\"]\n",
+            ),
+            unit(
+                "README.md",
+                "# mini\n\nA fixture.\n\n## Layout\n\n`crates/outbox` holds the relay.\n",
+            ),
+            unit("crates/outbox/Cargo.toml", "[package]\nname = \"outbox\"\n"),
+            unit("crates/outbox/README.md", "# outbox\n\nThe relay crate.\n"),
+            unit("crates/outbox/src/lib.rs", "pub fn drain() {}\n"),
+        ];
+        let extraction = extract_units(&extractors, &units, SqlDialect::PostgreSql);
+        assert!(extraction.errors.is_empty(), "{:?}", extraction.errors);
+        let (delta, pos) = linked_from(extraction);
+        let node = |id: &str| &delta.nodes[pos[id]];
+
+        let deploy = node("task:mise/deploy");
+        assert_eq!(deploy.kind, NodeKind::Task);
+        assert_eq!(deploy.name, "deploy");
+        assert_eq!(deploy.doc.as_deref(), Some("Roll the relay out"));
+        assert_eq!(
+            deploy.attributes.get("run").map(String::as_str),
+            Some("scripts/deploy.rhai")
+        );
+        let depends = edge(
+            &delta,
+            "task:mise/ship",
+            &EdgeKind::DependsOn,
+            "task:mise/deploy",
+        )
+        .expect("ship depends on deploy");
+        assert_eq!(
+            depends.provenance.derivation.kind(),
+            surveyor_model::DerivationKind::Declared
+        );
+        assert!(
+            !pos.contains_key("task:mise/db:migrate"),
+            "a dependency on an undeclared task makes no node"
+        );
+        assert!(
+            edge(
+                &delta,
+                "file:mise.toml",
+                &EdgeKind::Contains,
+                "task:mise/deploy"
+            )
+            .is_some()
+        );
+
+        let readme = node("doc:README.md");
+        assert_eq!(readme.kind, NodeKind::Document);
+        assert_eq!(readme.name, "mini");
+        assert_eq!(readme.doc.as_deref(), Some("A fixture."));
+        assert_eq!(
+            readme.attributes.get("headings").map(String::as_str),
+            Some("Layout")
+        );
+        assert!(
+            edge(
+                &delta,
+                "file:README.md",
+                &EdgeKind::Contains,
+                "doc:README.md"
+            )
+            .is_some()
+        );
+        // The root README cites the crate and sits beside mise.toml; the crate's README
+        // documents the package whose manifest it shares a directory with.
+        assert!(
+            edge(
+                &delta,
+                "pkg:cargo/outbox",
+                &EdgeKind::DocumentedBy,
+                "doc:README.md"
+            )
+            .is_some()
+        );
+        assert!(
+            edge(
+                &delta,
+                "file:mise.toml",
+                &EdgeKind::DocumentedBy,
+                "doc:README.md"
+            )
+            .is_some()
+        );
+        assert!(
+            edge(
+                &delta,
+                "pkg:cargo/outbox",
+                &EdgeKind::DocumentedBy,
+                "doc:crates/outbox/README.md"
+            )
+            .is_some()
+        );
+        assert!(
+            edge(
+                &delta,
+                "file:crates/outbox/src/lib.rs",
+                &EdgeKind::DocumentedBy,
+                "doc:crates/outbox/README.md"
+            )
+            .is_none(),
+            "a README beside a manifest documents the package, not each file"
+        );
     }
 
     #[test]

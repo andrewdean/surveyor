@@ -5,8 +5,9 @@
 //! declarations, references and tagged literals for any file the grammar parses, even
 //! a broken one. Native enrichers handle formats where a crate gives a better model
 //! than a grammar: `sqlparser` for SQL files and SQL string literals, the `rhai`
-//! crate's own AST for Rhai, typed deserialization for package manifests, and a small
-//! Markdown reader for design documents and runbooks.
+//! crate's own AST for Rhai, typed deserialization for package manifests and mise task
+//! files, and a small Markdown reader for design documents, runbooks and every other
+//! Markdown document.
 //!
 //! The precise tier is SCIP: [`ScipExtractor`] reads an index an external indexer
 //! wrote (`rust-analyzer scip`, `scip-typescript`, `scip-python`) and emits
@@ -41,6 +42,7 @@ mod error;
 mod extractor;
 mod manifest;
 mod markdown;
+mod mise;
 mod pipeline;
 mod profile;
 mod rhai_lang;
@@ -57,6 +59,8 @@ pub use extractor::{Extractor, Extractors};
 pub use manifest::ManifestExtractor;
 #[doc(inline)]
 pub use markdown::MarkdownExtractor;
+#[doc(inline)]
+pub use mise::MiseExtractor;
 #[doc(inline)]
 pub use pipeline::{
     Extraction, UnitRecord, default_extractors, extract_paths, extract_paths_using,
@@ -82,7 +86,7 @@ pub use walk::{ChangeSource, FileChanges, Repository};
 ///
 /// Part of the engine fingerprint a dataset records, with [`query_pack_fingerprint`],
 /// so `surveyor update` re-indexes in full rather than mixing old and new facts.
-pub const EXTRACT_REVISION: u32 = 9;
+pub const EXTRACT_REVISION: u32 = 10;
 
 /// A hash of the embedded query packs: part of the engine fingerprint a dataset records.
 ///

@@ -81,6 +81,8 @@ pub enum NodeKind {
     // Knowledge
     Design,
     Runbook,
+    /// A Markdown document that is neither a design nor a runbook: a README, a guide.
+    Document,
     Skill,
     Plan,
     // History
@@ -152,6 +154,7 @@ impl NodeKind {
             Self::HostModule => "HostModule",
             Self::Design => "Design",
             Self::Runbook => "Runbook",
+            Self::Document => "Document",
             Self::Skill => "Skill",
             Self::Plan => "Plan",
             Self::Commit => "Commit",
@@ -272,6 +275,7 @@ impl NodeKind {
             K::HostModule,
             K::Design,
             K::Runbook,
+            K::Document,
             K::Skill,
             K::Plan,
             K::Commit,

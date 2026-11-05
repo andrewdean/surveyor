@@ -64,6 +64,31 @@ impl Language {
         Some(lang)
     }
 
+    /// Guesses the language from a script's first line, or `None` when it is not a
+    /// shebang naming a known interpreter: `#!/usr/bin/env bash`, `#!/bin/sh`,
+    /// `#!/usr/bin/env python3`, `#!/usr/bin/env node`, `#!/usr/bin/env cwsh` (a Rhai
+    /// host).
+    #[must_use]
+    pub fn from_shebang(first_line: &str) -> Option<Self> {
+        let rest = first_line.trim().strip_prefix("#!")?;
+        let interpreter = rest
+            .split_whitespace()
+            .find(|word| !word.ends_with("/env") && !word.starts_with('-'))?
+            .rsplit('/')
+            .next()?;
+        let name = interpreter
+            .trim_end_matches(|c: char| c.is_ascii_digit() || c == '.')
+            .to_ascii_lowercase();
+        let lang = match name.as_str() {
+            "bash" | "sh" | "zsh" | "dash" | "ksh" => Self::Bash,
+            "python" => Self::Python,
+            "node" | "nodejs" | "bun" | "deno" => Self::JavaScript,
+            "rhai" | "cwsh" => Self::Rhai,
+            _ => return None,
+        };
+        Some(lang)
+    }
+
     /// The lowercase identifier used in node identifiers, such as `rust` or `tsx`.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -147,6 +172,21 @@ mod tests {
             Some(Language::Dockerfile)
         );
         assert_eq!(Language::from_path(&RepoPath::new("a/noext")), None);
+        assert_eq!(
+            Language::from_shebang("#!/usr/bin/env bash\n"),
+            Some(Language::Bash)
+        );
+        assert_eq!(Language::from_shebang("#!/bin/sh"), Some(Language::Bash));
+        assert_eq!(
+            Language::from_shebang("#!/usr/bin/env -S python3 -u"),
+            Some(Language::Python)
+        );
+        assert_eq!(
+            Language::from_shebang("#!/usr/bin/env cwsh"),
+            Some(Language::Rhai)
+        );
+        assert_eq!(Language::from_shebang("#!/usr/bin/perl"), None);
+        assert_eq!(Language::from_shebang("# not a shebang"), None);
         assert_eq!("rust".parse::<Language>().ok(), Some(Language::Rust));
         assert_eq!(
             "zig".parse::<Language>().ok(),

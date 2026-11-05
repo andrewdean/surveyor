@@ -472,13 +472,18 @@ impl CodeGraph {
             .take_while(|(score, _)| *score == best)
             .map(|(_, n)| n)
             .collect();
-        // A type's impl blocks and a test named after what it tests
-        // (`describe("OutboxPanel")`) yield to the declaration; only same-named
-        // declarations are ambiguous.
+        // A type's impl blocks, a test named after what it tests
+        // (`describe("OutboxPanel")`), a task named after its script and a document
+        // yield to the declaration; only same-named declarations are ambiguous.
         let mut declared: Vec<&Node> = ties
             .iter()
             .copied()
-            .filter(|n| !matches!(n.kind, NodeKind::Test | NodeKind::Impl))
+            .filter(|n| {
+                !matches!(
+                    n.kind,
+                    NodeKind::Test | NodeKind::Impl | NodeKind::Task | NodeKind::Document
+                )
+            })
             .collect();
         if let [one] = declared.as_slice() {
             return Lookup::Unique(one);

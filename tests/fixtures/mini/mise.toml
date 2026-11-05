@@ -1,0 +1,11 @@
+[tasks.deploy]
+description = "Roll the outbox relay out to an environment"
+run = "scripts/deploy.rhai"
+
+[tasks."db:migrate"]
+description = "Apply the outbox and users migrations to the development database"
+run = "sqlx migrate run --source migrations"
+
+[tasks.ship]
+description = "Migrate, then deploy"
+depends = ["db:migrate", "deploy"]

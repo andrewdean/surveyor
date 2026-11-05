@@ -2,8 +2,9 @@
 //!
 //! The language ships an AST, so no grammar is needed: script functions become
 //! declarations, function calls become `Call` references, and `import` statements
-//! become `Import` references. Rhai reports line and column positions; byte spans are
-//! recovered from the source text.
+//! become `Import` references. The `//` comment block right above a function is its
+//! documentation. Rhai reports line and column positions; byte spans are recovered
+//! from the source text.
 
 use std::collections::BTreeMap;
 
@@ -93,7 +94,7 @@ impl RhaiExtractor {
                 span,
                 name_span: ByteSpan::new(name_start as u64, (name_start + name.len()) as u64),
                 signature: Some(signature),
-                doc: None,
+                doc: leading_comments(text, decl_start),
                 rule: RuleId::new("rhai.fn"),
                 attributes,
                 hash: unit.hash_of(bytes),
@@ -272,6 +273,29 @@ fn find_fn_decl(
     None
 }
 
+/// The `//` or `///` comment lines directly above the line a declaration starts on,
+/// joined into one block; `None` when the line above is not a comment.
+fn leading_comments(text: &str, at: usize) -> Option<String> {
+    let before = text.get(..at)?;
+    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+    if !before[line_start..].trim().is_empty() {
+        return None;
+    }
+    let mut lines: Vec<&str> = before[..line_start]
+        .lines()
+        .rev()
+        .map(str::trim)
+        .take_while(|line| line.starts_with("//"))
+        .map(|line| {
+            line.trim_start_matches('/')
+                .strip_prefix(' ')
+                .unwrap_or_else(|| line.trim_start_matches('/'))
+        })
+        .collect();
+    lines.reverse();
+    (!lines.is_empty()).then(|| lines.join("\n").trim().to_owned())
+}
+
 /// Number of parameters in the text between a declaration's parentheses.
 fn param_count(params: &str) -> usize {
     params.split(',').filter(|p| !p.trim().is_empty()).count()
@@ -345,6 +369,28 @@ mod tests {
             refs.iter()
                 .any(|r| r.role == ReferenceRole::Import && r.path == vec!["host", "fs"])
         );
+    }
+
+    #[test]
+    fn the_comment_block_above_a_function_is_its_documentation() {
+        let src = "// The loader registry.\n\n// Run a mise task with `vars` merged in;\n// DRY_RUN=1 prints it instead.\nfn mise_run(repo, vars, task, args) {\n    task\n}\n\nlet x = 1;\nfn bare() { 1 }\n";
+        let unit = SourceUnit::new(
+            RepoId::new("r"),
+            RepoPath::new("loaders.rhai"),
+            CommitId::new("c"),
+            src.into(),
+        );
+        let facts = RhaiExtractor::new().extract(&unit).expect("compiles");
+        let docs: BTreeMap<String, Option<String>> = facts
+            .declarations()
+            .map(|d| (d.name.clone(), d.doc.clone()))
+            .collect();
+        assert_eq!(
+            docs["mise_run"].as_deref(),
+            Some("Run a mise task with `vars` merged in;\nDRY_RUN=1 prints it instead."),
+            "the blank line keeps the file header out"
+        );
+        assert_eq!(docs["bare"], None);
     }
 
     #[test]

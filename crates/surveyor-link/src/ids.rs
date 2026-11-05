@@ -24,6 +24,12 @@ pub fn package_id(coordinate: &str) -> NodeId {
     NodeId::new(format!("pkg:{coordinate}"))
 }
 
+/// `task:<runner>/<name>`, such as `task:mise/devdata:load`.
+#[must_use]
+pub fn task_id(coordinate: &str) -> NodeId {
+    NodeId::new(format!("task:{coordinate}"))
+}
+
 /// `doc:<path>`.
 #[must_use]
 pub fn doc_id(path: &RepoPath) -> NodeId {

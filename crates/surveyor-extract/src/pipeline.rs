@@ -17,8 +17,8 @@ use surveyor_model::{
 use crate::profile::SqlDialect;
 use crate::sql::{StatementSummary, summarize_sql};
 use crate::{
-    ExtractError, Extractors, ManifestExtractor, MarkdownExtractor, Profile, Repository,
-    RhaiExtractor, ScipExtractor, SqlExtractor, TreeSitterExtractor,
+    ExtractError, Extractors, ManifestExtractor, MarkdownExtractor, MiseExtractor, Profile,
+    Repository, RhaiExtractor, ScipExtractor, SqlExtractor, TreeSitterExtractor,
 };
 
 /// One file the walk visited, whether or not it produced facts.
@@ -76,6 +76,7 @@ pub fn default_extractors(profile: &Profile) -> Result<Extractors, ExtractError>
         ))
         .with(RhaiExtractor::new())
         .with(ManifestExtractor::new())
+        .with(MiseExtractor::new())
         .with(MarkdownExtractor::new(
             profile.design_set()?,
             profile.runbook_set()?,

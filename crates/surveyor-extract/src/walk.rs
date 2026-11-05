@@ -297,12 +297,16 @@ impl Repository {
         if looks_binary(&content) {
             return Ok(None);
         }
-        Ok(Some(SourceUnit::new(
-            self.id.clone(),
-            path.clone(),
-            self.commit.clone(),
-            content,
-        )))
+        let unit = SourceUnit::new(self.id.clone(), path.clone(), self.commit.clone(), content);
+        // An extensionless script (a mise file task) is known by its shebang.
+        let from_shebang = || {
+            let first = unit.content.split(|b| *b == b'\n').next()?;
+            Language::from_shebang(std::str::from_utf8(first).ok()?)
+        };
+        Ok(Some(match unit.language.clone().or_else(from_shebang) {
+            Some(language) => unit.with_language(language),
+            None => unit,
+        }))
     }
 
     /// Reads every extractable file into source units.
@@ -381,7 +385,7 @@ pub(crate) fn is_extractable(path: &RepoPath) -> bool {
     {
         return true;
     }
-    Language::from_path(path).is_some()
+    Language::from_path(path).is_some() || crate::mise::task_name(path.as_str()).is_some()
 }
 
 /// A NUL byte in the first 8 KiB marks a file as binary, as git does.
@@ -402,16 +406,32 @@ mod tests {
         std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"x\"\n").expect("write");
         std::fs::write(dir.path().join("notes.txt"), "ignored").expect("write");
         std::fs::write(dir.path().join("blob.rs"), b"\0\0binary").expect("write");
+        std::fs::create_dir_all(dir.path().join("mise-tasks/db")).expect("mkdir");
+        std::fs::write(
+            dir.path().join("mise-tasks/db/migrate"),
+            "#!/usr/bin/env bash\n#MISE description=\"Migrate\"\nmigrate() { :; }\n",
+        )
+        .expect("write");
         let repo = Repository::open(dir.path(), None).expect("opens");
         assert_eq!(repo.commit().as_str(), NO_COMMIT);
         let profile = repo.profile().expect("profile");
         let paths = repo.paths(&profile).expect("paths");
         assert_eq!(
             paths.iter().map(RepoPath::as_str).collect::<Vec<_>>(),
-            vec!["Cargo.toml", "blob.rs", "src/lib.rs"]
+            vec![
+                "Cargo.toml",
+                "blob.rs",
+                "mise-tasks/db/migrate",
+                "src/lib.rs"
+            ]
         );
         let units = repo.units(&profile).expect("units");
-        assert_eq!(units.len(), 2, "binary file is dropped");
+        assert_eq!(units.len(), 3, "binary file is dropped");
+        let task = units
+            .iter()
+            .find(|u| u.path.as_str() == "mise-tasks/db/migrate")
+            .expect("file task");
+        assert_eq!(task.language, Some(Language::Bash), "the shebang names it");
     }
 
     #[test]
