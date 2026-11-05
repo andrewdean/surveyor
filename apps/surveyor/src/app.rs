@@ -14,6 +14,7 @@ use surveyor_link::{ChangedFiles, FileEntry, LinkInput, link, plan_update, relin
 use surveyor_model::{EdgeKind, Fact, GraphStats, LiteralRole, NodeKind, RepoId, RepoPath};
 use surveyor_store::{FileRecord, LanceStore, RepositorySnapshot, StoreUpdate};
 
+use crate::eval;
 use crate::render::{self, Output, Updated};
 
 /// Directory under the repository root that holds the dataset.
@@ -116,6 +117,17 @@ pub enum Command {
     Check(CheckArgs),
     /// Serve the graph over MCP on stdio.
     Mcp,
+    /// Score plain-English questions against the starting nodes they should find.
+    Eval(EvalArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct EvalArgs {
+    /// A questions file: `[[question]]` entries with `ask`, `expect` and `note`.
+    pub questions: PathBuf,
+    /// How many starting nodes count: recall and hit rate are measured at this cut.
+    #[arg(short = 'k', long, default_value_t = 5)]
+    pub limit: usize,
 }
 
 #[derive(Debug, Args)]
@@ -498,6 +510,30 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             out.check(&report);
             if !report.passed() {
                 std::process::exit(1);
+            }
+            Ok(())
+        }
+        Command::Eval(a) => {
+            let (_, graph, _) = open_graph(&cli, &p).await?;
+            let questions = eval::load(&a.questions)?;
+            let ids = |nodes: Vec<&surveyor_model::Node>| -> Vec<String> {
+                nodes.iter().map(|n| n.id.to_string()).collect()
+            };
+            let scored = questions
+                .question
+                .iter()
+                .map(|q| {
+                    let top = ids(graph.seeds(&q.ask, a.limit.max(1)));
+                    let deep = ids(graph.seeds(&q.ask, eval::DEEP_RANK));
+                    eval::score(q, &top, &deep, |id| {
+                        graph.node(&surveyor_model::NodeId::new(id)).is_some()
+                    })
+                })
+                .collect();
+            let summary = eval::summarize(scored, a.limit.max(1));
+            match out {
+                Output::Json => render::print_json(&summary),
+                Output::Text => eval::print_text(&summary, &a.questions),
             }
             Ok(())
         }

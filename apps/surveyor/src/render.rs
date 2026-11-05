@@ -138,7 +138,7 @@ fn cite(e: &Edge) -> String {
     s
 }
 
-fn print_json<T: Serialize>(value: &T) {
+pub(crate) fn print_json<T: Serialize>(value: &T) {
     match serde_json::to_string_pretty(value) {
         Ok(s) => println!("{s}"),
         Err(e) => eprintln!("json: {e}"),

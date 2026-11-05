@@ -1,0 +1,15 @@
+# Retrieval eval over the mini fixture: a question an engineer new to the repository
+# would ask, and the node they should open first.
+
+[[question]]
+ask = "how do pending outbox rows get sent to the broker"
+expect = [
+  "rust:crates/outbox/src/relay.rs::Relay::drain",
+  "rust:crates/outbox/src/relay.rs::Relay",
+  "rust:crates/outbox/src/relay.rs::Nope",
+]
+note = "the last identifier does not exist; the eval must say so"
+
+[[question]]
+ask = "which rust function counts the backlog"
+expect = ["rust:crates/api/src/main.rs::report_backlog"]

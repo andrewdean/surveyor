@@ -1,0 +1,219 @@
+# Retrieval eval over Causeway (commit 40f993d7): plain-English questions and the nodes
+# an engineer should open first. Run against the Causeway store:
+#
+#   surveyor --repo-root ~/dev/trusted/causeway --store "$SURVEYOR_STORE" eval docs/eval/causeway-questions.toml
+#
+# `expect` lists right starting points, not every relevant node. Several questions use
+# words the repository does not (the `note` says which), because that is how the
+# questions arrived in use. Task identifiers (`task:mise/...`) name the mise tasks the
+# `.mise/toml/*.toml` files declare; the eval reports them as unknown on a store written
+# before tasks were indexed.
+
+[[question]]
+ask = "where is development data created and how is it loaded"
+expect = [
+  "rust:jobs/causeway-seed/src/main.rs::SeedProfile",
+  "rhai:.mise/rhai/causeway/loaders.rhai::run_loader",
+  "task:mise/devdata:load",
+  "task:mise/dev:data:bootstrap",
+  "rust:crates/causeway-testkit/src/isolation.rs::in_workspace",
+]
+note = "asked on 2026-11-05; the user also says 'test data' where the repository says development data, seed and fixtures"
+
+[[question]]
+ask = "where is test data created and how is it loaded"
+expect = [
+  "rust:jobs/causeway-seed/src/main.rs::SeedProfile",
+  "rhai:.mise/rhai/causeway/loaders.rhai::run_loader",
+  "task:mise/devdata:load",
+  "task:mise/dev:data:bootstrap",
+]
+note = "the same question in the user's words: 'test data' never appears in the repository"
+
+[[question]]
+ask = "What breaks if I change the advisory lock key derivation"
+expect = [
+  "rust:torrentfx/crates/causeway-workspace-scope/src/advisory_lock.rs::AdvisoryLockKey::for_workspace",
+  "rust:crates/causeway-db-core/src/lib.rs::advisory_lock_key",
+]
+
+[[question]]
+ask = "how does a test get a database schema of its own"
+expect = [
+  "rust:crates/causeway-testkit/src/isolation.rs::in_workspace",
+  "rust:crates/causeway-testkit/src/isolation.rs::WorkspaceSpec::run",
+]
+note = "'schema of its own' is what the code calls a workspace, isolation"
+
+[[question]]
+ask = "how are search documents embedded and pushed to qdrant"
+expect = [
+  "rust:component/discovery/search/core/src/lib.rs::reconcile_search_sync",
+  "rust:jobs/causeway-search-sync-worker/src/main.rs::SearchSyncWorker::run",
+  "rust:component/discovery/search/query-understanding/src/embedder.rs::fastembed_impl::FastEmbedder",
+]
+
+[[question]]
+ask = "what checks that a loaded workspace is coherent"
+expect = [
+  "rust:component/platform/coherence/src/run.rs::run_checks",
+  "rust:component/platform/coherence/src/checks.rs::CHECKS",
+  "task:mise/validate:data-coherence",
+]
+
+[[question]]
+ask = "where is the people directory seeded"
+expect = [
+  "rust:jobs/causeway-seed/src/main.rs::seed_people",
+  "rust:jobs/causeway-seed/src/main.rs::SeedProfile::People",
+]
+
+[[question]]
+ask = "how does a catalog entry get its physical binding"
+expect = [
+  "task:mise/ops:catalog:bindings:backfill",
+  "file:component/catalog/core/migrations/0046_stores_containers_bindings.sql",
+]
+note = "the function is SQL (catalog_bindings_backfill) inside a migration; the task description carries the words"
+
+[[question]]
+ask = "how is a container given its default taxonomy home"
+expect = [
+  "task:mise/ops:catalog:placements:backfill",
+  "file:component/catalog/core/migrations/0051_taxonomy_placements.sql",
+]
+note = "'home' is the task description's word; the code says placement"
+
+[[question]]
+ask = "how are unity catalog tables registered as catalog assets"
+expect = ["rust:jobs/causeway-metadata-worker/src/main.rs::sync_unity_catalog"]
+
+[[question]]
+ask = "what happens when the databricks warehouse is asleep during the sync"
+expect = [
+  "rust:jobs/causeway-metadata-worker/src/main.rs::sync_unity_catalog",
+  "rhai:.mise/rhai/causeway/loaders.rhai::run_loader",
+]
+note = "'asleep' is the user's word; the code says 'not answering', exit 75, EX_TEMPFAIL"
+
+[[question]]
+ask = "how are contract fixtures published to the catalog"
+expect = [
+  "rust:tools/causeway-contract/src/publish.rs::publish_contract",
+  "rust:tools/causeway-contract/src/publish.rs::publish_to_causeway_catalog",
+]
+
+[[question]]
+ask = "what does the dev server start"
+expect = [
+  "task:mise/dev:run",
+  "rhai:.mise/scripts/tasks/dev/run.rhai::start_host",
+]
+
+[[question]]
+ask = "how are kafka topic names scoped to a workspace"
+expect = [
+  "rust:crates/causeway-kafka-core/src/lib.rs::scoped_topic_for_workspace",
+  "rust:crates/causeway-kafka-core/src/lib.rs::data_topic_for_workspace",
+  "rust:crates/causeway-kafka-core/src/lib.rs::control_topic_for_workspace",
+]
+
+[[question]]
+ask = "how are session cache keys kept apart per workspace"
+expect = [
+  "rust:apps/causeway-server/src/cache.rs::SessionKeyspace::for_workspace",
+  "rust:apps/causeway-server/src/cache.rs::SessionKeyspace::key",
+]
+note = "'kept apart' is the user's phrase; the code says keyspace"
+
+[[question]]
+ask = "how is search quality measured against judged queries"
+expect = [
+  "rust:component/discovery/search/core/src/evaluation.rs::evaluate",
+  "rust:component/discovery/search/core/src/evaluation.rs::JudgedQuery",
+]
+
+[[question]]
+ask = "how do I run the database migrations"
+expect = [
+  "task:mise/db:migrate",
+  "rust:jobs/causeway-migrate/src/main.rs::main",
+  "rhai:.mise/scripts/tasks/db/migrate.rhai::sqlx_migrate",
+]
+
+[[question]]
+ask = "which view exports catalog content for search indexing"
+expect = ["sql:public.catalog_search_export_v1"]
+
+[[question]]
+ask = "how is the FIBO corpus built"
+expect = [
+  "task:mise/devdata:build",
+  "pkg:cargo/cw-devdata",
+  "file:devdata/scripts/build.rhai",
+]
+
+[[question]]
+ask = "how is a canonical identity minted for an asset"
+expect = [
+  "rust:component/semantic/graph/src/lib.rs::PgResourceIdentityRegistry",
+  "rust:crates/causeway-metadata-ops/src/semantic_identity_backfill.rs::backfill_semantic_identities",
+]
+
+[[question]]
+ask = "what validates the development data graph manifest"
+expect = [
+  "task:mise/devdata:validate",
+  "rust:bootstrap/cw-devdata/src/manifest.rs::validate",
+]
+
+[[question]]
+ask = "where does the policy scanner pick work off its queue"
+expect = ["rust:apps/causeway-policy-scan/src/main.rs::PolicyScanner::run_queue"]
+note = "'pick work off' is the user's phrase"
+
+[[question]]
+ask = "how do glossary terms get attached to columns"
+expect = ["rust:crates/causeway-metadata-ops/src/terms_attachment.rs::sync_terms_attachment"]
+
+[[question]]
+ask = "where is lineage recorded when seeding datasets"
+expect = [
+  "rust:jobs/causeway-seed/src/main.rs::seed_lineage",
+  "rust:component/catalog/core/src/seed.rs::seed_lineage",
+]
+
+[[question]]
+ask = "how are corpus articles fetched and loaded into object storage"
+expect = [
+  "rust:jobs/causeway-corpus-fetch/src/main.rs::load_bundle",
+  "rust:jobs/causeway-corpus-fetch/src/main.rs::generate_bundle",
+]
+note = "'object storage' is the user's phrase; the code says Garage, bucket, S3"
+
+[[question]]
+ask = "what limits semantic expansion of a search query"
+expect = [
+  "rust:crates/catalog-search-domain/src/lib.rs::MAX_SEMANTIC_CANDIDATES",
+  "rust:crates/catalog-search-domain/src/lib.rs::MAX_SEMANTIC_PREDICATES",
+  "rust:crates/catalog-search-domain/src/lib.rs::MAX_SEMANTIC_EXPANSION_LATENCY",
+]
+
+[[question]]
+ask = "how does the outbox publish events to kafka or valkey"
+expect = [
+  "rust:crates/causeway-metadata-ops/src/event_outbox.rs::OutboxEventSink",
+  "rust:crates/causeway-metadata-ops/src/event_outbox.rs::KafkaOutboxEventSink",
+  "rust:crates/causeway-metadata-ops/src/event_outbox.rs::ValkeyOutboxEventSink",
+]
+
+[[question]]
+ask = "where are coherence gate waivers recorded"
+expect = ["rhai:.mise/rhai/causeway/loaders.rhai::record_coherence_waiver"]
+
+[[question]]
+ask = "how does the loader registry decide the run order"
+expect = [
+  "rhai:.mise/rhai/causeway/loaders.rhai::order",
+  "task:mise/devdata:plan",
+]
