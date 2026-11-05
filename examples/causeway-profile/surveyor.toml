@@ -1,5 +1,8 @@
-# Surveyor profile for the Causeway checkout, kept here because Causeway does not
-# carry one yet. Use it with `--profile examples/causeway-profile/surveyor.toml`.
+# Surveyor profile for the Causeway checkout. Causeway now carries this profile at
+# its root (andrewdean/causeway#1077); this copy stays for the exit tests, which run
+# it with `--profile examples/causeway-profile/surveyor.toml`, and for readers. Once
+# that pull request merges, the committed `surveyor.toml` in Causeway is the source
+# of truth and this file follows it.
 
 [repository]
 id = "causeway"
@@ -15,8 +18,8 @@ dialect = "postgresql"
 default_schema = "public"
 
 [docs]
-designs = ["docs/rfd/**/*.md", "docs/rfds/**/*.md", "docs/adr/**/*.md", "docs/design/**/*.md"]
-runbooks = ["docs/runbooks/**/*.md", "runbooks/**/*.md"]
+designs = ["docs/rfd/**/*.md", "docs/adrs/**/*.md", "docs/design/**/*.md"]
+runbooks = ["docs/runbooks/**/*.md"]
 
 [rules]
 dirs = ["surveyor-rules"]
