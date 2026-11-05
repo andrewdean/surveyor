@@ -6717,6 +6717,7 @@ dependencies = [
 name = "surveyor-rules"
 version = "0.1.0"
 dependencies = [
+ "globset",
  "rhai",
  "serde",
  "surveyor-graph",

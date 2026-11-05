@@ -114,6 +114,8 @@ pub enum Command {
     Stats,
     /// Describe one symbol: where it is, what it touches, who touches it.
     Explain(Query),
+    /// One screen per symbol: identity, signature, doc, counts with citations, rules.
+    Card(CardArgs),
     /// What may break when a symbol, table or file changes.
     Affected(AffectedArgs),
     /// Shortest dependency path between two symbols.
@@ -209,6 +211,16 @@ pub struct Query {
     /// Maximum results.
     #[arg(long, default_value_t = 20)]
     pub limit: usize,
+}
+
+#[derive(Debug, Args)]
+pub struct CardArgs {
+    /// Names, qualified names or node identifiers; one card each.
+    #[arg(required = true)]
+    pub queries: Vec<String>,
+    /// Restrict to a node kind, such as `Function`, `Table`, `View`, `Task` or `Document`.
+    #[arg(long)]
+    pub kind: Option<NodeKind>,
 }
 
 #[derive(Debug, Args)]
@@ -472,8 +484,33 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Explain(q) => {
             let (_, graph, _) = open_graph(&cli, &p).await?;
+            let graph = std::sync::Arc::new(graph);
             let node = resolve_one(&graph, &q.query, q.kind.as_ref())?;
-            out.explain(&graph, node, q.limit);
+            let rules = rule_report(&cli, &p, &graph);
+            let card = card_with_rules(&graph, node, rules.as_ref());
+            out.explain(&graph, node, &card, q.limit);
+            Ok(())
+        }
+        Command::Card(a) => {
+            let (_, graph, _) = open_graph(&cli, &p).await?;
+            let graph = std::sync::Arc::new(graph);
+            let nodes = a
+                .queries
+                .iter()
+                .map(|q| resolve_one(&graph, q, a.kind.as_ref()))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let rules = rule_report(&cli, &p, &graph);
+            let started = Instant::now();
+            let cards: Vec<surveyor_graph::Card> = nodes
+                .iter()
+                .map(|n| card_with_rules(&graph, n, rules.as_ref()))
+                .collect();
+            tracing::info!(
+                cards = cards.len(),
+                ms = started.elapsed().as_millis() as u64,
+                "cards built"
+            );
+            out.cards(&cards);
             Ok(())
         }
         Command::Affected(a) => {
@@ -702,6 +739,56 @@ fn answer_of<'a>(
         files,
         size: *size,
     }
+}
+
+/// Loads the repository's rules and runs them, for the rule notes on a card.
+///
+/// A card is a reading command, so a rule that fails to load or run is logged and
+/// the card goes out without rule notes rather than failing the command; `check` is
+/// where rule errors are reported.
+fn rule_report(
+    cli: &Cli,
+    p: &Paths,
+    graph: &std::sync::Arc<CodeGraph>,
+) -> Option<(surveyor_rules::RuleSet, surveyor_rules::Report)> {
+    let profile = match load_profile(cli, p) {
+        Ok(profile) => profile,
+        Err(e) => {
+            tracing::warn!(error = %e, "profile not loaded; cards carry no rules");
+            return None;
+        }
+    };
+    let (dirs, files) = rule_sources(&p.root, &profile, &[]);
+    let rules = match surveyor_rules::RuleSet::load(&dirs, &files) {
+        Ok(rules) => rules,
+        Err(e) => {
+            tracing::warn!(error = %e, "rules not loaded; cards carry no rules");
+            return None;
+        }
+    };
+    if rules.rules().is_empty() {
+        return None;
+    }
+    match rules.run(std::sync::Arc::clone(graph)) {
+        Ok(report) => Some((rules, report)),
+        Err(e) => {
+            tracing::warn!(error = %e, "rules did not run; cards carry no rules");
+            None
+        }
+    }
+}
+
+/// A node's card with the rule notes the last rule run gives it.
+fn card_with_rules(
+    graph: &CodeGraph,
+    node: &surveyor_model::Node,
+    rules: Option<&(surveyor_rules::RuleSet, surveyor_rules::Report)>,
+) -> surveyor_graph::Card {
+    let mut card = graph.card(node);
+    if let Some((rules, report)) = rules {
+        card.rules = surveyor_rules::notes_for(rules, report, node);
+    }
+    card
 }
 
 /// What a full index produced.

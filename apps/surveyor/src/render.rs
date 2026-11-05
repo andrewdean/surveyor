@@ -9,10 +9,10 @@ use surveyor_model::RepoPath;
 use anyhow::{Context, bail};
 use serde::Serialize;
 use surveyor_graph::{
-    Affected, CodeGraph, Community, Direction, EdgeFilter, FoundPath, Hub, Neighbor, PathDirection,
-    PathTier,
+    Affected, Card, CodeGraph, Community, Direction, EdgeFilter, FoundPath, Hub, Neighbor,
+    PathDirection, PathTier, RuleStatus,
 };
-use surveyor_model::{Edge, EdgeKind, GraphStats, Node, NodeKind, Unresolved};
+use surveyor_model::{Edge, GraphStats, Node, Unresolved};
 use surveyor_rules::{Report, Severity};
 use surveyor_store::{RepositorySnapshot, StoreStats};
 
@@ -417,11 +417,11 @@ impl Output {
         }
     }
 
-    pub fn explain(self, graph: &CodeGraph, node: &Node, limit: usize) {
+    pub fn explain(self, graph: &CodeGraph, node: &Node, card: &Card, limit: usize) {
         let all = EdgeFilter::default();
         let out = graph.neighbors(&node.id, Direction::Outgoing, &all);
         let inc = graph.neighbors(&node.id, Direction::Incoming, &all);
-        let members = members_of(graph, node);
+        let members = graph.members(node);
         if self == Self::Json {
             #[derive(Serialize)]
             struct Rel {
@@ -432,8 +432,9 @@ impl Output {
                 confidence: f32,
             }
             #[derive(Serialize)]
-            struct View {
+            struct View<'a> {
                 node: NodeView,
+                card: &'a Card,
                 outgoing: Vec<Rel>,
                 incoming: Vec<Rel>,
                 members: Vec<NodeView>,
@@ -453,6 +454,7 @@ impl Output {
             };
             print_json(&View {
                 node: NodeView::of(node),
+                card,
                 outgoing: out.iter().map(rel).collect(),
                 incoming: inc.iter().map(rel).collect(),
                 members: members.iter().map(|n| NodeView::of(n)).collect(),
@@ -486,6 +488,76 @@ impl Output {
         }
         print_groups("outgoing", &out, limit, true);
         print_groups("incoming", &inc, limit, false);
+    }
+
+    /// Prints one or more cards.
+    pub fn cards(self, cards: &[Card]) {
+        if self == Self::Json {
+            print_json(&cards);
+            return;
+        }
+        for (i, c) in cards.iter().enumerate() {
+            if i > 0 {
+                println!();
+            }
+            let owner = [c.language.as_deref(), c.package.as_deref()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(", ");
+            if owner.is_empty() {
+                println!("{} {}", c.kind, c.qualified_name);
+            } else {
+                println!("{} {}  ({owner})", c.kind, c.qualified_name);
+            }
+            println!("  id        {}", c.id);
+            if !c.declared_at.is_empty() {
+                println!("  declared  {}", c.declared_at.join(", "));
+            }
+            if let Some(sig) = &c.signature {
+                println!("  signature {sig}");
+            }
+            if let Some(doc) = &c.doc {
+                println!("  doc       {doc}  ({} bytes)", c.doc_bytes);
+            }
+            if c.members > 0 {
+                println!("  members   {}", c.members);
+            }
+            for count in &c.counts {
+                let samples = count
+                    .samples
+                    .iter()
+                    .map(|s| format!("{} ({})", s.node, s.citation))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let more = if count.total > count.samples.len() {
+                    format!(" … {} more", count.total - count.samples.len())
+                } else {
+                    String::new()
+                };
+                println!(
+                    "  {:<13} {:>4}  {samples}{more}",
+                    count.relation, count.total
+                );
+            }
+            for r in &c.rules {
+                match r.status {
+                    RuleStatus::Finding => println!(
+                        "  rule      {} ({}): {}{}",
+                        r.rule,
+                        r.severity,
+                        r.message.as_deref().unwrap_or_default(),
+                        r.citation
+                            .as_deref()
+                            .map(|c| format!("  {c}"))
+                            .unwrap_or_default()
+                    ),
+                    RuleStatus::Scope => {
+                        println!("  rule      {} ({}): in scope", r.rule, r.severity);
+                    }
+                }
+            }
+        }
     }
 
     pub fn affected(self, node: &Node, hits: &[Affected<'_>], depth: usize) {
@@ -842,42 +914,6 @@ fn parse_line_range(range: &str) -> anyhow::Result<(u32, u32)> {
 }
 
 /// Members: `DEFINES` and `CONTAINS` children, plus those of impl blocks for a type.
-fn members_of<'a>(graph: &'a CodeGraph, node: &Node) -> Vec<&'a Node> {
-    let structural = EdgeFilter::default().with_kinds(vec![EdgeKind::Defines, EdgeKind::Contains]);
-    let mut out: Vec<&Node> = graph
-        .neighbors(&node.id, Direction::Outgoing, &structural)
-        .into_iter()
-        .map(|n| n.node)
-        .collect();
-    if node.kind.is_type() {
-        let uses = EdgeFilter::default().with_kinds(vec![EdgeKind::UsesType]);
-        for imp in graph.neighbors(&node.id, Direction::Incoming, &uses) {
-            if imp.node.kind == NodeKind::Impl && impl_is_for(imp.node, node) {
-                out.extend(
-                    graph
-                        .neighbors(&imp.node.id, Direction::Outgoing, &structural)
-                        .into_iter()
-                        .map(|n| n.node),
-                );
-            }
-        }
-    }
-    out.sort_by_key(|a| a.lines());
-    out.dedup_by(|a, b| a.id == b.id);
-    out
-}
-
-/// Whether an impl block is written for `ty`. An impl's name is its self type
-/// followed by `#impl`, so `impl From<&Report> for Summary` belongs to `Summary`
-/// although it also uses `Report`.
-fn impl_is_for(imp: &Node, ty: &Node) -> bool {
-    [imp.name.as_str(), imp.qualified_name.as_str()]
-        .into_iter()
-        .filter_map(|name| name.split("#impl").next())
-        .filter_map(|self_type| self_type.rsplit("::").next())
-        .any(|self_type| self_type == ty.name)
-}
-
 fn print_groups(label: &str, items: &[Neighbor<'_>], limit: usize, outgoing: bool) {
     if items.is_empty() {
         return;

@@ -20,12 +20,17 @@
 
 // Rust guideline compliant 2026-02-21
 
+mod card;
+
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use surveyor_model::{Edge, EdgeKind, GraphDelta, Node, NodeId, NodeKind};
+
+#[doc(inline)]
+pub use card::{Card, Count, RuleNote, RuleStatus, SAMPLES_PER_COUNT, Sample, first_paragraph};
 
 /// The direction of an edge relative to a node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -452,6 +457,14 @@ impl CodeGraph {
     /// mistyped qualifier is never silently answered with another file's node.
     #[must_use]
     pub fn lookup(&self, query: &str, kind: Option<&NodeKind>) -> Lookup<'_> {
+        // An identifier needs no ranking; a batch of them (every card of a context
+        // pack) would otherwise pay a substring scan of every node per query.
+        if let Some(node) = self
+            .node(&NodeId::new(query.trim()))
+            .filter(|n| kind.is_none_or(|k| &n.kind == k))
+        {
+            return Lookup::Exact(node);
+        }
         let scored = self.scored(query, kind);
         let Some(&(best, first)) = scored.first() else {
             return Lookup::NotFound {

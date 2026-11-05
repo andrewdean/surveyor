@@ -8,6 +8,7 @@ license.workspace = true
 description = "Surveyor rules: architectural invariants as Rhai scripts over the graph"
 
 [dependencies]
+globset.workspace = true
 surveyor-model.workspace = true
 surveyor-graph.workspace = true
 rhai.workspace = true

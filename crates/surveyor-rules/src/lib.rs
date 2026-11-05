@@ -33,8 +33,10 @@
 //!
 //! Severity `fail` fails the check on any violation; `warn` reports without failing;
 //! `budget` fails when the count exceeds `const BUDGET`, which is how a known debt is
-//! held and burned down. Scripts run sandboxed: no imports, no file access, bounded
-//! operations.
+//! held and burned down. An optional `const SCOPE = ["crates/outbox/**"]` names the
+//! files the rule governs, so a node's card can list the rule before it has a
+//! finding; a rule without one is listed on a card only by its findings. Scripts run
+//! sandboxed: no imports, no file access, bounded operations.
 
 // Rust guideline compliant 2026-02-21
 
@@ -48,7 +50,7 @@ use std::sync::Arc;
 use rhai::module_resolvers::DummyModuleResolver;
 use rhai::{AST, Array, Dynamic, Engine, Map, Scope};
 use serde::{Deserialize, Serialize};
-use surveyor_graph::{CodeGraph, Direction, EdgeFilter};
+use surveyor_graph::{CodeGraph, Direction, EdgeFilter, RuleNote, RuleStatus};
 use surveyor_model::{Edge, EdgeKind, Node, NodeId, NodeKind};
 
 /// Operations one rule may perform before it is stopped as runaway.
@@ -70,6 +72,16 @@ pub enum Severity {
 }
 
 impl Severity {
+    /// The lowercase spelling, as rules write it.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fail => "fail",
+            Self::Warn => "warn",
+            Self::Budget => "budget",
+        }
+    }
+
     fn parse(s: &str) -> Option<Self> {
         match s {
             "fail" => Some(Self::Fail),
@@ -103,9 +115,20 @@ pub struct Rule {
     pub budget: Option<i64>,
     /// Where it was loaded from.
     pub path: PathBuf,
+    /// Globs of the files the rule governs, from `const SCOPE`; empty when it names none.
+    pub applies_to: Vec<String>,
+    applies: Option<globset::GlobSet>,
     ast: AST,
     /// The script's top-level constants, visible to `check` as globals.
     scope: Scope<'static>,
+}
+
+impl Rule {
+    /// True when the rule declares a scope and `file` falls inside it.
+    #[must_use]
+    pub fn covers(&self, file: &str) -> bool {
+        self.applies.as_ref().is_some_and(|g| g.is_match(file))
+    }
 }
 
 impl fmt::Debug for Rule {
@@ -115,6 +138,7 @@ impl fmt::Debug for Rule {
             .field("severity", &self.severity)
             .field("budget", &self.budget)
             .field("path", &self.path)
+            .field("applies_to", &self.applies_to)
             .finish_non_exhaustive()
     }
 }
@@ -155,6 +179,72 @@ impl Report {
     pub fn violation_count(&self) -> usize {
         self.outcomes.iter().map(|o| o.violations.len()).sum()
     }
+}
+
+/// The rules `node` is subject to: every finding of `report` on the node, an edge of
+/// the node or a citation inside its span, then every rule of `rules` whose scope
+/// covers the node's file and that has no such finding.
+#[must_use]
+pub fn notes_for(rules: &RuleSet, report: &Report, node: &Node) -> Vec<RuleNote> {
+    let id = node.id.as_str();
+    let file = node.file().map(ToString::to_string);
+    let lines = node.lines();
+    let names_node = |subject: &str| {
+        subject == id
+            || subject.split_once(" -").is_some_and(|(src, rest)| {
+                src == id || rest.rsplit_once("> ").is_some_and(|(_, dst)| dst == id)
+            })
+    };
+    let inside_span = |citation: &str| {
+        let Some((file, lines)) = file.as_deref().zip(lines) else {
+            return false;
+        };
+        let Some((cited_file, cited_lines)) = citation.rsplit_once(':') else {
+            return false;
+        };
+        if cited_file != file {
+            return false;
+        }
+        let (start, end) = cited_lines
+            .split_once('-')
+            .map_or((cited_lines, cited_lines), |(a, b)| (a, b));
+        match (start.parse::<u32>(), end.parse::<u32>()) {
+            (Ok(start), Ok(end)) => start <= lines.end && end >= lines.start,
+            _ => false,
+        }
+    };
+    let mut notes: Vec<RuleNote> = report
+        .outcomes
+        .iter()
+        .flat_map(|o| {
+            o.violations
+                .iter()
+                .filter(|v| {
+                    names_node(&v.subject) || v.citation.as_deref().is_some_and(inside_span)
+                })
+                .map(move |v| RuleNote {
+                    rule: o.id.clone(),
+                    severity: o.severity.as_str().to_owned(),
+                    status: RuleStatus::Finding,
+                    message: Some(v.message.clone()),
+                    citation: v.citation.clone(),
+                })
+        })
+        .collect();
+    if let Some(file) = &file {
+        for rule in rules.rules().iter().filter(|r| r.covers(file)) {
+            if notes.iter().all(|n| n.rule != rule.id) {
+                notes.push(RuleNote {
+                    rule: rule.id.clone(),
+                    severity: rule.severity.as_str().to_owned(),
+                    status: RuleStatus::Scope,
+                    message: None,
+                    citation: None,
+                });
+            }
+        }
+    }
+    notes
 }
 
 /// Raised when a rule file cannot be read, compiled or run.
@@ -391,23 +481,10 @@ impl GraphHandle {
 
     /// The package that owns a node's file, as its identifier, or `()`.
     fn package_of(&mut self, id: &str) -> Dynamic {
-        let graph = &self.0;
-        let contains = EdgeFilter::default().with_kinds(vec![EdgeKind::Contains]);
-        let owner = |file_id: NodeId| {
-            graph
-                .neighbors(&file_id, Direction::Incoming, &contains)
-                .into_iter()
-                .find(|n| n.node.kind == NodeKind::Package)
-                .map(|n| n.node.id.to_string())
-        };
-        let found = graph.node(&NodeId::new(id)).and_then(|n| match n.kind {
-            NodeKind::Package => Some(n.id.to_string()),
-            NodeKind::File => owner(n.id.clone()),
-            _ => n
-                .file()
-                .and_then(|f| owner(NodeId::new(format!("file:{f}")))),
-        });
-        found.map_or(Dynamic::UNIT, Dynamic::from)
+        self.0
+            .node(&NodeId::new(id))
+            .and_then(|n| self.0.package_of(n))
+            .map_or(Dynamic::UNIT, |p| Dynamic::from(p.id.to_string()))
     }
 
     /// True when `to` is reachable from `from` along `kinds` within `depth` hops.
@@ -641,6 +718,27 @@ fn compile_source(engine: &Engine, path: &Path, text: &str) -> Result<Rule, Rule
     if severity == Severity::Budget && budget.is_none() {
         return Err(RuleError::new(path, "a budget rule needs `const BUDGET`"));
     }
+    let applies_to: Vec<String> = scope
+        .get_value::<Array>("SCOPE")
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|d| d.into_string().ok())
+        .collect();
+    let applies = if applies_to.is_empty() {
+        None
+    } else {
+        let mut set = globset::GlobSetBuilder::new();
+        for glob in &applies_to {
+            set.add(
+                globset::Glob::new(glob)
+                    .map_err(|e| RuleError::new(path, format!("SCOPE {glob:?}: {e}")))?,
+            );
+        }
+        Some(
+            set.build()
+                .map_err(|e| RuleError::new(path, e.to_string()))?,
+        )
+    };
     if !ast
         .iter_functions()
         .any(|f| f.name == "check" && f.params.len() == 1)
@@ -653,6 +751,8 @@ fn compile_source(engine: &Engine, path: &Path, text: &str) -> Result<Rule, Rule
         severity,
         budget,
         path: path.to_path_buf(),
+        applies_to,
+        applies,
         ast,
         scope,
     })
@@ -939,5 +1039,56 @@ mod tests {
                 .is_err()
         );
         assert!(RuleSet::from_sources(&[("x.rhai", "const ID = \"no-check\";")]).is_err());
+    }
+
+    #[test]
+    fn cards_list_findings_on_the_node_and_rules_whose_scope_covers_its_file() {
+        let rules = RuleSet::from_sources(&[
+            (
+                "scoped.rhai",
+                "const ID = \"scoped\"; const SCOPE = [\"a/src/**\"]; fn check(g) { [] }",
+            ),
+            (
+                "finds.rhai",
+                "const ID = \"finds\"; const SEVERITY = \"warn\"; fn check(g) { [violation(g.node(\"rust:a/src/lib.rs::go\"), \"found\")] }",
+            ),
+            (
+                "edge.rhai",
+                "const ID = \"edge\"; fn check(g) { let out = []; for e in g.edges_to(\"rust:a/src/lib.rs::go\", \"CONTAINS\") { out.push(violation(e, \"contains\")); } out }",
+            ),
+        ])
+        .expect("loads");
+        assert_eq!(rules.rules()[0].applies_to, vec!["a/src/**".to_owned()]);
+        assert!(rules.rules()[0].covers("a/src/lib.rs"));
+        assert!(!rules.rules()[0].covers("b/src/lib.rs"));
+        let graph = Arc::new(graph());
+        let report = rules.run(Arc::clone(&graph)).expect("runs");
+        let go = graph
+            .node(&NodeId::new("rust:a/src/lib.rs::go"))
+            .expect("go");
+        let notes = notes_for(&rules, &report, go);
+        let by_rule: Vec<(&str, RuleStatus)> =
+            notes.iter().map(|n| (n.rule.as_str(), n.status)).collect();
+        assert_eq!(
+            by_rule,
+            vec![
+                ("finds", RuleStatus::Finding),
+                ("edge", RuleStatus::Finding),
+                ("scoped", RuleStatus::Scope)
+            ],
+            "{notes:?}"
+        );
+        assert_eq!(notes[0].severity, "warn");
+        assert_eq!(notes[0].message.as_deref(), Some("found"));
+        assert!(
+            notes[1].citation.is_some(),
+            "an edge finding cites its span"
+        );
+
+        assert!(
+            RuleSet::from_sources(&[("x.rhai", "const SCOPE = [\"[\"]; fn check(g) { [] }")])
+                .is_err(),
+            "a bad glob is a load error"
+        );
     }
 }

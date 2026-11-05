@@ -135,12 +135,20 @@ for now). This checkout implements Phase 0 of that plan.
   into the bodies that run and `affected` on an implementation climbs to the callers of
   its contract. Enum variants are `Variant` nodes; a path used as a value or in a
   pattern is a `REFERENCES` edge.
+- **Cards.** `surveyor card <name>...` is one screen per node, derived from the graph
+  when asked and never stored: identity, package, signature, the doc's first
+  paragraph, every declaring span, member count, and a count per relation (callers,
+  calls, tests, readers, writers, implementations, documents, ...) with up to three
+  sample citations each, plus the rules the node is subject to. The same card rides
+  inside `explain --json` and the MCP `get_node` answer, which is what a context pack
+  is built from.
 - **Rules.** Architectural intent as Rhai scripts over the graph: `surveyor check` runs
   every `*.rhai` under the profile's `[rules] dirs` (default `surveyor-rules/`), each a
   `fn check(g)` returning violations with citations, judged as `fail`, `warn` or a
-  `budget` to burn down. Surveyor's own rules live in `surveyor-rules/`: crate
-  layering, a pure model crate, Lance named only by the store, no crate cycles, and a
-  budget of public functions without tests.
+  `budget` to burn down. An optional `const SCOPE = ["crates/outbox/**"]` names the
+  files a rule governs, so a card lists the rule before it has a finding. Surveyor's
+  own rules live in `surveyor-rules/`: crate layering, a pure model crate, Lance named
+  only by the store, no crate cycles, and a budget of public functions without tests.
 - **Interfaces.** A CLI and an MCP server whose first tools keep the names graphicle and
   Graphify publish (`query_graph`, `get_node`, `get_neighbors`, `shortest_path`,
   `god_nodes`, `get_community`, `read_project_source`) plus `affected`, `find_nodes`,
@@ -260,6 +268,7 @@ Ask it questions:
 
 ```bash
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway explain Relay::drain
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway card Relay::drain cw_outbox.outbox
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway affected cw_catalog.asset --depth 3
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway path crates/api/src/main.rs::main cw_outbox.outbox
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway hubs

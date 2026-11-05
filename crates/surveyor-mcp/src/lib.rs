@@ -40,6 +40,9 @@ pub struct Surveyor {
     repo: RepoId,
     root: PathBuf,
     rules: RuleSet,
+    /// The rule run the cards cite, made on the first card and kept: the graph does
+    /// not change while the server runs. `None` when the rules did not run.
+    report: std::sync::OnceLock<Option<surveyor_rules::Report>>,
     #[expect(dead_code, reason = "the tool_handler macro reads the router field")]
     tool_router: ToolRouter<Self>,
 }
@@ -382,8 +385,24 @@ impl Surveyor {
             repo,
             root,
             rules,
+            report: std::sync::OnceLock::new(),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// A node's card with its rule notes.
+    fn card(&self, node: &Node) -> surveyor_graph::Card {
+        let mut card = self.graph.card(node);
+        let report = self.report.get_or_init(|| {
+            if self.rules.rules().is_empty() {
+                return None;
+            }
+            self.rules.run(Arc::clone(&self.graph)).ok()
+        });
+        if let Some(report) = report {
+            card.rules = surveyor_rules::notes_for(&self.rules, report, node);
+        }
+        card
     }
 
     fn resolve(&self, query: &str) -> Result<&Node, McpError> {
@@ -446,7 +465,9 @@ impl Surveyor {
         ))
     }
 
-    #[tool(description = "One node: kind, location, signature, documentation and attributes.")]
+    #[tool(
+        description = "One node's card: kind, location, signature, documentation, counts of callers, callees, tests, readers and writers with sample citations, the rules it is subject to, and its attributes."
+    )]
     async fn get_node(
         &self,
         Parameters(p): Parameters<NodeParams>,
@@ -455,11 +476,13 @@ impl Surveyor {
         #[derive(Serialize)]
         struct View<'a> {
             node: NodeView,
+            card: surveyor_graph::Card,
             attributes: &'a std::collections::BTreeMap<String, String>,
             content_hash: String,
         }
         json_result(&View {
             node: NodeView::of(node),
+            card: self.card(node),
             attributes: &node.attributes,
             content_hash: node.content_hash.to_hex(),
         })

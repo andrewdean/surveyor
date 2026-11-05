@@ -2,6 +2,9 @@
 // to the outbox table.
 const ID = "outbox-written-only-by-outbox";
 const DESC = "only code under crates/outbox/ writes cw_outbox.outbox";
+// The files the rule governs: a card for a node in them lists the rule even
+// before it has a finding.
+const SCOPE = ["crates/outbox/**", "migrations/**"];
 
 fn check(g) {
     let out = [];
