@@ -114,8 +114,10 @@ for now). This checkout implements Phase 0 of that plan.
   against a declaration whose text changed, files that reference a name whose set of
   declarations changed, files whose edges lost an endpoint, and files with an
   unresolved reference naming a declaration in a changed file. Everything else stays
-  as it was. A manifest change, or a change that would relink more than half the
-  files, falls back to a full index. The result equals a fresh index of the same tree.
+  as it was. A manifest change, a change to the effective `surveyor.toml` (globs,
+  dialect, rule directories; a comment edit does not count), a different build or
+  SCIP index, or a change that would relink more than half the files, falls back to a
+  full index. The result equals a fresh index of the same tree.
 - **Compute.** Neighbors by edge kind, reverse impact to a depth with the confidence
   product along each path (paths below `--min-confidence`, default 0.25, are dropped),
   shortest paths with a tier that says how certain the hops are, hubs ranked by how

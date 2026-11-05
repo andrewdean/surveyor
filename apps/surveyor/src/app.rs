@@ -21,12 +21,19 @@ use crate::render::{self, Output, Updated};
 const STORE_DIR: &str = ".surveyor";
 
 /// The engine that writes a dataset: crate version, query packs, extractor and linker
-/// revisions and the precise indexes it merges.
+/// revisions, the effective profile and the precise indexes it merges.
 ///
-/// A dataset written by a different engine, or from different SCIP indexes, is
-/// re-indexed in full on `update`, because facts from two engines or two indexes
-/// cannot be mixed file by file.
-fn engine_version(inputs: &[PathBuf]) -> String {
+/// A dataset written by a different engine, under a different profile or from
+/// different SCIP indexes, is re-indexed in full on `update`, because facts from two
+/// engines, two profiles or two indexes cannot be mixed file by file. The profile
+/// counts as parsed, so an edit to a comment in `surveyor.toml` changes nothing,
+/// while a changed glob, dialect or rule directory forces the full index it needs.
+///
+/// # Errors
+/// Returns an error when the profile cannot be serialized, which no profile that
+/// parsed can cause.
+fn engine_version(profile: &Profile, inputs: &[PathBuf]) -> anyhow::Result<String> {
+    let profile_json = serde_json::to_string(profile).context("serialize profile")?;
     let index_hashes: Vec<String> = inputs
         .iter()
         .map(|path| {
@@ -41,23 +48,33 @@ fn engine_version(inputs: &[PathBuf]) -> String {
             surveyor_extract::EXTRACT_REVISION.to_string(),
         ))
         .chain(std::iter::once(surveyor_link::LINK_REVISION.to_string()))
+        .chain(std::iter::once(profile_json))
         .chain(index_hashes)
         .collect::<Vec<_>>();
     let fingerprint = surveyor_model::ContentHash::of_parts(parts.iter().map(String::as_str));
-    format!(
+    Ok(format!(
         "{}+{}",
         env!("CARGO_PKG_VERSION"),
         &fingerprint.short()[..8]
-    )
+    ))
 }
 
-/// Opens the dataset at `path`, stamping new snapshots with this build's engine and
-/// the precise `inputs` it merges.
-async fn open_store(path: &Path, inputs: &[PathBuf]) -> anyhow::Result<LanceStore> {
-    Ok(LanceStore::open(path)
-        .await
-        .context("open dataset")?
-        .with_engine_version(engine_version(inputs)))
+/// Opens the dataset at `path` for writing, stamping new snapshots with this build's
+/// engine, the `profile` in force and the precise `inputs` it merges.
+async fn open_store(
+    path: &Path,
+    profile: &Profile,
+    inputs: &[PathBuf],
+) -> anyhow::Result<LanceStore> {
+    Ok(open_dataset(path)
+        .await?
+        .with_engine_version(engine_version(profile, inputs)?))
+}
+
+/// Opens the dataset at `path` for reading; a reader writes no snapshot, so it needs
+/// no engine stamp.
+async fn open_dataset(path: &Path) -> anyhow::Result<LanceStore> {
+    LanceStore::open(path).await.context("open dataset")
 }
 
 /// Surveyor: a code intelligence graph with provenance.
@@ -320,7 +337,7 @@ async fn open_graph(cli: &Cli, p: &Paths) -> anyhow::Result<(LanceStore, CodeGra
             p.store.display()
         );
     }
-    let store = open_store(&p.store, &[]).await?;
+    let store = open_dataset(&p.store).await?;
     let repo = if let Some(id) = &cli.repo_id {
         RepoId::new(id)
     } else {
@@ -405,7 +422,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Index(a) => run_index(&cli, &p, &a.scip, &out).await,
         Command::Update(a) => update(&cli, &p, a, &out).await,
         Command::Stats => {
-            let store = open_store(&p.store, &[]).await?;
+            let store = open_dataset(&p.store).await?;
             let stats = store.stats().await?;
             let per_repo = match cli.repo_id.as_deref().map(RepoId::new) {
                 Some(repo) => Some(store.graph_stats(&repo).await?),
@@ -713,7 +730,7 @@ async fn index(cli: &Cli, p: &Paths, scip: &[PathBuf]) -> anyhow::Result<Indexed
         "linked"
     );
 
-    let store = open_store(&p.store, &indexes).await?;
+    let store = open_store(&p.store, &profile, &indexes).await?;
     let snapshot = store
         .replace_repository(repo.id(), repo.commit(), repo.is_dirty(), &delta, &records)
         .await
@@ -729,8 +746,9 @@ async fn index(cli: &Cli, p: &Paths, scip: &[PathBuf]) -> anyhow::Result<Indexed
 
 /// Reindexes what changed since the dataset's recorded commit.
 ///
-/// Falls back to a full index when there is no index yet, when a manifest changed, or
-/// when the plan would relink more than `--full-threshold` of the files.
+/// Falls back to a full index when there is no index yet, when the engine, the profile
+/// or a precise index changed, when a manifest changed, or when the plan would relink
+/// more than `--full-threshold` of the files.
 async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow::Result<()> {
     let started = Instant::now();
     let profile = load_profile(cli, p)?;
@@ -740,13 +758,13 @@ async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow
         return full(cli, p, out, "no dataset", started).await;
     }
     let indexes = scip_indexes(&profile, &p.root, &[])?;
-    let store = open_store(&p.store, &indexes).await?;
+    let store = open_store(&p.store, &profile, &indexes).await?;
     let Some(snapshot) = store.snapshot(repo.id()).await? else {
         return full(cli, p, out, "repository not indexed", started).await;
     };
     if snapshot.surveyor_version != store.engine_version() {
         let reason = format!(
-            "the dataset was written by engine {}; this build and its indexes are {}",
+            "the dataset was written by engine {}; this build, its profile and its indexes are {}",
             snapshot.surveyor_version,
             store.engine_version()
         );

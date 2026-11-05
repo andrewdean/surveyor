@@ -16,9 +16,13 @@ fn fixture() -> PathBuf {
 }
 
 fn surveyor(store: &Path, args: &[&str]) -> Value {
+    surveyor_in(&fixture(), store, args)
+}
+
+fn surveyor_in(root: &Path, store: &Path, args: &[&str]) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_surveyor"))
         .arg("--repo-root")
-        .arg(fixture())
+        .arg(root)
         .arg("--store")
         .arg(store)
         .arg("--json")
@@ -541,14 +545,88 @@ fn an_external_profile_includes_hidden_directories() {
         .map(|r| r["node"]["id"].as_str().unwrap())
         .collect();
     assert_eq!(callers, vec!["rhai:.mise/tasks/ship.rhai::ship"]);
-    // The same tree without the include lists the hidden file as gone on update.
+    // The same tree without the include is a different profile: update re-indexes in
+    // full rather than carrying the hidden file over, and the task is gone again.
     let updated = surveyor(&store, &["update"]);
+    assert_eq!(updated["strategy"], "full", "{updated}");
     assert!(
-        updated["deleted"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|p| p == ".mise/tasks/rollout.rhai"),
+        updated["reason"]
+            .as_str()
+            .is_some_and(|r| r.contains("profile")),
         "{updated}"
     );
+    let output = Command::new(env!("CARGO_BIN_EXE_surveyor"))
+        .args(["--repo-root"])
+        .arg(fixture())
+        .arg("--store")
+        .arg(&store)
+        .args(["explain", "rollout"])
+        .output()
+        .expect("runs");
+    assert!(
+        !output.status.success(),
+        "hidden task is dropped once the profile stops including it"
+    );
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).expect("create directory");
+    for entry in std::fs::read_dir(from).expect("read directory") {
+        let entry = entry.expect("directory entry");
+        let target = to.join(entry.file_name());
+        if entry.file_type().expect("file type").is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).expect("copy file");
+        }
+    }
+}
+
+fn kind_count(stats: &Value, kind: &str) -> u64 {
+    stats["graph"]["nodes_by_kind"][kind].as_u64().unwrap_or(0)
+}
+
+#[test]
+fn a_profile_edit_reaches_the_dataset_on_update() {
+    // A copy of the fixture, so its committed profile can be edited in place.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("repo");
+    copy_tree(&fixture(), &root);
+    let store = dir.path().join("db");
+    let indexed = surveyor_in(&root, &store, &["index"]);
+    assert_eq!(indexed["nodes_by_kind"]["Design"], 1, "{indexed}");
+    assert_eq!(indexed["nodes_by_kind"]["Runbook"], 1, "{indexed}");
+
+    // A comment is not a profile change: update stays incremental.
+    let profile = root.join("surveyor.toml");
+    let original = std::fs::read_to_string(&profile).expect("profile");
+    std::fs::write(&profile, format!("# reviewed\n{original}")).expect("write");
+    let updated = surveyor_in(&root, &store, &["update"]);
+    assert_ne!(updated["strategy"], "full", "{updated}");
+
+    // Moving the runbook glob under `designs` is one: as with Causeway's
+    // `docs/adr/**` corrected to `docs/adrs/**`, the dataset must reclassify the
+    // documents, which only a full index does.
+    let edited = original
+        .replace(
+            r#"designs = ["docs/rfd/**/*.md"]"#,
+            r#"designs = ["docs/rfd/**/*.md", "docs/runbooks/**/*.md"]"#,
+        )
+        .replace(r#"runbooks = ["docs/runbooks/**/*.md"]"#, "runbooks = []");
+    assert_ne!(
+        edited, original,
+        "the fixture profile has the expected globs"
+    );
+    std::fs::write(&profile, edited).expect("write");
+    let updated = surveyor_in(&root, &store, &["update"]);
+    assert_eq!(updated["strategy"], "full", "{updated}");
+    assert!(
+        updated["reason"]
+            .as_str()
+            .is_some_and(|r| r.contains("profile")),
+        "{updated}"
+    );
+    let stats = surveyor_in(&root, &store, &["stats"]);
+    assert_eq!(kind_count(&stats, "Design"), 2, "{stats}");
+    assert_eq!(kind_count(&stats, "Runbook"), 0, "{stats}");
 }
