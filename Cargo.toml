@@ -52,8 +52,8 @@ gix     = { version = "0.90", default-features = false, features = ["basic", "ex
 
 # store
 lancedb      = { version = "0.41", default-features = false }
-arrow-array  = "58"
-arrow-schema = "58"
+arrow-array  = "60"
+arrow-schema = "60"
 futures      = "0.3"
 
 # compute
