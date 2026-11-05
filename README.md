@@ -151,7 +151,8 @@ a manifest and fell back to a full index; with all 62 SCIP indexes loaded, 1.1 t
 3.2 s and 4.0 s. After the twenty steps the dataset holds exactly the edges and gaps of
 a cold index of the same tree on the name tier, and exactly its gaps with indexes, the
 only edge differences being 27 calls among overloaded Rhai functions whose identifiers
-swap between runs (an open defect) and 0.04% of edges where the index, built at the
+swapped between runs (fixed since: declarations are numbered by position in the file)
+and 0.04% of edges where the index, built at the
 last commit, described a declaration that had not yet moved into place when a file was
 relinked. The same run answered twelve questions on Cairn with no profile and no
 adapter, eleven correctly and one as an honest refusal, and verified all 247 spans the

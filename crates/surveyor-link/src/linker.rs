@@ -504,9 +504,17 @@ impl<'a> Builder<'a> {
 
     fn declarations(&mut self) {
         for (si, set) in self.input.fact_sets.iter().enumerate() {
-            let refs: Vec<DeclRef> = set
+            // In file order, whatever order the extractor met them in: a declaration
+            // that shares its name with an earlier one in the file is numbered by its
+            // position, so an overload's `#2` names the same function in a cold index
+            // and in a relink of the file.
+            let mut decls: Vec<&DeclarationFact> = set
                 .declarations()
                 .filter(|d| !matches!(d.kind, NodeKind::Package | NodeKind::Workspace))
+                .collect();
+            decls.sort_by_key(|d| (d.span.bytes.start, d.span.bytes.end));
+            let refs: Vec<DeclRef> = decls
+                .into_iter()
                 .map(|d| DeclRef {
                     set: Some(si),
                     node: self.declaration_node(set, d),
@@ -2310,7 +2318,7 @@ fn same_family(a: &Language, b: &Language) -> bool {
 mod tests {
 
     use surveyor_extract::{
-        Extractors, ManifestExtractor, RhaiExtractor, SqlDialect, SqlExtractor,
+        Extraction, Extractors, ManifestExtractor, RhaiExtractor, SqlDialect, SqlExtractor,
         TreeSitterExtractor, extract_units,
     };
     use surveyor_model::{CommitId, DerivationKind, Fact, LineSpan, RepoId, SourceUnit};
@@ -2335,6 +2343,10 @@ mod tests {
             .with(ManifestExtractor::new());
         let extraction = extract_units(&extractors, units, SqlDialect::PostgreSql);
         assert!(extraction.errors.is_empty(), "{:?}", extraction.errors);
+        linked_from(extraction)
+    }
+
+    fn linked_from(extraction: Extraction) -> (GraphDelta, BTreeMap<String, usize>) {
         let files = extraction.units.iter().map(|u| FileEntry {
             path: u.path.clone(),
             language: u.language.clone(),
@@ -2360,6 +2372,42 @@ mod tests {
             .edges
             .iter()
             .find(|e| e.src.as_str() == src && &e.kind == kind && e.dst.as_str() == dst)
+    }
+
+    #[test]
+    fn overloads_are_numbered_by_position_whatever_order_they_arrive_in() {
+        // Rhai's AST lists functions in no particular order, so the extractor's order
+        // is not the file's; the linker must number them the same either way.
+        for reversed in [false, true] {
+            let units = vec![unit(
+                "tasks.rhai",
+                "fn resolve(c) {\n    resolve(c, #{})\n}\n\nfn resolve(c, opts) {\n    opts\n}\n",
+            )];
+            let extractors = Extractors::new().with(RhaiExtractor::new());
+            let mut extraction = extract_units(&extractors, &units, SqlDialect::PostgreSql);
+            assert!(extraction.errors.is_empty(), "{:?}", extraction.errors);
+            if reversed {
+                for set in &mut extraction.fact_sets {
+                    set.facts.reverse();
+                }
+            }
+            let (delta, _) = linked_from(extraction);
+            let starts_at = |id: &str| {
+                delta
+                    .nodes
+                    .iter()
+                    .find(|n| n.id.as_str() == id)
+                    .and_then(|n| match &n.location {
+                        Some(surveyor_model::Location::Span(at)) => Some(at.span.bytes.start),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| panic!("{id} missing"))
+            };
+            assert!(
+                starts_at("rhai:tasks.rhai::resolve") < starts_at("rhai:tasks.rhai::resolve#2"),
+                "the first overload in the file carries the bare identifier (reversed: {reversed})"
+            );
+        }
     }
 
     #[test]
