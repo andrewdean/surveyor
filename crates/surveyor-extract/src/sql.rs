@@ -7,16 +7,24 @@
 //! [`summarize_sql`] does the same for an SQL string literal found in code, which the
 //! pipeline turns into a `Query` declaration.
 //!
+//! A `DO $$ ... $$` block does not parse as SQL, but the statements it hands to
+//! `EXECUTE` as string literals do: `format($v$ CREATE VIEW %I.events_v1 AS ... $v$,
+//! schema)` declares a view whose schema is a run-time argument. Such statements are
+//! parsed with their `format()` specifiers replaced (see [`crate::template`]), cite
+//! the literal's own span, carry the attribute `dynamic = true`, and resolve a
+//! templated qualifier the way code does: by the bare name across schemas.
+//!
 //! Files that mix SQL with procedural blocks or client meta-commands parse partially:
-//! statements that fail are skipped and counted in the `sql.unparsed` attribute of the
-//! fact set's first declaration, never silently invented.
+//! statements that fail and yield nothing are skipped and counted in the
+//! `sql.unparsed` attribute of the fact set's first declaration, never silently
+//! invented.
 
 use std::collections::{BTreeMap, HashSet};
 use std::ops::ControlFlow;
 
 use sqlparser::ast::{
-    AlterTableOperation, FromTable, ObjectName, ObjectNamePart, Query, SchemaName, SetExpr,
-    Statement, TableFactor, TableObject, Visit, Visitor,
+    AlterTableOperation, FromTable, ObjectName, ObjectNamePart, ObjectType, Query, SchemaName,
+    SetExpr, Statement, TableFactor, TableObject, Visit, Visitor,
 };
 use sqlparser::dialect::{
     AnsiDialect, BigQueryDialect, Dialect, DuckDbDialect, GenericDialect, MySqlDialect,
@@ -29,9 +37,14 @@ use surveyor_model::{
 };
 
 use crate::profile::SqlDialect;
+use crate::template::{PLACEHOLDER, leads_with_sql, substitute_format, table_name};
 use crate::{ExtractError, Extractor};
 
 const EXTRACTOR_ID: &str = "sqlparser";
+
+/// How deep string literals are searched for statements: a `DO` body, and the
+/// literals inside it. A literal inside those is data, not a statement.
+const QUOTE_DEPTH: u8 = 2;
 
 fn dialect_for(dialect: SqlDialect) -> Box<dyn Dialect> {
     match dialect {
@@ -215,7 +228,22 @@ fn summarize_statement(stmt: &Statement) -> StatementSummary {
         Statement::CreateSchema { .. } => "CREATE SCHEMA",
         Statement::CreateView(view) if view.materialized => "CREATE MATERIALIZED VIEW",
         Statement::CreateView(_) => "CREATE VIEW",
-        Statement::Drop { .. } => "DROP",
+        // Dropping a relation changes the schema, so it is a write; dropping anything
+        // else (an index, a sequence) names no relation.
+        Statement::Drop {
+            object_type: ObjectType::Table | ObjectType::View | ObjectType::MaterializedView,
+            names,
+            ..
+        } => {
+            writes.extend(names.iter().map(object_name));
+            "DROP"
+        }
+        Statement::Drop { .. } => {
+            return StatementSummary {
+                kind: "DROP".to_owned(),
+                ..StatementSummary::default()
+            };
+        }
         Statement::Truncate { .. } => "TRUNCATE",
         Statement::Copy { .. } => "COPY",
         _ => "OTHER",
@@ -226,6 +254,26 @@ fn summarize_statement(stmt: &Statement) -> StatementSummary {
         reads,
         writes,
     }
+}
+
+/// How a statement names a relation once format placeholders are accounted for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Named {
+    /// `schema.table`, or `table` in the default schema.
+    Qualified { schema: String, table: String },
+    /// `%I.table`: the schema is a run-time argument of `format()`.
+    Templated { table: String },
+    /// `%I`: the relation itself is an argument; nothing to declare or resolve.
+    Unknown,
+}
+
+/// Where a statement came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StatementSource {
+    /// Written in the file as a statement of its own.
+    File,
+    /// Handed to `EXECUTE` as a string literal inside a procedural block.
+    Executed,
 }
 
 /// Extracts schema declarations and table references from `.sql` files.
@@ -258,6 +306,42 @@ impl SqlExtractor {
         }
     }
 
+    /// Reads a relation name as the statement wrote it, placeholders included.
+    fn name_relation(&self, name: &str) -> Named {
+        if !name.contains(PLACEHOLDER) {
+            let (schema, table) = self.split_table(name);
+            return Named::Qualified { schema, table };
+        }
+        match table_name(name) {
+            Some(bare) if !bare.contains('.') => Named::Templated { table: bare },
+            Some(qualified) => {
+                let (schema, table) = self.split_table(&qualified);
+                Named::Qualified { schema, table }
+            }
+            None => Named::Unknown,
+        }
+    }
+
+    /// Where a declared relation lives; a templated schema falls back to the default,
+    /// which is where bare names in the same file live too.
+    fn declared_in(&self, name: &str) -> Option<(String, String)> {
+        match self.name_relation(name) {
+            Named::Qualified { schema, table } => Some((schema, table)),
+            Named::Templated { table } => Some((self.default_schema.clone(), table)),
+            Named::Unknown => None,
+        }
+    }
+
+    /// The reference path for a relation a statement touches: `[schema, table]`, or
+    /// `[table]` when the schema is decided at run time.
+    fn relation_path(&self, name: &str) -> Option<Vec<String>> {
+        match self.name_relation(name) {
+            Named::Qualified { schema, table } => Some(vec![schema, table]),
+            Named::Templated { table } => Some(vec![table]),
+            Named::Unknown => None,
+        }
+    }
+
     /// Extracts facts from an SQL unit.
     ///
     /// # Errors
@@ -276,8 +360,17 @@ impl SqlExtractor {
                 Ok(statements) => {
                     let span = unit.text_span(statement_bytes(chunk));
                     for stmt in &statements {
-                        self.push_statement_facts(stmt, span, unit, &mut set);
+                        self.push_statement_facts(
+                            stmt,
+                            span,
+                            unit,
+                            &mut set,
+                            StatementSource::File,
+                        );
                     }
+                    unparsed
+                }
+                Err(_) if self.push_executed_facts(dialect.as_ref(), chunk, unit, &mut set) > 0 => {
                     unparsed
                 }
                 Err(_) => unparsed + 1,
@@ -292,6 +385,34 @@ impl SqlExtractor {
         Ok(set)
     }
 
+    /// Statements a procedural chunk hands to `EXECUTE` as string literals.
+    ///
+    /// Returns how many statements were recovered. Each literal that leads with a
+    /// statement keyword is parsed with its `format()` specifiers replaced; one that
+    /// still does not parse (`'CREATE VIEW v AS ' || body`) yields nothing.
+    fn push_executed_facts(
+        &self,
+        dialect: &dyn Dialect,
+        chunk: Chunk<'_>,
+        unit: &SourceUnit,
+        set: &mut FactSet,
+    ) -> usize {
+        quoted_statements(chunk.text)
+            .into_iter()
+            .filter_map(|quoted| {
+                let parsed = Parser::parse_sql(dialect, &substitute_format(&quoted.sql())).ok()?;
+                Some((quoted, parsed))
+            })
+            .map(|(quoted, statements)| {
+                let span = unit.text_span(trimmed_bytes(quoted.raw, chunk.offset + quoted.start));
+                for stmt in &statements {
+                    self.push_statement_facts(stmt, span, unit, set, StatementSource::Executed);
+                }
+                statements.len()
+            })
+            .sum()
+    }
+
     #[expect(clippy::too_many_lines, reason = "one match over the statement kinds")]
     fn push_statement_facts(
         &self,
@@ -299,9 +420,17 @@ impl SqlExtractor {
         span: TextSpan,
         unit: &SourceUnit,
         set: &mut FactSet,
+        source: StatementSource,
     ) {
         let decl =
             |kind: NodeKind, name: String, scope: Vec<String>, attrs: BTreeMap<String, String>| {
+                let attributes = attrs
+                    .into_iter()
+                    .chain(
+                        (source == StatementSource::Executed)
+                            .then(|| ("dynamic".to_owned(), "true".to_owned())),
+                    )
+                    .collect();
                 Fact::Declaration(DeclarationFact {
                     kind,
                     name,
@@ -311,15 +440,15 @@ impl SqlExtractor {
                     signature: Some(first_line(unit.slice(span.bytes))),
                     doc: None,
                     rule: RuleId::new("sql.statement"),
-                    attributes: attrs,
+                    attributes,
                     hash: unit.hash_of(span.bytes),
                 })
             };
-        let reference = |role: ReferenceRole, schema: String, table: String, rule: &str| {
+        let reference = |role: ReferenceRole, path: Vec<String>, rule: &str| {
             Fact::Reference(ReferenceFact {
                 role,
-                name: table.clone(),
-                path: vec![schema, table],
+                name: path.last().cloned().unwrap_or_default(),
+                path,
                 span,
                 scope: Vec::new(),
                 rule: RuleId::new(rule),
@@ -338,7 +467,9 @@ impl SqlExtractor {
                     .push(decl(NodeKind::Schema, name, Vec::new(), BTreeMap::new()));
             }
             Statement::CreateTable(create) => {
-                let (schema, table) = self.split_table(&object_name(&create.name));
+                let Some((schema, table)) = self.declared_in(&object_name(&create.name)) else {
+                    return;
+                };
                 set.facts.push(decl(
                     NodeKind::Table,
                     table.clone(),
@@ -370,7 +501,12 @@ impl SqlExtractor {
                 );
             }
             Statement::AlterTable(alter) => {
-                let (schema, table) = self.split_table(&object_name(&alter.name));
+                let name = object_name(&alter.name);
+                let (Some((schema, table)), Some(path)) =
+                    (self.declared_in(&name), self.relation_path(&name))
+                else {
+                    return;
+                };
                 set.facts
                     .extend(alter.operations.iter().filter_map(|op| match op {
                         AlterTableOperation::AddColumn { column_def, .. } => {
@@ -387,16 +523,14 @@ impl SqlExtractor {
                         }
                         _ => None,
                     }));
-                set.facts.push(reference(
-                    ReferenceRole::Write,
-                    schema,
-                    table,
-                    "sql.alter-table",
-                ));
+                set.facts
+                    .push(reference(ReferenceRole::Write, path, "sql.alter-table"));
             }
             Statement::CreateView(view) => {
                 let own_name = object_name(&view.name);
-                let (schema, name) = self.split_table(&own_name);
+                let Some((schema, name)) = self.declared_in(&own_name) else {
+                    return;
+                };
                 let attrs =
                     BTreeMap::from([("materialized".to_owned(), view.materialized.to_string())]);
                 set.facts
@@ -408,14 +542,15 @@ impl SqlExtractor {
                         .reads
                         .into_iter()
                         .filter(|table| *table != own_name)
-                        .map(|table| self.split_table(&table))
-                        .map(|(schema, table)| {
-                            reference(ReferenceRole::Read, schema, table, "sql.view")
-                        }),
+                        .filter_map(|table| self.relation_path(&table))
+                        .map(|path| reference(ReferenceRole::Read, path, "sql.view")),
                 );
             }
             Statement::CreateIndex(index) => {
-                let (schema, table) = self.split_table(&object_name(&index.table_name));
+                let Some((schema, table)) = self.declared_in(&object_name(&index.table_name))
+                else {
+                    return;
+                };
                 let name = index
                     .name
                     .as_ref()
@@ -443,10 +578,8 @@ impl SqlExtractor {
                     .extend(touched.into_iter().flat_map(|(role, names)| {
                         names
                             .into_iter()
-                            .map(|table| self.split_table(&table))
-                            .map(move |(schema, table)| {
-                                reference(role.clone(), schema, table, "sql.statement")
-                            })
+                            .filter_map(|table| self.relation_path(&table))
+                            .map(move |path| reference(role.clone(), path, "sql.statement"))
                             .collect::<Vec<_>>()
                     }));
             }
@@ -487,36 +620,53 @@ struct Chunk<'a> {
 
 /// Where the statement splitter is inside the text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Lex {
+enum Lex<'a> {
     Code,
     SingleQuoted,
     DoubleQuoted,
-    DollarQuoted,
+    /// Inside `$tag$ ... $tag$`; the tag keeps both dollar signs.
+    DollarQuoted(&'a [u8]),
     LineComment,
     BlockComment,
 }
 
-impl Lex {
-    /// The state after reading `c` with `next` following it, and how many bytes to skip.
-    fn step(self, c: u8, next: Option<u8>) -> (Self, usize) {
+impl<'a> Lex<'a> {
+    /// The state after reading the start of `rest`, and how many bytes that consumed.
+    fn step(self, rest: &'a [u8]) -> (Self, usize) {
+        let (c, next) = (rest[0], rest.get(1).copied());
         match (self, c, next) {
             (Self::LineComment, b'\n', _)
             | (Self::SingleQuoted, b'\'', _)
-            | (Self::DoubleQuoted, b'"', _) => (Self::Code, 0),
-            (Self::BlockComment, b'*', Some(b'/')) | (Self::DollarQuoted, b'$', Some(b'$')) => {
-                (Self::Code, 1)
-            }
-            (Self::Code, b'-', Some(b'-')) => (Self::LineComment, 0),
-            (Self::Code, b'/', Some(b'*')) => (Self::BlockComment, 0),
-            (Self::Code, b'\'', _) => (Self::SingleQuoted, 0),
-            (Self::Code, b'"', _) => (Self::DoubleQuoted, 0),
-            (Self::Code, b'$', Some(b'$')) => (Self::DollarQuoted, 1),
-            (state, _, _) => (state, 0),
+            | (Self::DoubleQuoted, b'"', _) => (Self::Code, 1),
+            (Self::BlockComment, b'*', Some(b'/')) => (Self::Code, 2),
+            (Self::DollarQuoted(tag), b'$', _) if rest.starts_with(tag) => (Self::Code, tag.len()),
+            (Self::Code, b'-', Some(b'-')) => (Self::LineComment, 2),
+            (Self::Code, b'/', Some(b'*')) => (Self::BlockComment, 2),
+            (Self::Code, b'\'', _) => (Self::SingleQuoted, 1),
+            (Self::Code, b'"', _) => (Self::DoubleQuoted, 1),
+            (Self::Code, b'$', _) => match dollar_tag(rest) {
+                Some(tag) => (Self::DollarQuoted(tag), tag.len()),
+                None => (Self::Code, 1),
+            },
+            (state, _, _) => (state, 1),
         }
     }
 }
 
-/// Splits a file into statements on `;` outside quotes, comments and `$$` bodies.
+/// The `$tag$` at the start of `rest`: `$$` or `$name$` where the name starts with a
+/// letter or underscore, so a `$1` parameter is never a tag.
+fn dollar_tag(rest: &[u8]) -> Option<&[u8]> {
+    let name_len = rest
+        .get(1..)?
+        .iter()
+        .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
+        .count();
+    let tag = rest.get(..name_len + 2)?;
+    let named_well = name_len == 0 || !rest[1].is_ascii_digit();
+    (tag[name_len + 1] == b'$' && named_well).then_some(tag)
+}
+
+/// Splits a file into statements on `;` outside quotes, comments and `$tag$` bodies.
 fn split_statements(text: &str) -> Vec<Chunk<'_>> {
     let bytes = text.as_bytes();
     let mut chunks = Vec::new();
@@ -524,8 +674,7 @@ fn split_statements(text: &str) -> Vec<Chunk<'_>> {
     let mut state = Lex::Code;
     let mut i = 0usize;
     while i < bytes.len() {
-        let (c, next) = (bytes[i], bytes.get(i + 1).copied());
-        if state == Lex::Code && c == b';' {
+        if state == Lex::Code && bytes[i] == b';' {
             let piece = &text[start..=i];
             if !piece.trim().is_empty() {
                 chunks.push(Chunk {
@@ -537,9 +686,9 @@ fn split_statements(text: &str) -> Vec<Chunk<'_>> {
             i += 1;
             continue;
         }
-        let (next_state, skip) = state.step(c, next);
+        let (next_state, consumed) = state.step(&bytes[i..]);
         state = next_state;
-        i += 1 + skip;
+        i += consumed;
     }
     let tail = &text[start..];
     if !tail.trim().is_empty() {
@@ -551,11 +700,88 @@ fn split_statements(text: &str) -> Vec<Chunk<'_>> {
     chunks
 }
 
+/// A string literal inside procedural SQL: its raw text and where it starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Quoted<'a> {
+    raw: &'a str,
+    /// Byte offset of `raw` in the text that was scanned.
+    start: usize,
+    /// Single-quoted, so `''` in `raw` stands for one quote.
+    single: bool,
+}
+
+impl Quoted<'_> {
+    fn sql(&self) -> String {
+        if self.single {
+            self.raw.replace("''", "'")
+        } else {
+            self.raw.to_owned()
+        }
+    }
+}
+
+/// String literals in `text` that lead with a statement keyword, in text order.
+///
+/// Dollar-quoted bodies are searched again up to [`QUOTE_DEPTH`], so a
+/// `format($view$ CREATE VIEW ... $view$, schema)` inside a `DO $$ ... $$` block is
+/// found at its own position.
+fn quoted_statements(text: &str) -> Vec<Quoted<'_>> {
+    let mut found = Vec::new();
+    collect_quoted(text, 0, 0, &mut found);
+    found.sort_by_key(|q| q.start);
+    found
+        .into_iter()
+        .filter(|q| leads_with_sql(q.raw))
+        .collect()
+}
+
+fn collect_quoted<'a>(text: &'a str, base: usize, depth: u8, out: &mut Vec<Quoted<'a>>) {
+    let bytes = text.as_bytes();
+    let mut state = Lex::Code;
+    let mut open = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let (next, consumed) = state.step(&bytes[i..]);
+        match (state, next) {
+            (Lex::Code, Lex::SingleQuoted | Lex::DollarQuoted(_)) => open = i + consumed,
+            // `''` is an escaped quote inside the literal, not its end.
+            (Lex::SingleQuoted, Lex::Code) if bytes.get(i + 1) == Some(&b'\'') => {
+                i += 2;
+                continue;
+            }
+            (Lex::SingleQuoted, Lex::Code) => out.push(Quoted {
+                raw: &text[open..i],
+                start: base + open,
+                single: true,
+            }),
+            (Lex::DollarQuoted(_), Lex::Code) => {
+                let body = &text[open..i];
+                out.push(Quoted {
+                    raw: body,
+                    start: base + open,
+                    single: false,
+                });
+                if depth + 1 < QUOTE_DEPTH {
+                    collect_quoted(body, base + open, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+        state = next;
+        i += consumed;
+    }
+}
+
 /// The byte span of a statement's chunk, trimmed of surrounding whitespace.
 fn statement_bytes(chunk: Chunk<'_>) -> ByteSpan {
-    let leading = chunk.text.len() - chunk.text.trim_start().len();
-    let start = chunk.offset + leading;
-    let end = (chunk.offset + chunk.text.trim_end().len()).max(start);
+    trimmed_bytes(chunk.text, chunk.offset)
+}
+
+/// The byte span of `text`, which starts at `offset`, trimmed of surrounding whitespace.
+fn trimmed_bytes(text: &str, offset: usize) -> ByteSpan {
+    let leading = text.len() - text.trim_start().len();
+    let start = offset + leading;
+    let end = (offset + text.trim_end().len()).max(start);
     ByteSpan::new(start as u64, end as u64)
 }
 
@@ -715,6 +941,142 @@ mod tests {
         )
         .map(|s| s.kind);
         assert_eq!(kind.as_deref(), Some("CREATE MATERIALIZED VIEW"));
+    }
+
+    #[test]
+    fn statements_executed_from_a_do_block_are_declared_at_their_literal() {
+        let sql = "CREATE TABLE registry (id uuid);\n\
+                   DO $$\n\
+                   DECLARE\n    pure_schema TEXT := regexp_replace(current_schema(), '_pure$', '_catalog');\n\
+                   BEGIN\n\
+                   \x20   EXECUTE format('DROP VIEW IF EXISTS %I.pure_class_concepts_v1', pure_schema);\n\
+                   \x20   EXECUTE format($view$\n\
+                   \x20       CREATE OR REPLACE VIEW %I.pure_class_concepts_v1 AS\n\
+                   \x20       SELECT cm.class_element_id, 'it''s' AS note\n\
+                   \x20       FROM %I.pure_class_mappings AS cm\n\
+                   \x20       JOIN %I.concept_dataset_map AS m ON m.entity_id = cm.dataset_entity_id\n\
+                   \x20       JOIN cw.registry r ON r.id = m.entity_id\n\
+                   \x20   $view$, pure_schema, pure_schema, catalog_schema);\n\
+                   \x20   EXECUTE format($table$ CREATE TABLE %I.audit (id uuid, note text) $table$, pure_schema);\n\
+                   \x20   EXECUTE format($q$ INSERT INTO %I SELECT 1 $q$, some_table);\n\
+                   \x20   EXECUTE 'CREATE OR REPLACE VIEW export_v1 AS ' || view_sql;\n\
+                   END $$;\n";
+        let u = unit(sql);
+        let facts = SqlExtractor::new(SqlDialect::PostgreSql, "public")
+            .extract(&u)
+            .expect("extracts");
+        let decls: Vec<_> = facts.declarations().collect();
+        let view = decls
+            .iter()
+            .find(|d| d.kind == NodeKind::View)
+            .expect("the view the block creates");
+        assert_eq!(view.name, "pure_class_concepts_v1");
+        assert_eq!(
+            view.scope,
+            vec!["public".to_owned()],
+            "a templated schema falls back to the default"
+        );
+        assert_eq!(
+            view.attributes.get("dynamic").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            view.signature.as_deref(),
+            Some("CREATE OR REPLACE VIEW %I.pure_class_concepts_v1 AS")
+        );
+        assert!(
+            u.slice(view.span.bytes)
+                .starts_with("CREATE OR REPLACE VIEW %I.pure")
+        );
+        assert!(u.slice(view.span.bytes).ends_with("r.id = m.entity_id"));
+        let table = decls
+            .iter()
+            .find(|d| d.kind == NodeKind::Table && d.name == "audit")
+            .expect("the table the block creates");
+        assert_eq!(
+            table.attributes.get("dynamic").map(String::as_str),
+            Some("true")
+        );
+        assert!(
+            decls
+                .iter()
+                .any(|d| d.kind == NodeKind::Column && d.name == "note")
+        );
+        assert!(
+            decls.iter().all(|d| d.name != "export_v1"),
+            "a literal that is only the head of a statement declares nothing"
+        );
+        assert_eq!(
+            decls[0].attributes.get("sql.unparsed"),
+            None,
+            "a block that yielded statements is not counted as unparsed"
+        );
+        let refs: Vec<(ReferenceRole, Vec<String>)> = facts
+            .references()
+            .map(|r| (r.role.clone(), r.path.clone()))
+            .collect();
+        let bare = |t: &str| vec![t.to_owned()];
+        assert_eq!(
+            refs,
+            vec![
+                (ReferenceRole::Write, bare("pure_class_concepts_v1")),
+                (ReferenceRole::Read, bare("pure_class_mappings")),
+                (ReferenceRole::Read, bare("concept_dataset_map")),
+                (
+                    ReferenceRole::Read,
+                    vec!["cw".to_owned(), "registry".to_owned()]
+                ),
+            ],
+            "a templated qualifier leaves the bare name to the linker; a templated table names nothing"
+        );
+    }
+
+    #[test]
+    fn tagged_dollar_quotes_hold_a_block_together() {
+        let sql = "DO $do$ BEGIN EXECUTE format($v$ CREATE VIEW %1$I.e_v1 AS SELECT a FROM %2$I.e; $v$, g, c); END $do$;\nSELECT 1 FROM t2;";
+        let chunks = split_statements(sql);
+        assert_eq!(chunks.len(), 2, "{chunks:?}");
+        assert!(chunks[0].text.ends_with("END $do$;"));
+        let facts = SqlExtractor::new(SqlDialect::PostgreSql, "public")
+            .extract(&unit(sql))
+            .expect("extracts");
+        let view = facts
+            .declarations()
+            .find(|d| d.kind == NodeKind::View)
+            .expect("view");
+        assert_eq!(view.name, "e_v1");
+        let reads: Vec<Vec<String>> = facts
+            .references()
+            .filter(|r| r.role == ReferenceRole::Read)
+            .map(|r| r.path.clone())
+            .collect();
+        assert_eq!(
+            reads,
+            vec![
+                vec!["e".to_owned()],
+                vec!["public".to_owned(), "t2".to_owned()]
+            ]
+        );
+        assert_eq!(dollar_tag(b"$1, $2"), None);
+        assert_eq!(dollar_tag(b"$$x"), Some(&b"$$"[..]));
+        assert_eq!(dollar_tag(b"$fn_1$ body"), Some(&b"$fn_1$"[..]));
+        assert_eq!(dollar_tag(b"$I.name"), None);
+    }
+
+    #[test]
+    fn dropping_a_relation_is_a_write() {
+        let dropped =
+            summarize_sql("DROP TABLE IF EXISTS a, cw.b", SqlDialect::PostgreSql).expect("parses");
+        assert_eq!(dropped.kind, "DROP");
+        assert_eq!(dropped.writes, vec!["a", "cw.b"]);
+        assert!(dropped.reads.is_empty());
+        let view = summarize_sql("DROP VIEW v", SqlDialect::PostgreSql).expect("parses");
+        assert_eq!(view.writes, vec!["v"]);
+        let index = summarize_sql("DROP INDEX i", SqlDialect::PostgreSql).expect("parses");
+        assert!(
+            index.reads.is_empty() && index.writes.is_empty(),
+            "{index:?}"
+        );
     }
 
     #[test]

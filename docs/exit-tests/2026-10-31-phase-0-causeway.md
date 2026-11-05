@@ -195,6 +195,26 @@ Ranked by how much they would mislead an agent:
   `effective_column_governance_v1`, nine sites), `pg_catalog` and `information_schema`
   relations, and tables that exist only in test fixtures and documentation examples
   (`parties`, `titles`, `person_profile`, `concept_dataset_edges`, `identity_writes`).
+  **Statements inside `DO` blocks read 2026-11-05.** The SQL extractor now reads the
+  string literals a `DO $$ ... $$` block hands to `EXECUTE`, parses each one that leads
+  with a statement keyword with its `format()` specifiers replaced, and declares what it
+  creates in the default schema with `dynamic = true`, citing the literal; a `%I.table`
+  it reads resolves by bare name, as `{schema}.table` does in code, and the splitter
+  keeps `$do$`-tagged bodies whole. On Causeway the five views above appear (25 views in
+  all), three tables the people migrations create through `format($table$ ...)` appear
+  with them (`parties`, `titles`, `person_profile` were never fixture-only), and
+  the `no-table` gaps fall from 105 to 73. `explain pure_class_concepts_v1` cites
+  `component/semantic/pure/migrations/0002_pure_relations_and_glossary_links.sql:37-46`,
+  reads `pure_class_mappings`, `pure_elements` and `concept_dataset_map`, and is read by
+  `load_elements`, `owning_class_mapping` and `pure_semantic_resources`;
+  `effective_dataset_governance_v1` is recreated by three migrations, merged into one
+  node read by `get_effective_governance`. `DROP TABLE` and `DROP VIEW` are now writes
+  (a `MIGRATES` edge from the migration) rather than reads. The 73 that remain are
+  `pg_catalog` and `information_schema` relations, tables that exist only in fixtures and
+  documentation (`concept_dataset_edges`, `identity_writes`, `cities`, `orders`), and
+  one `dataset_column_term_legacy`, which migration 0038 produces with `ALTER TABLE ...
+  RENAME TO` and 0039 drops: the extractor does not follow renames yet.
+
 
 ## What this does not show
 

@@ -282,6 +282,25 @@ fn index_and_answer_phase_zero_questions() {
             .any(|r| r["node"]["id"] == "file:migrations/0003_outbox_views.sql")
     );
 
+    // explain a view created by EXECUTE inside a DO block: its schema is a format()
+    // argument, so it lives in the default schema and reads `outbox` by bare name.
+    let backlog = surveyor(&store, &["explain", "outbox_backlog_v1"]);
+    assert_eq!(backlog["node"]["id"], "sql:public.outbox_backlog_v1");
+    assert_eq!(backlog["node"]["kind"], "View");
+    let backlog_reads = relations(&backlog, "outgoing", "READS");
+    assert_eq!(backlog_reads.len(), 1, "{backlog}");
+    assert_eq!(backlog_reads[0]["node"]["id"], "sql:cw_outbox.outbox");
+    assert!(
+        cited_text(backlog_reads[0]["evidence"][0].as_str().unwrap())
+            .contains("CREATE OR REPLACE VIEW %I.outbox_backlog_v1")
+    );
+    assert!(
+        relations(&backlog, "incoming", "READS")
+            .iter()
+            .any(|r| r["node"]["id"] == "python:svc/db.py::Reports::backlog"),
+        "{backlog}"
+    );
+
     // affected: changing the outbox table reaches the store, the relay, the API binary and the test.
     let affected = surveyor(&store, &["affected", "cw_outbox.outbox", "--depth", "4"]);
     let ids: Vec<&str> = affected["affected"]
@@ -300,6 +319,9 @@ fn index_and_answer_phase_zero_questions() {
         // `report_backlog` reads the table through the `pending_outbox` view.
         "sql:cw_outbox.pending_outbox",
         "rust:crates/api/src/main.rs::report_backlog",
+        // `Reports.backlog` reads it through the view a DO block creates.
+        "sql:public.outbox_backlog_v1",
+        "python:svc/db.py::Reports::backlog",
     ] {
         assert!(ids.contains(&expected), "{expected} missing from {ids:?}");
     }

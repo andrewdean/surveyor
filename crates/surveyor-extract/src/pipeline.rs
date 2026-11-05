@@ -16,6 +16,7 @@ use surveyor_model::{
 
 use crate::profile::SqlDialect;
 use crate::sql::{StatementSummary, summarize_sql};
+use crate::template::{SQL_LEADS, is_templated, substitute_placeholders, table_name};
 use crate::{
     ExtractError, Extractors, ManifestExtractor, MarkdownExtractor, MiseExtractor, Profile,
     Repository, RhaiExtractor, ScipExtractor, SqlExtractor, TreeSitterExtractor,
@@ -226,15 +227,6 @@ pub fn line_count(content: &[u8]) -> u64 {
     (segments - usize::from(content.ends_with(b"\n"))) as u64
 }
 
-/// Statement kinds a tagged literal must start with to count as SQL.
-const SQL_LEADS: &[&str] = &[
-    "SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "CREATE", "ALTER", "DROP", "TRUNCATE", "MERGE",
-    "COPY", "LOCK", "SET", "BEGIN", "COMMIT", "EXPLAIN", "REFRESH", "VALUES",
-];
-
-/// Identifier that stands in for a `{placeholder}` while parsing templated SQL.
-const PLACEHOLDER: &str = "__p";
-
 /// Replaces each `Sql` literal that parses with a `Query` declaration plus table
 /// references; every other fact passes through unchanged.
 fn enrich_sql_literals(facts: Vec<Fact>, dialect: SqlDialect) -> Vec<Fact> {
@@ -283,28 +275,6 @@ fn parse_literal(lit: &LiteralFact, dialect: SqlDialect) -> Option<StatementSumm
             .unique()
             .collect(),
     })
-}
-
-/// The table a parsed name refers to once its placeholders are accounted for.
-///
-/// A placeholder in a qualifier (`{schema}.events`) leaves the table name itself
-/// known, so the qualifier is dropped and the linker resolves the bare name across
-/// schemas. A placeholder in the table position (`{table}`, `{prefix}_events`) leaves
-/// nothing to resolve, so the name is `None`.
-fn table_name(parsed: &str) -> Option<String> {
-    let parts: Vec<&str> = parsed
-        .split('.')
-        .filter(|part| !part.contains(PLACEHOLDER))
-        .collect();
-    let known_table = parsed
-        .rsplit('.')
-        .next()
-        .is_some_and(|table| !table.contains(PLACEHOLDER));
-    (known_table && !parts.is_empty()).then(|| parts.join("."))
-}
-
-fn is_templated(sql: &str) -> bool {
-    sql.contains('{') && sql.contains('}')
 }
 
 /// The `Query` declaration and its table references for one parsed literal.
@@ -358,27 +328,6 @@ fn query_facts(lit: &LiteralFact, summary: &StatementSummary) -> Vec<Fact> {
         })
     });
     std::iter::once(declaration).chain(references).collect()
-}
-
-/// Replaces `{...}` interpolation sites with a neutral identifier.
-fn substitute_placeholders(sql: &str) -> String {
-    let (out, _) = sql.chars().fold(
-        (String::with_capacity(sql.len()), 0usize),
-        |(mut out, depth), c| match (c, depth) {
-            ('{', 0) => {
-                out.push_str(PLACEHOLDER);
-                (out, 1)
-            }
-            ('{', d) => (out, d + 1),
-            ('}', d) if d > 0 => (out, d - 1),
-            (c, 0) => {
-                out.push(c);
-                (out, 0)
-            }
-            (_, d) => (out, d),
-        },
-    );
-    out
 }
 
 fn normalize_sql(sql: &str) -> String {

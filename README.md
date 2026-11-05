@@ -89,6 +89,11 @@ for now). This checkout implements Phase 0 of that plan.
   `CREATE [OR REPLACE] VIEW` or `CREATE MATERIALIZED VIEW` declares a `View` node in
   its schema with a `READS` edge to each table its query names, so code that selects
   from the view links to the view and `affected <table>` reaches that code through it.
+  A statement a `DO $$ ... $$` block hands to `EXECUTE` as a string literal
+  (`format($v$ CREATE VIEW %I.events_v1 AS ... $v$, schema)`) is read too, with its
+  `format()` specifiers standing in for a placeholder: the relation it creates is
+  declared in the default schema with `dynamic = true` and cites the literal, and a
+  `%I.table` it reads resolves by bare name like a `{schema}.table` in code.
 - **Tasks and the commands that run them.** A mise task `RUNS` the script its `run =`
   names, the task a `mise run <task>` entry names and the `main` of the cargo package a
   `cargo run -p <crate>` entry (or a bare binary name) names; a file task runs its own
