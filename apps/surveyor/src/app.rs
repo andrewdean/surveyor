@@ -151,11 +151,37 @@ pub struct SearchArgs {
 
 #[derive(Debug, Args)]
 pub struct EvalArgs {
-    /// A questions file: `[[question]]` entries with `ask`, `expect` and `note`.
+    /// A questions file (`[[question]]` entries with `ask`, `expect` and `note`) or a
+    /// tasks file (`[[task]]` entries with `ask`, `expect`, `files` and `budget`).
     pub questions: PathBuf,
     /// How many starting nodes count: recall and hit rate are measured at this cut.
     #[arg(short = 'k', long, default_value_t = 5)]
     pub limit: usize,
+    /// For tasks: a directory holding one store per base commit, named by the first
+    /// eight characters of the task's `base`; a task without one uses `--store`.
+    #[arg(long)]
+    pub stores: Option<PathBuf>,
+    /// For tasks: score only the task with this id.
+    #[arg(long)]
+    pub only: Option<String>,
+    /// For tasks: what answers them.
+    #[arg(long, value_enum, default_value_t = AnswerSource::QueryGraph)]
+    pub source: AnswerSource,
+}
+
+/// What produces the answer a task is scored on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum AnswerSource {
+    /// Today's `query_graph` answer to the task text, as the MCP tool returns it.
+    QueryGraph,
+}
+
+impl AnswerSource {
+    fn name(self) -> &'static str {
+        match self {
+            Self::QueryGraph => "query-graph",
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -331,13 +357,23 @@ fn paths(cli: &Cli) -> anyhow::Result<Paths> {
 }
 
 async fn open_graph(cli: &Cli, p: &Paths) -> anyhow::Result<(LanceStore, CodeGraph, RepoId)> {
-    if !p.store.exists() {
+    open_graph_at(cli, p, &p.store).await
+}
+
+/// Opens the dataset at `store` (not necessarily the one `--store` names) and loads
+/// its graph.
+async fn open_graph_at(
+    cli: &Cli,
+    p: &Paths,
+    store: &Path,
+) -> anyhow::Result<(LanceStore, CodeGraph, RepoId)> {
+    if !store.exists() {
         bail!(
             "no dataset at {}; run `surveyor index` first",
-            p.store.display()
+            store.display()
         );
     }
-    let store = open_dataset(&p.store).await?;
+    let store = open_dataset(store).await?;
     let repo = if let Some(id) = &cli.repo_id {
         RepoId::new(id)
     } else {
@@ -540,39 +576,48 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             }
             Ok(())
         }
-        Command::Eval(a) => {
-            let (_, graph, _) = open_graph(&cli, &p).await?;
-            let questions = eval::load(&a.questions)?;
-            let started = Instant::now();
-            let index = surveyor_search::TextIndex::build(graph.nodes());
-            tracing::info!(
-                documents = index.len(),
-                ms = started.elapsed().as_millis() as u64,
-                "text index built"
-            );
-            let ids = |nodes: Vec<&surveyor_model::Node>| -> Vec<String> {
-                nodes.iter().map(|n| n.id.to_string()).collect()
-            };
-            let seeds =
-                |ask: &str, limit: usize| surveyor_search::seeds(&graph, &index, ask, limit);
-            let scored = questions
-                .question
-                .iter()
-                .map(|q| {
-                    let top = ids(seeds(&q.ask, a.limit.max(1)));
-                    let deep = ids(seeds(&q.ask, eval::DEEP_RANK));
-                    eval::score(q, &top, &deep, |id| {
-                        graph.node(&surveyor_model::NodeId::new(id)).is_some()
+        Command::Eval(a) => match eval::load(&a.questions)? {
+            eval::Suite::Questions(questions) => {
+                let (_, graph, _) = open_graph(&cli, &p).await?;
+                let started = Instant::now();
+                let index = surveyor_search::TextIndex::build(graph.nodes());
+                tracing::info!(
+                    documents = index.len(),
+                    ms = started.elapsed().as_millis() as u64,
+                    "text index built"
+                );
+                let ids = |nodes: Vec<&surveyor_model::Node>| -> Vec<String> {
+                    nodes.iter().map(|n| n.id.to_string()).collect()
+                };
+                let seeds =
+                    |ask: &str, limit: usize| surveyor_search::seeds(&graph, &index, ask, limit);
+                let scored = questions
+                    .question
+                    .iter()
+                    .map(|q| {
+                        let top = ids(seeds(&q.ask, a.limit.max(1)));
+                        let deep = ids(seeds(&q.ask, eval::DEEP_RANK));
+                        eval::score(q, &top, &deep, |id| {
+                            graph.node(&surveyor_model::NodeId::new(id)).is_some()
+                        })
                     })
-                })
-                .collect();
-            let summary = eval::summarize(scored, a.limit.max(1));
-            match out {
-                Output::Json => render::print_json(&summary),
-                Output::Text => eval::print_text(&summary, &a.questions),
+                    .collect();
+                let summary = eval::summarize(scored, a.limit.max(1));
+                match out {
+                    Output::Json => render::print_json(&summary),
+                    Output::Text => eval::print_text(&summary, &a.questions),
+                }
+                Ok(())
             }
-            Ok(())
-        }
+            eval::Suite::Tasks(tasks) => {
+                let summary = eval_tasks(&cli, &p, a, &tasks).await?;
+                match out {
+                    Output::Json => render::print_json(&summary),
+                    Output::Text => eval::print_tasks_text(&summary, &a.questions),
+                }
+                Ok(())
+            }
+        },
         Command::Search(a) => {
             let (_, graph, _) = open_graph(&cli, &p).await?;
             let index = surveyor_search::TextIndex::build(graph.nodes());
@@ -590,6 +635,72 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 .context("mcp server")?;
             Ok(())
         }
+    }
+}
+
+/// Scores every task of a tasks file: each against the store of its base commit
+/// when `--stores` is given, else against the one dataset.
+async fn eval_tasks(
+    cli: &Cli,
+    p: &Paths,
+    a: &EvalArgs,
+    tasks: &eval::Tasks,
+) -> anyhow::Result<eval::TaskSummary> {
+    let tokenizer = surveyor_context::Tokenizer::cl100k();
+    let selected = tasks
+        .task
+        .iter()
+        .filter(|t| a.only.as_ref().is_none_or(|only| &t.id == only));
+    let mut scored = Vec::new();
+    // Tasks sharing a base share its graph; the file lists them in base order, so one
+    // open per run of equal bases is enough.
+    let mut loaded: Option<(PathBuf, CodeGraph, RepoId, surveyor_search::TextIndex)> = None;
+    for task in selected {
+        let store = match (&a.stores, task.store_name()) {
+            (Some(dir), Some(name)) => dir.join(name),
+            _ => p.store.clone(),
+        };
+        if loaded.as_ref().is_none_or(|(path, ..)| path != &store) {
+            let (_, graph, repo) = open_graph_at(cli, p, &store)
+                .await
+                .with_context(|| format!("task {}", task.id))?;
+            let index = surveyor_search::TextIndex::build(graph.nodes());
+            loaded = Some((store, graph, repo, index));
+        }
+        let Some((_, graph, repo, index)) = loaded.as_ref() else {
+            unreachable!("loaded just above");
+        };
+        let answer = match a.source {
+            AnswerSource::QueryGraph => {
+                let view = surveyor_mcp::query_graph(graph, index, repo, &task.ask, 5, 1);
+                let text = serde_json::to_string_pretty(&view).context("serialize answer")?;
+                answer_of(graph, view.node_ids(), &tokenizer.measure(&text))
+            }
+        };
+        scored.push(eval::score_task(task, &answer, |id| {
+            graph.node(&surveyor_model::NodeId::new(id)).is_some()
+        }));
+    }
+    anyhow::ensure!(!scored.is_empty(), "no task matched --only");
+    Ok(eval::summarize_tasks(a.source.name(), scored))
+}
+
+/// The key an answer carries: the ids it names and the files those nodes lie in.
+fn answer_of<'a>(
+    graph: &CodeGraph,
+    ids: impl Iterator<Item = &'a str>,
+    size: &surveyor_context::Measured,
+) -> eval::Answer {
+    let ids: BTreeSet<String> = ids.map(str::to_owned).collect();
+    let files = ids
+        .iter()
+        .filter_map(|id| graph.node(&surveyor_model::NodeId::new(id)))
+        .filter_map(|n| n.file().map(ToString::to_string))
+        .collect();
+    eval::Answer {
+        ids,
+        files,
+        size: *size,
     }
 }
 

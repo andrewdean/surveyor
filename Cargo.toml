@@ -18,6 +18,7 @@ surveyor-link    = { path = "crates/surveyor-link" }
 surveyor-store   = { path = "crates/surveyor-store" }
 surveyor-graph   = { path = "crates/surveyor-graph" }
 surveyor-search  = { path = "crates/surveyor-search" }
+surveyor-context = { path = "crates/surveyor-context" }
 surveyor-mcp     = { path = "crates/surveyor-mcp" }
 surveyor-rules   = { path = "crates/surveyor-rules" }
 
@@ -56,6 +57,7 @@ arrow-schema = "58"
 futures      = "0.3"
 
 # compute
+tiktoken-rs = { version = "0.12", default-features = false }
 petgraph = { version = "0.8", default-features = false, features = ["std", "stable_graph"] }
 rust-stemmers = "1.2"
 

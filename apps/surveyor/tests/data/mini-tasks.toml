@@ -1,0 +1,15 @@
+# Context-pack eval over the mini fixture: one task as an agent would receive it, and
+# the symbols and files the change would touch. The eval test runs it against the
+# fixture's store with each answer source.
+
+[[task]]
+id = "relay-batch-size"
+ask = "The outbox relay drains pending rows one at a time; make the drain take a batch size and send rows in batches."
+expect = [
+  "rust:crates/outbox/src/relay.rs::Relay::drain",
+  "rust:crates/outbox/src/relay.rs::Relay",
+  "rust:crates/outbox/src/relay.rs::Nope",
+]
+files = ["crates/outbox/src/relay.rs", "crates/outbox/src/store.rs"]
+budget = 4000
+note = "the last identifier does not exist; the eval must say so"

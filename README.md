@@ -56,7 +56,9 @@ for now). This checkout implements Phase 0 of that plan.
   against its own average length so a well-described task is not outweighed by a
   one-word name. The search picks the starting nodes only; the answer is the graph
   around them, with citations. `surveyor search <question>` shows the ranking and
-  `surveyor eval <questions.toml>` scores it (`docs/eval/`).
+  `surveyor eval <questions.toml>` scores it; `surveyor eval <tasks.toml>` scores an
+  answer to a whole task against the symbols and files the real change touched, in
+  tokens as well as recall (`docs/eval/`).
 - **Linking.** Declarations become nodes with stable identifiers such as
   `rust:crates/outbox/src/relay.rs::Relay::drain` or `sql:cw_outbox.outbox`. References
   resolve by name within the same file, then package, then repository. A reference is
@@ -344,6 +346,8 @@ crates/surveyor-extract   Tree-sitter host, query packs, sqlparser, rhai, manife
 crates/surveyor-link      facts to nodes and edges; name resolution; unresolved gaps
 crates/surveyor-store     Lance dataset behind LanceStore
 crates/surveyor-graph     petgraph compute: neighbors, affected, paths, PageRank, communities
+crates/surveyor-search    BM25F over node text: the starting nodes of a question
+crates/surveyor-context   token accounting for context packs (the planner lands here)
 crates/surveyor-rules     Rhai rule engine: invariants over the graph, with citations
 crates/surveyor-mcp       rmcp server
 apps/surveyor             the CLI

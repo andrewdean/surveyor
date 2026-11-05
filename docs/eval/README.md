@@ -130,3 +130,66 @@ prompted this work both miss: the development-data question returns
 `ExplorerDatasets::loaded`, two `WasmActor::loaded` methods and two `.data` columns,
 and the advisory-lock question returns `DERIVATION_PREFIX`, a `lock` host function
 and three `key` methods.
+
+## Context-pack eval
+
+`surveyor eval <tasks.toml>` scores tasks instead of questions when the file holds
+`[[task]]` entries. A task is the text an agent would be handed, with the answer key the
+change that resolved it left behind: `expect`, the identifiers of nodes the change
+edited, and `files`, the files it touched. The eval produces an answer for the task
+text (`--source`, today `query-graph`: the MCP tool's exact output for the text, five
+seeds at depth 1) and reports:
+
+- **recall**: the share of the key (identifiers and files together) the answer carries;
+  an identifier counts when the answer names the node, a file when the answer names any
+  node in it;
+- **hit**: any part of the key is carried;
+- **tokens** and **bytes**: the answer's size, tokens under the `cl100k_base`
+  encoding (`surveyor-context`), held against the task's `budget` (30,000 by default);
+- **unknown ids**: expected identifiers the store does not hold.
+
+`causeway-tasks.toml` holds the ten tasks of the Phase 2 exit test, drawn from merged
+pull requests 1014 to 1073 (`PLAN-surveyor-phase-2.md` beside the RFD says how). Each
+is scored against the tree at its `base` commit, the merge commit's parent, because a
+pack is what an agent reads before it writes the change. `causeway-task-stores.sh
+<scratch>` builds one store per base in a shared scratch clone of Causeway (name tier,
+`examples/causeway-profile`), and `--stores <scratch>/stores` points the eval at them:
+
+```bash
+docs/eval/causeway-task-stores.sh "$SCRATCH"
+surveyor --repo-root ~/dev/trusted/causeway eval docs/eval/causeway-tasks.toml --stores "$SCRATCH/stores"
+```
+
+### Results on the ten tasks
+
+Table 1. The `query_graph` baseline, 2026-11-05: today's answer for each task text,
+counted the same way a pack will be.
+
+| Task | PR | Key found | Recall | Tokens | Bytes |
+|---|---:|---:|---:|---:|---:|
+| cwsh-user-agent | 1073 | 3/7 | 0.43 | 5,010 | 19,800 |
+| drop-orphaned-base-tables | 1064 | 3/8 | 0.38 | 5,031 | 20,765 |
+| schema-check-at-startup | 1068 | 1/11 | 0.09 | 8,167 | 34,023 |
+| tasks-page-load-failed | 1066 | 6/10 | 0.60 | 3,674 | 15,128 |
+| paused-tab-not-evicted | 1040 | 2/5 | 0.40 | 8,644 | 35,845 |
+| dataset-load-waits-for-codec | 1027 | 1/11 | 0.09 | 4,202 | 17,790 |
+| cookie-rpc-needs-preflight | 1021 | 7/13 | 0.54 | 7,572 | 31,482 |
+| flightdeck-postgres-tls | 1014 | 4/13 | 0.31 | 5,010 | 20,303 |
+| search-relay-addon-suite | 1039 | 4/8 | 0.50 | 1,825 | 7,101 |
+| stuck-work-sources | 1071 | 5/14 | 0.36 | 11,510 | 46,499 |
+| **all** | | **36/100** | **0.37** | median 5,031, max 11,510 | |
+
+Every answer fits the 30 thousand token budget, and every one carries some part of its
+key, because the text index finds the file or a neighbor of the symbols a task names.
+What the baseline lacks is the rest of the key: `query_graph` returns five seeds and
+their direct relations as JSON, so it names the seed's callers and callees and nothing
+two hops away, carries no source text, and spends most of its tokens on citations and
+repeated node views. The two tasks under 0.10 show the failure mode a pack has to
+fix: the seeds are near the answer but not on it. `schema-check-at-startup` seeds on
+five nodes of `workspace_migrations.rs` (`StillPending`, `migrate_workspace`,
+`pending_count`), the module that applies migrations, one hop from the `init` that
+has to stop calling it; `dataset-load-waits-for-codec` seeds on
+`BrowserBus::registerActionCodec` and the codec registration functions, members of
+the very class the key names, which the answer lists without the class itself. Both
+are reachable by walking from the seeds, which is what a context pack does and
+`query_graph` does not.

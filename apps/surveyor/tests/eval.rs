@@ -58,3 +58,45 @@ fn eval_scores_questions_and_reports_unknown_identifiers() {
     assert!(!ok);
     assert!(err.contains("read questions"), "{err}");
 }
+
+#[test]
+fn eval_scores_tasks_by_key_and_tokens() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = dir.path().join("ds");
+    let (ok, _, err) = surveyor(&store, &["index"]);
+    assert!(ok, "{err}");
+
+    let tasks = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/mini-tasks.toml");
+    let (ok, summary, err) = surveyor(&store, &["eval", tasks.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert_eq!(summary["source"], "query-graph", "{summary}");
+    assert_eq!(summary["tasks"], 1);
+    assert_eq!(summary["keys_total"], 5);
+    assert_eq!(summary["unknown_ids"], 1);
+    let s = &summary["scored"][0];
+    assert_eq!(s["id"], "relay-batch-size");
+    assert_eq!(s["budget"], 4000);
+    assert_eq!(
+        s["unknown"],
+        serde_json::json!(["rust:crates/outbox/src/relay.rs::Nope"])
+    );
+    // The question names the relay and its drain; today's query_graph finds both.
+    assert_eq!(s["hit"], true, "{s}");
+    assert!(
+        s["found_ids"]
+            .as_array()
+            .expect("found_ids")
+            .contains(&serde_json::json!(
+                "rust:crates/outbox/src/relay.rs::Relay::drain"
+            )),
+        "{s}"
+    );
+    let tokens = s["tokens"].as_u64().expect("tokens");
+    let bytes = s["bytes"].as_u64().expect("bytes");
+    assert!(tokens > 0 && tokens < bytes, "{s}");
+    assert_eq!(s["within_budget"], tokens <= 4000);
+
+    let (ok, _, err) = surveyor(&store, &["eval", tasks.to_str().unwrap(), "--only", "nope"]);
+    assert!(!ok);
+    assert!(err.contains("no task matched"), "{err}");
+}

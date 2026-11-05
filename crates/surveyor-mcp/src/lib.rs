@@ -145,6 +145,103 @@ fn parse_kinds(kinds: &[String]) -> Result<Vec<EdgeKind>, McpError> {
         .collect()
 }
 
+/// The relations of `node` in `direction` (both when `None`) under `filter`, each
+/// with the citation of its edge.
+fn relations(
+    graph: &CodeGraph,
+    node: &Node,
+    direction: Option<Direction>,
+    filter: &EdgeFilter,
+) -> Vec<Relation> {
+    let dirs: Vec<Direction> = match direction {
+        Some(d) => vec![d],
+        None => vec![Direction::Outgoing, Direction::Incoming],
+    };
+    dirs.into_iter()
+        .flat_map(|d| {
+            graph
+                .neighbors(&node.id, d, filter)
+                .into_iter()
+                .map(move |n| Relation {
+                    kind: n.edge.kind.to_string(),
+                    direction: d,
+                    node: NodeView::of(n.node),
+                    evidence: n
+                        .edge
+                        .provenance
+                        .evidence
+                        .iter()
+                        .map(surveyor_model::Evidence::citation)
+                        .collect(),
+                    derivation: n.edge.provenance.derivation.kind().to_string(),
+                    confidence: n.edge.provenance.confidence.get(),
+                })
+        })
+        .collect()
+}
+
+/// One seed of a [`QueryGraph`] answer and the relations around it.
+#[derive(Debug, Serialize)]
+pub struct Seed {
+    node: NodeView,
+    relations: Vec<Relation>,
+}
+
+/// What `query_graph` answers: the nodes a question is about and their relations.
+///
+/// The eval scores this exact shape as the baseline a context pack is measured
+/// against, so the tool and the eval cannot drift apart.
+#[derive(Debug, Serialize)]
+pub struct QueryGraph {
+    repo: String,
+    query: String,
+    seeds: Vec<Seed>,
+}
+
+impl QueryGraph {
+    /// Every node the answer names: the seeds and the nodes their relations reach.
+    pub fn node_ids(&self) -> impl Iterator<Item = &str> {
+        self.seeds.iter().flat_map(|s| {
+            std::iter::once(s.node.id.as_str())
+                .chain(s.relations.iter().map(|r| r.node.id.as_str()))
+        })
+    }
+}
+
+/// Answers `query` as the `query_graph` tool does: `limit` seeds from the text index
+/// (a bare name resolves by `find`), each with its non-structural relations when
+/// `depth` is above zero.
+#[must_use]
+pub fn query_graph(
+    graph: &CodeGraph,
+    index: &TextIndex,
+    repo: &RepoId,
+    query: &str,
+    limit: usize,
+    depth: usize,
+) -> QueryGraph {
+    let filter = EdgeFilter {
+        include_structural: false,
+        ..EdgeFilter::default()
+    };
+    let seeds = surveyor_search::seeds(graph, index, query, limit)
+        .into_iter()
+        .map(|n| Seed {
+            node: NodeView::of(n),
+            relations: if depth == 0 {
+                Vec::new()
+            } else {
+                relations(graph, n, None, &filter)
+            },
+        })
+        .collect();
+    QueryGraph {
+        repo: repo.to_string(),
+        query: query.to_owned(),
+        seeds,
+    }
+}
+
 // ---- parameter types --------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -327,30 +424,7 @@ impl Surveyor {
         direction: Option<Direction>,
         filter: &EdgeFilter,
     ) -> Vec<Relation> {
-        let mut out = Vec::new();
-        let dirs: Vec<Direction> = match direction {
-            Some(d) => vec![d],
-            None => vec![Direction::Outgoing, Direction::Incoming],
-        };
-        for d in dirs {
-            for n in self.graph.neighbors(&node.id, d, filter) {
-                out.push(Relation {
-                    kind: n.edge.kind.to_string(),
-                    direction: d,
-                    node: NodeView::of(n.node),
-                    evidence: n
-                        .edge
-                        .provenance
-                        .evidence
-                        .iter()
-                        .map(surveyor_model::Evidence::citation)
-                        .collect(),
-                    derivation: n.edge.provenance.derivation.kind().to_string(),
-                    confidence: n.edge.provenance.confidence.get(),
-                });
-            }
-        }
-        out
+        relations(&self.graph, node, direction, filter)
     }
 
     #[tool(
@@ -362,38 +436,14 @@ impl Surveyor {
     ) -> Result<CallToolResult, McpError> {
         let limit = p.limit.unwrap_or(5).clamp(1, 50);
         let depth = p.depth.unwrap_or(1).clamp(0, 3);
-        let seeds = surveyor_search::seeds(&self.graph, &self.index, &p.query, limit);
-        #[derive(Serialize)]
-        struct Seed {
-            node: NodeView,
-            relations: Vec<Relation>,
-        }
-        #[derive(Serialize)]
-        struct View {
-            repo: String,
-            query: String,
-            seeds: Vec<Seed>,
-        }
-        let filter = EdgeFilter {
-            include_structural: false,
-            ..EdgeFilter::default()
-        };
-        let seeds = seeds
-            .into_iter()
-            .map(|n| Seed {
-                node: NodeView::of(n),
-                relations: if depth == 0 {
-                    Vec::new()
-                } else {
-                    self.relations(n, None, &filter)
-                },
-            })
-            .collect();
-        json_result(&View {
-            repo: self.repo.to_string(),
-            query: p.query,
-            seeds,
-        })
+        json_result(&query_graph(
+            &self.graph,
+            &self.index,
+            &self.repo,
+            &p.query,
+            limit,
+            depth,
+        ))
     }
 
     #[tool(description = "One node: kind, location, signature, documentation and attributes.")]
