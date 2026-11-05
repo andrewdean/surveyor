@@ -320,3 +320,8 @@ It walks the tree on every run, so files a changed profile includes or excludes
 arrive and leave as added and deleted files, but a changed dialect or default schema
 still needs `index`. It relinks changed files syntactically: rerun `index --scip` when
 a fresh SCIP index arrives, which the RFD expects to happen in CI on a slower cadence.
+
+## License
+
+Apache License 2.0; see `LICENSE`. The Causeway adapter and Causeway's rule set
+(`examples/causeway-rules`) live in this repository under the same license.

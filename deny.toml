@@ -20,7 +20,8 @@ ignore = [
 
 [licenses]
 version = 2
-# Workspace crates are unpublished; the license question is open in the RFD.
+# Workspace crates are unpublished for now; Surveyor itself is Apache-2.0 (decided
+# 2026-11-04, RFD section 17 item 3).
 private = { ignore = true }
 allow = [
     "MIT",

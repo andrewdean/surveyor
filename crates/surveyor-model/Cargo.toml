@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 description = "Surveyor graph model: nodes, edges, provenance and evidence (no I/O)"
 
 [dependencies]
