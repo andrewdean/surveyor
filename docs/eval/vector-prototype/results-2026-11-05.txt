@@ -1,0 +1,77 @@
+system         hit@5  recall@5  MRR@20
+bm25           17/29      0.41    0.43
+dense          16/29      0.34    0.41
+rrf            19/29      0.45    0.54
+rrf-bm25x2     19/29      0.47    0.52
+
+- where is development data created and how is it loaded
+    bm25:hit/0.17/#5  dense:hit/0.33/#3  rrf:hit/0.33/#1  rrf-bm25x2:hit/0.33/#1
+- where is test data created and how is it loaded
+    bm25:hit/0.20/#1  dense:miss/0.00/--  rrf:hit/0.40/#1  rrf-bm25x2:hit/0.40/#1
+- What breaks if I change the advisory lock key derivation
+    bm25:hit/1.00/#1  dense:hit/0.50/#3  rrf:hit/0.50/#1  rrf-bm25x2:hit/1.00/#1
+- how does a test get a database schema of its own
+    bm25:miss/0.00/--  dense:miss/0.00/--  rrf:miss/0.00/--  rrf-bm25x2:miss/0.00/--
+    dense top5: rust:services/pure-flight/tests/e2e.rs::schema_discovery_get_db_schemas, file:services/flightdeck/tests/governed_sql_test.rs, rust:crates/flightdeck-core/src/governed/reads.rs::tests::Recursive::schema, rust:component/catalog/core/src/ingest.rs::tests::database, rust:crates/prism-parser/src/parser.rs::tests::parse_database_with_schema
+- how are search documents embedded and pushed to qdrant
+    bm25:miss/0.00/--  dense:miss/0.00/--  rrf:miss/0.00/--  rrf-bm25x2:miss/0.00/--
+    dense top5: rust:component/discovery/search/core/src/qdrant.rs::DocumentEmbedding, rust:component/discovery/search/core/src/qdrant.rs::DocumentEmbedding#impl, file:component/discovery/search/core/src/qdrant.rs, rust:component/discovery/search/core/src/qdrant.rs::EmbeddedSearchRequest, rust:component/discovery/search/core/src/qdrant.rs::QueryEmbedding
+- what checks that a loaded workspace is coherent
+    bm25:miss/0.00/#6  dense:miss/0.00/--  rrf:hit/0.33/#4  rrf-bm25x2:hit/0.33/#4
+    dense top5: task:mise/workspace:scope:check, rust:component/platform/coherence/src/run.rs::Schemas::for_workspace, bash:.mise/scripts/workspace-control-plane.sh::has_workspace_crd, rust:tools/xtask/src/bin/lint-dag.rs::WORKSPACE_RULES, file:.mise/scripts/check-workspace-env.sh
+- where is the people directory seeded
+    bm25:hit/1.00/#3  dense:hit/1.00/#2  rrf:hit/1.00/#3  rrf-bm25x2:hit/1.00/#3
+- how does a catalog entry get its physical binding
+    bm25:miss/0.00/#11  dense:miss/0.00/#7  rrf:miss/0.00/#6  rrf-bm25x2:miss/0.00/#6
+    dense top5: rust:apps/causeway-server/src/composition/state/service_ports.rs::AppState::catalog_bindings, typescript:bindings-ts/causeway-catalog/src/generated/causeway/catalog/v2/schema_pb.ts::PhysicalBinding, rust:apps/causeway-catalog-host/src/state.rs::CatalogServingParts::with_bindings, rust:apps/causeway-catalog-host/src/state.rs::CatalogServingState::catalog_bindings, rust:crates/catalog-domain/src/binding.rs::PhysicalContainer::unity_catalog_catalog
+- how is a container given its default taxonomy home
+    bm25:hit/0.33/#1  dense:hit/0.33/#1  rrf:hit/0.33/#1  rrf-bm25x2:hit/0.33/#1
+- how are unity catalog tables registered as catalog assets
+    bm25:hit/0.50/#1  dense:hit/0.50/#1  rrf:hit/0.50/#1  rrf-bm25x2:hit/0.50/#1
+- what happens when the databricks warehouse is asleep during the sync
+    bm25:miss/0.00/--  dense:miss/0.00/#11  rrf:miss/0.00/--  rrf-bm25x2:miss/0.00/--
+    dense top5: rust:crates/causeway-metadata-ops/src/unity_catalog_sync.rs::SOURCE_WAIT_CEILING, rust:services/flightdeck/src/remote.rs::execute_databricks_sql, doc:content/docs/databricks-cluster-troubleshooting.md, rust:services/flightdeck/src/remote.rs::await_databricks_statement, doc:docs/runbooks/unity-catalog-metadata-sync.md
+- how are contract fixtures published to the catalog
+    bm25:miss/0.00/#10  dense:miss/0.00/--  rrf:miss/0.00/#9  rrf-bm25x2:miss/0.00/#7
+    dense top5: rust:component/catalog/core/src/semantic_read.rs::database_tests::create_fixture, rust:component/catalog/core/src/contract_publish.rs::CatalogContractPublication, rust:crates/contract-domain/src/lib.rs::DeliveryKind::Catalog, rust:component/catalog/core/src/contract_publish.rs::publish_contract_asset_in_tx::query#866e0d85, sql:public.unity_catalog_projections.published_at
+- what does the dev server start
+    bm25:hit/0.50/#4  dense:miss/0.00/--  rrf:miss/0.00/#7  rrf-bm25x2:hit/0.50/#5
+    dense top5: rust:apps/causeway-server/src/lib.rs::startup, task:mise/showcase:dev, file:apps/causeway-server/src/startup.rs, bash:.mise/scripts/tasks/dev/smoke-pure-flight-local.sh::start_server, rust:services/flightdeck/src/lib.rs::startup
+- how are kafka topic names scoped to a workspace
+    bm25:hit/1.00/#1  dense:hit/0.67/#1  rrf:hit/1.00/#1  rrf-bm25x2:hit/1.00/#1
+- how are session cache keys kept apart per workspace
+    bm25:miss/0.00/#8  dense:hit/0.50/#2  rrf:hit/1.00/#3  rrf-bm25x2:hit/1.00/#3
+    dense top5: rust:apps/causeway-server/src/cache.rs::SessionKeyspace, rust:apps/causeway-server/src/cache.rs::SessionKeyspace::for_workspace, rust:crates/causeway-testkit/src/valkey.rs::ValkeyWorkspace, rust:apps/causeway-server/src/cache.rs::tests::session_keys_sit_under_the_workspace_id_verbatim, rust:apps/causeway-server/src/cache.rs::SessionKeyspace#impl
+- how is search quality measured against judged queries
+    bm25:hit/0.75/#1  dense:hit/0.50/#1  rrf:hit/0.75/#1  rrf-bm25x2:hit/0.50/#1
+- how do I run the database migrations
+    bm25:miss/0.00/--  dense:miss/0.00/#8  rrf:hit/0.33/#4  rrf-bm25x2:miss/0.00/#10
+    dense top5: rust:crates/causeway-db-core/src/lib.rs::migrations, rust:jobs/causeway-migrate/src/main.rs::DATABASE_URL_ENV, file:component/marketplace/core/migrations/0002_party_displays.sql, rust:crates/causeway-db-core/src/error.rs::DbError::Migration, file:component/platform/supervision/migrations/0001_sweep_pass.sql
+- which view exports catalog content for search indexing
+    bm25:hit/1.00/#1  dense:hit/1.00/#1  rrf:hit/1.00/#1  rrf-bm25x2:hit/1.00/#1
+- how is the FIBO corpus built
+    bm25:miss/0.00/--  dense:hit/0.33/#4  rrf:miss/0.00/#7  rrf-bm25x2:miss/0.00/#7
+    dense top5: rust:bootstrap/cw-devdata/src/lib.rs::fibo, rust:bootstrap/cw-devdata/src/manifest.rs::FiboEntities, rust:jobs/causeway-fibo-ingest/src/ingest_pure.rs::corpus_source, task:mise/devdata:build, doc:component/seed-data/graph/README.md
+- how is a canonical identity minted for an asset
+    bm25:miss/0.00/--  dense:miss/0.00/--  rrf:miss/0.00/--  rrf-bm25x2:miss/0.00/--
+    dense top5: rust:crates/resource-identity/src/lib.rs::IdentityAuthority::resource_iri, rust:crates/catalog-domain/src/lib.rs::AssetRevision, rust:crates/resource-identity/src/lib.rs::IdentityAuthority, rust:crates/resource-identity/src/lib.rs::IdentityScope::resource_iri, rust:component/catalog/core/src/identity.rs::resolve_asset_identity_in_schema
+- what validates the development data graph manifest
+    bm25:hit/1.00/#2  dense:hit/1.00/#1  rrf:hit/1.00/#2  rrf-bm25x2:hit/1.00/#2
+- where does the policy scanner pick work off its queue
+    bm25:hit/1.00/#2  dense:miss/0.00/#7  rrf:hit/1.00/#1  rrf-bm25x2:hit/1.00/#1
+- how do glossary terms get attached to columns
+    bm25:miss/0.00/--  dense:miss/0.00/--  rrf:miss/0.00/--  rrf-bm25x2:miss/0.00/--
+    dense top5: doc:docs/rfd/RFD-pbs8n4kn-term-governance-and-column-binding-derivation.md, rust:jobs/causeway-fibo-ingest/src/ingest_db.rs::upsert_column_terms, rust:component/catalog/core/src/glossary.rs::PgGlossaryRepo::row_to_term, sql:public.glossary_terms.definition, rust:component/catalog/core/src/concepts.rs::ConceptRepo::columns_with_terms
+- where is lineage recorded when seeding datasets
+    bm25:hit/1.00/#3  dense:hit/0.50/#5  rrf:hit/1.00/#1  rrf-bm25x2:hit/1.00/#1
+- how are corpus articles fetched and loaded into object storage
+    bm25:miss/0.00/#10  dense:miss/0.00/--  rrf:miss/0.00/--  rrf-bm25x2:miss/0.00/#17
+    dense top5: task:mise/corpus:load, task:mise/corpus:fetch, file:crates/article-domain/Cargo.toml, pkg:cargo/object_store, rust:jobs/causeway-content-sync/src/main.rs::load_articles_from_disk
+- what limits semantic expansion of a search query
+    bm25:hit/0.25/#1  dense:hit/0.25/#3  rrf:hit/0.25/#1  rrf-bm25x2:hit/0.25/#1
+- how does the outbox publish events to kafka or valkey
+    bm25:hit/0.20/#4  dense:hit/0.40/#1  rrf:hit/0.40/#3  rrf-bm25x2:hit/0.40/#4
+- where are coherence gate waivers recorded
+    bm25:hit/1.00/#1  dense:hit/1.00/#1  rrf:hit/1.00/#1  rrf-bm25x2:hit/1.00/#1
+- how does the loader registry decide the run order
+    bm25:hit/1.00/#2  dense:hit/1.00/#1  rrf:hit/1.00/#1  rrf-bm25x2:hit/1.00/#2
