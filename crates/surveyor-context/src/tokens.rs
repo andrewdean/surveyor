@@ -6,6 +6,7 @@
 
 use std::fmt::{self, Debug, Formatter};
 
+use serde::Serialize;
 use tiktoken_rs::CoreBPE;
 
 /// Counts tokens the way a prompt budget is spent.
@@ -25,7 +26,7 @@ impl Debug for Tokenizer {
 }
 
 /// A text's size as a budget sees it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct Measured {
     /// Tokens under `cl100k_base`.
     pub tokens: usize,

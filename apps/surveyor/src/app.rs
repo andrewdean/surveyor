@@ -116,6 +116,8 @@ pub enum Command {
     Explain(Query),
     /// One screen per symbol: identity, signature, doc, counts with citations, rules.
     Card(CardArgs),
+    /// The context an agent needs for a task, inside a token budget, with evidence.
+    Context(ContextArgs),
     /// What may break when a symbol, table or file changes.
     Affected(AffectedArgs),
     /// Shortest dependency path between two symbols.
@@ -167,13 +169,24 @@ pub struct EvalArgs {
     #[arg(long)]
     pub only: Option<String>,
     /// For tasks: what answers them.
-    #[arg(long, value_enum, default_value_t = AnswerSource::QueryGraph)]
+    #[arg(long, value_enum, default_value_t = AnswerSource::ContextPack)]
     pub source: AnswerSource,
+    /// For tasks answered by a context pack: write each pack to this directory as
+    /// `<task id>.md` and `<task id>.json`.
+    #[arg(long)]
+    pub dump: Option<PathBuf>,
+    /// For tasks with `--stores`: a directory holding one checkout per base commit,
+    /// named like the stores, that source windows are read from; defaults to the
+    /// parent of `--stores`, then to the repository root.
+    #[arg(long)]
+    pub trees: Option<PathBuf>,
 }
 
 /// What produces the answer a task is scored on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum AnswerSource {
+    /// The context pack for the task text, within the task's budget.
+    ContextPack,
     /// Today's `query_graph` answer to the task text, as the MCP tool returns it.
     QueryGraph,
 }
@@ -181,6 +194,7 @@ pub enum AnswerSource {
 impl AnswerSource {
     fn name(self) -> &'static str {
         match self {
+            Self::ContextPack => "context-pack",
             Self::QueryGraph => "query-graph",
         }
     }
@@ -221,6 +235,18 @@ pub struct CardArgs {
     /// Restrict to a node kind, such as `Function`, `Table`, `View`, `Task` or `Document`.
     #[arg(long)]
     pub kind: Option<NodeKind>,
+}
+
+#[derive(Debug, Args)]
+pub struct ContextArgs {
+    /// The task, as an agent would receive it.
+    pub task: String,
+    /// Token budget for the pack (`cl100k_base` tokens of the Markdown).
+    #[arg(long, default_value_t = surveyor_context::DEFAULT_BUDGET)]
+    pub budget: usize,
+    /// Identifiers to seed on besides what the task names; repeatable.
+    #[arg(long = "seed")]
+    pub seeds: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -513,6 +539,35 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             out.cards(&cards);
             Ok(())
         }
+        Command::Context(a) => {
+            let (store, graph, repo) = open_graph(&cli, &p).await?;
+            let graph = std::sync::Arc::new(graph);
+            let index = surveyor_search::TextIndex::build(graph.nodes());
+            let tokenizer = surveyor_context::Tokenizer::cl100k();
+            let rules = rule_report(&cli, &p, &graph);
+            let unresolved = store.unresolved(&repo).await.unwrap_or_default();
+            let planner = planner(
+                &graph,
+                &index,
+                &tokenizer,
+                &p.root,
+                rules.as_ref(),
+                unresolved,
+            );
+            let started = Instant::now();
+            let pack = planner.pack(&a.task, a.budget, &a.seeds);
+            tracing::info!(
+                tokens = pack.used.tokens,
+                items = pack.items.len(),
+                ms = started.elapsed().as_millis() as u64,
+                "context pack built"
+            );
+            match out {
+                Output::Json => render::print_json(&pack),
+                Output::Text => print!("{}", pack.markdown),
+            }
+            Ok(())
+        }
         Command::Affected(a) => {
             let (_, graph, _) = open_graph(&cli, &p).await?;
             let node = resolve_one(&graph, &a.query.query, a.query.kind.as_ref())?;
@@ -684,6 +739,11 @@ async fn eval_tasks(
     tasks: &eval::Tasks,
 ) -> anyhow::Result<eval::TaskSummary> {
     let tokenizer = surveyor_context::Tokenizer::cl100k();
+    let trees = a.trees.clone().or_else(|| {
+        a.stores
+            .as_ref()
+            .and_then(|s| s.parent().map(Path::to_path_buf))
+    });
     let selected = tasks
         .task
         .iter()
@@ -691,27 +751,76 @@ async fn eval_tasks(
     let mut scored = Vec::new();
     // Tasks sharing a base share its graph; the file lists them in base order, so one
     // open per run of equal bases is enough.
-    let mut loaded: Option<(PathBuf, CodeGraph, RepoId, surveyor_search::TextIndex)> = None;
+    struct Loaded {
+        store: PathBuf,
+        root: PathBuf,
+        graph: std::sync::Arc<CodeGraph>,
+        repo: RepoId,
+        index: surveyor_search::TextIndex,
+        rules: Option<(surveyor_rules::RuleSet, surveyor_rules::Report)>,
+        unresolved: Vec<surveyor_model::Unresolved>,
+    }
+    let mut loaded: Option<Loaded> = None;
     for task in selected {
-        let store = match (&a.stores, task.store_name()) {
-            (Some(dir), Some(name)) => dir.join(name),
-            _ => p.store.clone(),
+        let (store, root) = match (&a.stores, task.store_name()) {
+            (Some(dir), Some(name)) => {
+                let tree = trees.as_ref().map(|t| t.join(&name)).filter(|t| t.is_dir());
+                (dir.join(name), tree.unwrap_or_else(|| p.root.clone()))
+            }
+            _ => (p.store.clone(), p.root.clone()),
         };
-        if loaded.as_ref().is_none_or(|(path, ..)| path != &store) {
-            let (_, graph, repo) = open_graph_at(cli, p, &store)
+        if loaded.as_ref().is_none_or(|l| l.store != store) {
+            let (lance, graph, repo) = open_graph_at(cli, p, &store)
                 .await
                 .with_context(|| format!("task {}", task.id))?;
+            let graph = std::sync::Arc::new(graph);
             let index = surveyor_search::TextIndex::build(graph.nodes());
-            loaded = Some((store, graph, repo, index));
+            let rules = rule_report(cli, p, &graph);
+            let unresolved = lance.unresolved(&repo).await.unwrap_or_default();
+            loaded = Some(Loaded {
+                store,
+                root,
+                graph,
+                repo,
+                index,
+                rules,
+                unresolved,
+            });
         }
-        let Some((_, graph, repo, index)) = loaded.as_ref() else {
+        let Some(l) = loaded.as_ref() else {
             unreachable!("loaded just above");
         };
+        let (graph, index) = (&l.graph, &l.index);
         let answer = match a.source {
             AnswerSource::QueryGraph => {
-                let view = surveyor_mcp::query_graph(graph, index, repo, &task.ask, 5, 1);
+                let view = surveyor_mcp::query_graph(graph, index, &l.repo, &task.ask, 5, 1);
                 let text = serde_json::to_string_pretty(&view).context("serialize answer")?;
                 answer_of(graph, view.node_ids(), &tokenizer.measure(&text))
+            }
+            AnswerSource::ContextPack => {
+                let planner = planner(
+                    graph,
+                    index,
+                    &tokenizer,
+                    &l.root,
+                    l.rules.as_ref(),
+                    l.unresolved.clone(),
+                );
+                let pack = planner.pack(&task.ask, task.budget(), &[]);
+                if let Some(dir) = &a.dump {
+                    std::fs::create_dir_all(dir)
+                        .with_context(|| format!("create {}", dir.display()))?;
+                    std::fs::write(dir.join(format!("{}.md", task.id)), &pack.markdown)
+                        .context("write pack markdown")?;
+                    let json = serde_json::to_string_pretty(&pack).context("serialize pack")?;
+                    std::fs::write(dir.join(format!("{}.json", task.id)), json)
+                        .context("write pack json")?;
+                }
+                answer_of(
+                    graph,
+                    pack.items.iter().map(|i| i.card.id.as_str()),
+                    &pack.used,
+                )
             }
         };
         scored.push(eval::score_task(task, &answer, |id| {
@@ -789,6 +898,26 @@ fn card_with_rules(
         card.rules = surveyor_rules::notes_for(rules, report, node);
     }
     card
+}
+
+/// A planner over `graph` that reads source under `root`, notes rules from the last
+/// run and lists the repository's unresolved references near the seeds.
+fn planner<'g>(
+    graph: &'g CodeGraph,
+    index: &'g surveyor_search::TextIndex,
+    tokenizer: &'g surveyor_context::Tokenizer,
+    root: &'g Path,
+    rules: Option<&'g (surveyor_rules::RuleSet, surveyor_rules::Report)>,
+    unresolved: Vec<surveyor_model::Unresolved>,
+) -> surveyor_context::Planner<'g> {
+    surveyor_context::Planner::new(graph, index, tokenizer)
+        .with_source(move |path: &RepoPath| std::fs::read_to_string(root.join(path.as_str())).ok())
+        .with_rules(move |node| {
+            rules.map_or_else(Vec::new, |(rules, report)| {
+                surveyor_rules::notes_for(rules, report, node)
+            })
+        })
+        .with_unresolved(unresolved)
 }
 
 /// What a full index produced.

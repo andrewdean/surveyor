@@ -149,10 +149,24 @@ for now). This checkout implements Phase 0 of that plan.
   files a rule governs, so a card lists the rule before it has a finding. Surveyor's
   own rules live in `surveyor-rules/`: crate layering, a pure model crate, Lance named
   only by the store, no crate cycles, and a budget of public functions without tests.
+- **Context packs.** `surveyor context "<task>"` (MCP `context_pack`) is the minimum
+  sufficient context for a whole task inside a token budget, 30,000 by default,
+  counted on the Markdown it prints with the `cl100k_base` encoding. Seeds come from
+  the identifiers the task names (`Relay::drain`, `causeway-db-core`, a path) and
+  from the BM25F ranking of its words; expansion walks one hop in both directions,
+  up the structure to the impl, type and file that own a seed, a second hop from the
+  best neighbors and two hops of reverse impact, with the edges `explain` and
+  `affected` cite; a node's score is its seed's times the confidence along the path,
+  halved per hop and shared across a wide fan-out, plus a quarter of every further
+  path; the budget is filled greedily by score with a card per node and a source
+  window for the best of them; and the pack ends with what was considered and left
+  out, and the unresolved references in the seeds' files, so the agent can ask for
+  more. `surveyor eval <tasks.toml>` measures packs against real changes
+  (`docs/eval/`, `surveyor-context`).
 - **Interfaces.** A CLI and an MCP server whose first tools keep the names graphicle and
   Graphify publish (`query_graph`, `get_node`, `get_neighbors`, `shortest_path`,
   `god_nodes`, `get_community`, `read_project_source`) plus `affected`, `find_nodes`,
-  `graph_stats` and `check_invariants`.
+  `graph_stats`, `check_invariants` and `context_pack`.
 
 ## Numbers
 
@@ -269,6 +283,7 @@ Ask it questions:
 ```bash
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway explain Relay::drain
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway card Relay::drain cw_outbox.outbox
+surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway context "make the outbox relay drain in batches" --budget 20000
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway affected cw_catalog.asset --depth 3
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway path crates/api/src/main.rs::main cw_outbox.outbox
 surveyor --repo-root ~/dev/trusted/causeway --store ~/.surveyor/causeway hubs
@@ -356,7 +371,7 @@ crates/surveyor-link      facts to nodes and edges; name resolution; unresolved 
 crates/surveyor-store     Lance dataset behind LanceStore
 crates/surveyor-graph     petgraph compute: neighbors, affected, paths, PageRank, communities
 crates/surveyor-search    BM25F over node text: the starting nodes of a question
-crates/surveyor-context   token accounting for context packs (the planner lands here)
+crates/surveyor-context   context packs: seeds, expansion, ranking, the budget and the Markdown
 crates/surveyor-rules     Rhai rule engine: invariants over the graph, with citations
 crates/surveyor-mcp       rmcp server
 apps/surveyor             the CLI

@@ -67,7 +67,10 @@ fn eval_scores_tasks_by_key_and_tokens() {
     assert!(ok, "{err}");
 
     let tasks = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/mini-tasks.toml");
-    let (ok, summary, err) = surveyor(&store, &["eval", tasks.to_str().unwrap()]);
+    let (ok, summary, err) = surveyor(
+        &store,
+        &["eval", tasks.to_str().unwrap(), "--source", "query-graph"],
+    );
     assert!(ok, "{err}");
     assert_eq!(summary["source"], "query-graph", "{summary}");
     assert_eq!(summary["tasks"], 1);
@@ -99,4 +102,23 @@ fn eval_scores_tasks_by_key_and_tokens() {
     let (ok, _, err) = surveyor(&store, &["eval", tasks.to_str().unwrap(), "--only", "nope"]);
     assert!(!ok);
     assert!(err.contains("no task matched"), "{err}");
+
+    // The default source is the context pack, held to the task's budget.
+    let packs = dir.path().join("packs");
+    let (ok, summary, err) = surveyor(
+        &store,
+        &[
+            "eval",
+            tasks.to_str().unwrap(),
+            "--dump",
+            packs.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{err}");
+    assert_eq!(summary["source"], "context-pack", "{summary}");
+    let s = &summary["scored"][0];
+    assert_eq!(s["hit"], true, "{s}");
+    assert!(s["tokens"].as_u64().unwrap() <= 4000, "{s}");
+    assert!(packs.join("relay-batch-size.md").is_file());
+    assert!(packs.join("relay-batch-size.json").is_file());
 }

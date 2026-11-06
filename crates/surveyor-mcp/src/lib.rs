@@ -5,7 +5,8 @@
 //! `get_community`, `read_project_source`), so an adopter already using them switches
 //! servers without rewriting agent instructions. The second group (`affected`,
 //! `graph_stats`, `find_nodes`) exposes what those tools lack: reverse impact with
-//! provenance filters, and counts.
+//! provenance filters, and counts. `context_pack` builds the budgeted context for a
+//! whole task (`surveyor-context`).
 //!
 //! Every answer that names an edge cites its evidence as `file:lines`, and
 //! `read_project_source` returns the exact cited window, so an agent can verify
@@ -37,6 +38,8 @@ pub struct Surveyor {
     graph: Arc<CodeGraph>,
     /// BM25 over the nodes' text; what a question seeds on.
     index: TextIndex,
+    /// Counts a context pack's tokens.
+    tokenizer: surveyor_context::Tokenizer,
     repo: RepoId,
     root: PathBuf,
     rules: RuleSet,
@@ -262,6 +265,22 @@ pub struct QueryGraphParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ContextPackParams {
+    /// The task, as the agent received it.
+    pub task: String,
+    /// Token budget for the pack (default 30000, counted on the Markdown with the
+    /// `cl100k_base` encoding).
+    #[serde(default)]
+    pub budget: Option<usize>,
+    /// Identifiers to seed on besides what the task names.
+    #[serde(default)]
+    pub seeds: Vec<String>,
+    /// `markdown` (default) or `json`.
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct NodeParams {
     /// A node identifier such as `rust:crates/a/src/lib.rs::Relay::drain`, or a name.
     pub node_id: String,
@@ -382,6 +401,7 @@ impl Surveyor {
             store,
             graph: Arc::new(graph),
             index,
+            tokenizer: surveyor_context::Tokenizer::cl100k(),
             repo,
             root,
             rules,
@@ -393,16 +413,21 @@ impl Surveyor {
     /// A node's card with its rule notes.
     fn card(&self, node: &Node) -> surveyor_graph::Card {
         let mut card = self.graph.card(node);
+        card.rules = self.rule_notes(node);
+        card
+    }
+
+    /// The rule notes of a node, from a rule run made once per server.
+    fn rule_notes(&self, node: &Node) -> Vec<surveyor_graph::RuleNote> {
         let report = self.report.get_or_init(|| {
             if self.rules.rules().is_empty() {
                 return None;
             }
             self.rules.run(Arc::clone(&self.graph)).ok()
         });
-        if let Some(report) = report {
-            card.rules = surveyor_rules::notes_for(&self.rules, report, node);
-        }
-        card
+        report.as_ref().map_or_else(Vec::new, |report| {
+            surveyor_rules::notes_for(&self.rules, report, node)
+        })
     }
 
     fn resolve(&self, query: &str) -> Result<&Node, McpError> {
@@ -463,6 +488,38 @@ impl Surveyor {
             limit,
             depth,
         ))
+    }
+
+    #[tool(
+        description = "The context an agent needs for a task, inside a token budget: seeds from the identifiers and words of the task, the nodes around them (callers, callees, tests, tables, documents) ranked by graph distance and confidence, a card per node and source for the best of them, every statement cited, and a list of what was considered and left out. Markdown by default; format 'json' for the typed pack."
+    )]
+    async fn context_pack(
+        &self,
+        Parameters(p): Parameters<ContextPackParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let budget = p
+            .budget
+            .unwrap_or(surveyor_context::DEFAULT_BUDGET)
+            .clamp(500, 200_000);
+        let unresolved = self.store.unresolved(&self.repo).await.unwrap_or_default();
+        let root = self.root.clone();
+        let planner = surveyor_context::Planner::new(&self.graph, &self.index, &self.tokenizer)
+            .with_source(move |path: &surveyor_model::RepoPath| {
+                std::fs::read_to_string(root.join(path.as_str())).ok()
+            })
+            .with_rules(|node| self.rule_notes(node))
+            .with_unresolved(unresolved);
+        let pack = planner.pack(&p.task, budget, &p.seeds);
+        match p.format.as_deref() {
+            None | Some("markdown") => Ok(CallToolResult::success(vec![ContentBlock::text(
+                pack.markdown,
+            )])),
+            Some("json") => json_result(&pack),
+            Some(other) => Err(McpError::invalid_params(
+                format!("format {other:?} is not markdown or json"),
+                None,
+            )),
+        }
     }
 
     #[tool(

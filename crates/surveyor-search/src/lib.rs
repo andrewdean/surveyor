@@ -89,7 +89,8 @@ impl Field {
 /// repeat its subject, so when a document and the code it describes both match, the
 /// code comes first and the document right behind it, still a seed when nothing in
 /// the code says the words.
-fn prior(kind: &NodeKind) -> f32 {
+#[must_use]
+pub fn kind_prior(kind: &NodeKind) -> f32 {
     match kind {
         NodeKind::Impl => 0.6,
         NodeKind::Query => 0.5,
@@ -183,7 +184,7 @@ impl TextIndex {
         }
         Self {
             postings,
-            priors: nodes.iter().map(|n| prior(&n.kind)).collect(),
+            priors: nodes.iter().map(|n| kind_prior(&n.kind)).collect(),
         }
     }
 

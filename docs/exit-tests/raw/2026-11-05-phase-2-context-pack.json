@@ -1,0 +1,300 @@
+{
+  "source": "context-pack",
+  "tasks": 10,
+  "hits": 10,
+  "mean_recall": 0.5729570429570429,
+  "keys_found": 54,
+  "keys_total": 100,
+  "median_tokens": 29962,
+  "max_tokens": 29982,
+  "over_budget": 0,
+  "unknown_ids": 0,
+  "scored": [
+    {
+      "id": "cwsh-user-agent",
+      "pr": 1073,
+      "ask": "The daily image-freshness check has printed a bare HTTP 403 for every package since the start of October, and nobody noticed that production images stopped publishing on 2026-10-07. Find out why GitHub refuses the cwsh port of the check and fix it so the check reads package versions again, with a test.",
+      "unknown": [],
+      "found_ids": [
+        "rhai:.mise/scripts/check-image-freshness.rhai::published_images",
+        "rust:bootstrap/cw-host/src/modules/http.rs::module"
+      ],
+      "found_files": [
+        ".mise/scripts/check-image-freshness.rhai",
+        "bootstrap/cw-host/src/modules/http.rs"
+      ],
+      "missing": [
+        "rust:bootstrap/cw-host/src/modules/http.rs::build",
+        "rust:bootstrap/cw-host/src/modules/http.rs::request",
+        "bootstrap/cwsh/tests/cli.rs"
+      ],
+      "recall": 0.5714285714285714,
+      "hit": true,
+      "tokens": 29982,
+      "bytes": 96081,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "symptom words: 'alarm', 'refuses', 'HTTP 403'; the code says http module and User-Agent"
+    },
+    {
+      "id": "drop-orphaned-base-tables",
+      "pr": 1064,
+      "ask": "The base workspace schema still creates policy_propagation_barriers and access_grants, which nothing reads or writes; the governance/core slice owns the live copy of the first. Add the base migration that drops both, register it with the embedded list, extend the vsa migration rules, and add a testkit test that keeps slice tables out of the base schema.",
+      "unknown": [],
+      "found_ids": [
+        "sql:public.policy_propagation_barriers",
+        "sql:public.access_grants",
+        "rust:crates/causeway-testkit/tests/postgres.rs::a_workspace_migrates_every_component_into_its_derived_schemas"
+      ],
+      "found_files": [
+        "crates/causeway-testkit/tests/postgres.rs"
+      ],
+      "missing": [
+        "rust:crates/causeway-db-core/src/migrations.rs::EMBEDDED_MIGRATIONS",
+        "rhai:.mise/rhai/vsa/rules.rhai::migration_rules",
+        "crates/causeway-db-core/src/migrations.rs",
+        ".mise/rhai/vsa/rules.rhai"
+      ],
+      "recall": 0.5,
+      "hit": true,
+      "tokens": 29964,
+      "bytes": 109058,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "the migration task; the new file lands in crates/causeway-db-core/migrations/"
+    },
+    {
+      "id": "schema-check-at-startup",
+      "pr": 1068,
+      "ask": "Workloads must stop migrating the database when they start. Make causeway-db-core's initialisation run no DDL: compare the applied migrations in the connection's schema with the embedded baseline, fail with an error that names the pending versions and the migrate step when the schema is behind, and accept a schema that is ahead so an older pod survives a rollout.",
+      "unknown": [],
+      "found_ids": [],
+      "found_files": [
+        "crates/causeway-testkit/tests/postgres.rs"
+      ],
+      "missing": [
+        "rust:crates/causeway-db-core/src/lib.rs::init",
+        "rust:crates/causeway-db-core/src/lib.rs::connect_pool",
+        "rust:crates/causeway-db-core/src/error.rs::DbError",
+        "rust:crates/causeway-db-core/src/migrations.rs::EMBEDDED_MIGRATIONS",
+        "rust:crates/causeway-runtime/src/resource.rs::MigratedPostgresConfig",
+        "rust:jobs/causeway-job-runtime/src/lib.rs::JobContext",
+        "crates/causeway-db-core/src/lib.rs",
+        "crates/causeway-db-core/src/error.rs",
+        "crates/causeway-runtime/src/resource.rs",
+        "jobs/causeway-job-runtime/src/lib.rs"
+      ],
+      "recall": 0.09090909090909091,
+      "hit": true,
+      "tokens": 29959,
+      "bytes": 107833,
+      "budget": 30000,
+      "within_budget": true
+    },
+    {
+      "id": "tasks-page-load-failed",
+      "pr": 1066,
+      "ask": "When the open-tasks table cannot be read, the Rust /app/tasks page says \"No open tasks\" as if the list were empty, which hid a schema fault for days. Make the page say the tasks could not be loaded, the way the task detail page already tells a failed read from an empty one. The Node page already gets this right.",
+      "unknown": [],
+      "found_ids": [
+        "rust:apps/causeway-server/src/workflow_tasks/page.rs::load_task_list_page",
+        "rust:apps/causeway-server/src/workflow_tasks/page.rs::TaskPageContext",
+        "rust:apps/causeway-server/src/workflow_tasks/page.rs::TaskDetailPageData",
+        "rust:apps/causeway-server/src/routes/pages/tasks/list.rs::tasks",
+        "rust:apps/causeway-server-web/src/views/platform/tasks/list.rs::tasks"
+      ],
+      "found_files": [
+        "apps/causeway-server/src/workflow_tasks/page.rs",
+        "apps/causeway-server/src/workflow_tasks.rs",
+        "apps/causeway-server/src/routes/pages/tasks/list.rs",
+        "apps/causeway-server-web/src/views/platform/tasks/list.rs",
+        "apps/causeway-server-web/src/views/platform/tasks.rs"
+      ],
+      "missing": [],
+      "recall": 1.0,
+      "hit": true,
+      "tokens": 29962,
+      "bytes": 108672,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "symptom words: 'cannot be read', 'could not be loaded'; the code says LoadFailed and Unavailable"
+    },
+    {
+      "id": "paused-tab-not-evicted",
+      "pr": 1040,
+      "ask": "Over Connect, a browser tab that pauses reading its session stream is thrown out before it resumes, so the slow-consumer case \"arrow frames are never dropped\" fails on main. A reply must never evict a tab for pausing while nothing is waiting on it; only a tab over its backlog, or stalled while a reply waits, may go.",
+      "unknown": [],
+      "found_ids": [
+        "rust:apps/causeway-server/src/composition/state/session_streams.rs::SessionStreams",
+        "rust:apps/causeway-server/src/composition/state/session_streams.rs::ConnectionSink",
+        "rust:apps/causeway-server/src/composition/state/session_streams.rs::Lane"
+      ],
+      "found_files": [
+        "apps/causeway-server/src/composition/state/session_streams.rs"
+      ],
+      "missing": [
+        "rust:apps/causeway-server/src/composition/state/session_streams.rs::Backlog"
+      ],
+      "recall": 0.8,
+      "hit": true,
+      "tokens": 29975,
+      "bytes": 113115,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "symptom words: 'thrown out', 'paused', 'slow consumer'; the code says evict, stalled, backlog"
+    },
+    {
+      "id": "dataset-load-waits-for-codec",
+      "pr": 1027,
+      "ask": "Explorer and catalog pages send their first command (dataset.load) as soon as the session synchronises, but the protobuf codec bundle that encodes it registers later, so the transport falls back to JSON and the server refuses it. Make the browser bus hold a command until the codec that encodes it has registered, and make the pages' inline scripts rely on that instead of racing.",
+      "unknown": [],
+      "found_ids": [
+        "typescript:torrentfx/web/framework/runtime-web/src/index.ts::BrowserBus"
+      ],
+      "found_files": [
+        "torrentfx/web/framework/runtime-web/src/index.ts",
+        "torrentfx/web/framework/runtime-web/src/browser-bus.test.ts"
+      ],
+      "missing": [
+        "typescript:torrentfx/web/framework/app/src/index.ts::bootstrap",
+        "rust:apps/causeway-server-web/src/views/platform/catalog.rs::catalog_scripts",
+        "rust:apps/causeway-server-web/src/views/platform/explorer/structured/pipeline_scripts/ready.rs::SEGMENT",
+        "rust:apps/causeway-server-web/src/views/platform/explorer/structured/pipeline_scripts/actions.rs::SEGMENT",
+        "torrentfx/web/framework/app/src/index.ts",
+        "apps/causeway-server-web/src/views/platform/catalog.rs",
+        "apps/causeway-server-web/src/views/platform/explorer/structured/pipeline_scripts.rs",
+        "apps/causeway-server/tests/browser/ui-ownership-transport.spec.ts"
+      ],
+      "recall": 0.2727272727272727,
+      "hit": true,
+      "tokens": 29956,
+      "bytes": 112720,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "the TypeScript task"
+    },
+    {
+      "id": "cookie-rpc-needs-preflight",
+      "pr": 1021,
+      "ask": "A page on a sibling origin can make the browser attach the session cookie to a Connect GET or a text/plain POST without a preflight, and SameSite=Lax does not stop it. Serve a cookie-authenticated RPC only when the request carries Connect's protocol header or content type, or its Origin is one of ours; refuse everything else before the handler.",
+      "unknown": [],
+      "found_ids": [
+        "rust:apps/causeway-server/src/browser_auth/middleware.rs::attach_browser_caller",
+        "rust:apps/causeway-server/src/browser_auth/middleware.rs::present_session_token",
+        "rust:apps/causeway-server/src/routes/mod.rs::build_router"
+      ],
+      "found_files": [
+        "apps/causeway-server/src/browser_auth/middleware.rs",
+        "apps/causeway-server/src/browser_auth/mod.rs",
+        "apps/causeway-server/src/routes/mod.rs"
+      ],
+      "missing": [
+        "rust:apps/causeway-server/src/routes/access.rs::RouteAccess",
+        "rust:apps/causeway-server/src/routes/rpc.rs::routes",
+        "rust:apps/causeway-server/src/transport/connect_proxy.rs::handler",
+        "apps/causeway-server/src/routes/access.rs",
+        "apps/causeway-server/src/routes/rpc.rs",
+        "apps/causeway-server/src/transport.rs",
+        "apps/causeway-server/src/transport/connect_proxy.rs"
+      ],
+      "recall": 0.46153846153846156,
+      "hit": true,
+      "tokens": 29949,
+      "bytes": 108970,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "symptom words: 'sibling origin', 'preflight', 'cookie'; the new modules are rpc_csrf and own_origins"
+    },
+    {
+      "id": "flightdeck-postgres-tls",
+      "pr": 1014,
+      "ask": "flightdeck's PostgreSQL remote connects without TLS, and the password it sends is the caller's delegated credential, so any DSN that leaves the host sends it in cleartext. Parse the DSN when the remote config loads, honour libpq's sslmode values, require TLS for any host that is not local, and keep the plain path for the local test database.",
+      "unknown": [],
+      "found_ids": [
+        "rust:services/flightdeck/src/remote.rs::RemoteConfig",
+        "rust:services/flightdeck/src/remote.rs::PostgreSqlSource",
+        "rust:services/flightdeck/src/remote.rs::execute_postgres",
+        "rust:services/flightdeck/src/startup.rs::build_remote_routing"
+      ],
+      "found_files": [
+        "services/flightdeck/src/remote.rs",
+        "services/flightdeck/src/startup.rs"
+      ],
+      "missing": [
+        "rust:services/flightdeck/src/remote.rs::RemoteRuntime",
+        "rust:services/flightdeck/src/startup.rs::build_query_service",
+        "rust:services/flightdeck/src/config.rs::ServerCli",
+        "services/flightdeck/src/config.rs",
+        "services/flightdeck/src/lib.rs",
+        "services/flightdeck/tests/flight_test.rs",
+        "services/flightdeck/Cargo.toml"
+      ],
+      "recall": 0.46153846153846156,
+      "hit": true,
+      "tokens": 29910,
+      "bytes": 102854,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "symptom words: 'cleartext', 'TLS'; the code says NoTls and tokio_postgres"
+    },
+    {
+      "id": "search-relay-addon-suite",
+      "pr": 1039,
+      "ask": "search-relay's rpc-access test loads the native @causeway/rpc-access addon from the plain unit-test task, so an affected run that reaches search-relay fails whenever the addon is not built. Move that suite into the addon run the CI ffi job executes after its single addon build, as causeway-relay-ts already does, and make the Rhai test that guards that order cover it.",
+      "unknown": [],
+      "found_ids": [
+        "task:mise/ffi:rpc-access:test",
+        "rhai:.mise/rhai/causeway/node_addon_release_test.rhai::test_the_addon_suites_run_after_the_single_build"
+      ],
+      "found_files": [
+        ".mise/toml/ffi.toml",
+        ".mise/rhai/causeway/node_addon_release_test.rhai",
+        "services-node/search-relay/vitest.config.ts",
+        "services-node/search-relay/moon.yml",
+        "services-node/search-relay/package.json",
+        "services-node/search-relay/tests/rpc-access.test.ts"
+      ],
+      "missing": [],
+      "recall": 1.0,
+      "hit": true,
+      "tokens": 29924,
+      "bytes": 105270,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "the mise and Rhai task"
+    },
+    {
+      "id": "stuck-work-sources",
+      "pr": 1071,
+      "ask": "The stuck-work listing cannot tell \"nothing is waiting\" from \"this source cannot count\", and it names only the sources that returned records. Add an optional waiting total per record and a per-source summary to the PortListStuckWork response without breaking the wire, fill them in the server, and show them on both the Rust and the Node operations pages.",
+      "unknown": [],
+      "found_ids": [
+        "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkCounts",
+        "rust:apps/causeway-server/src/metadata_admin/handlers.rs::stuck_work_record",
+        "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork"
+      ],
+      "found_files": [
+        "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "apps/causeway-server/src/metadata_admin/handlers.rs",
+        "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+        "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+        "apps-web/causeway-web/test/app-operations.test.ts"
+      ],
+      "missing": [
+        "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::list",
+        "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkListing",
+        "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::admits",
+        "tsx:apps-web/causeway-web/src/pages/routes/StuckWork.tsx::Records",
+        "proto/causeway/metadata/v2/admin.proto",
+        "apps-web/causeway-web/src/pages/routes/StuckWork.tsx"
+      ],
+      "recall": 0.5714285714285714,
+      "hit": true,
+      "tokens": 29973,
+      "bytes": 103973,
+      "budget": 30000,
+      "within_budget": true,
+      "note": "proto, Rust and TypeScript in one change; the proto file has no extractor, so it counts only as a file"
+    }
+  ]
+}

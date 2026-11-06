@@ -6641,6 +6641,10 @@ dependencies = [
 name = "surveyor-context"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "surveyor-graph",
+ "surveyor-model",
+ "surveyor-search",
  "tiktoken-rs",
 ]
 
@@ -6697,6 +6701,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "surveyor-context",
  "surveyor-graph",
  "surveyor-model",
  "surveyor-rules",

@@ -8,7 +8,11 @@ license.workspace = true
 description = "Surveyor context packs: the minimum sufficient context for a task, inside a token budget"
 
 [dependencies]
+surveyor-model.workspace = true
+surveyor-graph.workspace = true
+surveyor-search.workspace = true
 tiktoken-rs.workspace = true
+serde.workspace = true
 
 [lints]
 workspace = true

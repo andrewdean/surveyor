@@ -137,8 +137,8 @@ and three `key` methods.
 `[[task]]` entries. A task is the text an agent would be handed, with the answer key the
 change that resolved it left behind: `expect`, the identifiers of nodes the change
 edited, and `files`, the files it touched. The eval produces an answer for the task
-text (`--source`, today `query-graph`: the MCP tool's exact output for the text, five
-seeds at depth 1) and reports:
+text (`--source`: `context-pack`, the default, or `query-graph`, the MCP tool's exact
+output for the text, five seeds at depth 1) and reports:
 
 - **recall**: the share of the key (identifiers and files together) the answer carries;
   an identifier counts when the answer names the node, a file when the answer names any
@@ -153,11 +153,14 @@ pull requests 1014 to 1073 (`PLAN-surveyor-phase-2.md` beside the RFD says how).
 is scored against the tree at its `base` commit, the merge commit's parent, because a
 pack is what an agent reads before it writes the change. `causeway-task-stores.sh
 <scratch>` builds one store per base in a shared scratch clone of Causeway (name tier,
-`examples/causeway-profile`), and `--stores <scratch>/stores` points the eval at them:
+`examples/causeway-profile`), `--stores <scratch>/stores` points the eval at them, the
+checkouts beside the stores supply the source windows, and `--dump <dir>` writes each
+pack out:
 
 ```bash
 docs/eval/causeway-task-stores.sh "$SCRATCH"
-surveyor --repo-root ~/dev/trusted/causeway eval docs/eval/causeway-tasks.toml --stores "$SCRATCH/stores"
+surveyor --repo-root ~/dev/trusted/causeway eval docs/eval/causeway-tasks.toml --stores "$SCRATCH/stores" --dump "$SCRATCH/packs"
+surveyor --repo-root ~/dev/trusted/causeway eval docs/eval/causeway-tasks.toml --stores "$SCRATCH/stores" --source query-graph
 ```
 
 ### Results on the ten tasks
@@ -179,8 +182,41 @@ counted the same way a pack will be.
 | stuck-work-sources | 1071 | 5/14 | 0.36 | 11,510 | 46,499 |
 | **all** | | **36/100** | **0.37** | median 5,031, max 11,510 | |
 
-Every answer fits the 30 thousand token budget, and every one carries some part of its
-key, because the text index finds the file or a neighbor of the symbols a task names.
+Table 2. The context pack (`surveyor context`, the default `--source`), 2026-11-05,
+same stores, same keys, budget 30,000; the packs themselves are under
+`docs/exit-tests/raw/2026-11-05-phase-2-packs/`.
+
+| Task | PR | Key found, baseline | Key found, pack | Recall | Tokens | Items | With source |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| cwsh-user-agent | 1073 | 3/7 | 4/7 | 0.57 | 29,982 | 115 | 35 |
+| drop-orphaned-base-tables | 1064 | 3/8 | 4/8 | 0.50 | 29,964 | 101 | 21 |
+| schema-check-at-startup | 1068 | 1/11 | 1/11 | 0.09 | 29,959 | 86 | 28 |
+| tasks-page-load-failed | 1066 | 6/10 | 10/10 | 1.00 | 29,962 | 83 | 46 |
+| paused-tab-not-evicted | 1040 | 2/5 | 4/5 | 0.80 | 29,975 | 83 | 39 |
+| dataset-load-waits-for-codec | 1027 | 1/11 | 3/11 | 0.27 | 29,956 | 92 | 43 |
+| cookie-rpc-needs-preflight | 1021 | 7/13 | 6/13 | 0.46 | 29,949 | 88 | 33 |
+| flightdeck-postgres-tls | 1014 | 4/13 | 6/13 | 0.46 | 29,910 | 111 | 29 |
+| search-relay-addon-suite | 1039 | 4/8 | 8/8 | 1.00 | 29,924 | 115 | 20 |
+| stuck-work-sources | 1071 | 5/14 | 8/14 | 0.57 | 29,973 | 85 | 22 |
+| **all** | | **36/100** | **54/100** | **0.57** | median 29,962, max 29,982 | | |
+
+The pack carries 54 of the 100 key entries against the baseline's 36, fills the budget
+every time (the budget is the constraint, not the graph: every pack had hundreds of
+candidates left over), and shows source for a third of what it names. Two tasks are
+complete; one, the schema check at startup, is as blind as the baseline, because the
+function that has to change (`causeway_db_core::init`) neither calls nor is called by
+the migration machinery the task's words find, and the task's "initialisation" does
+not stem to the doc's "Initializes". The ranking went through six measured versions
+on the way here: summing path scores buried seeds under hubs (now the best path plus
+a quarter of the rest), expanding from seeds alone missed the owners and the second
+ring (now both, with a hop's score shared across a fan-out wider than twelve), and a
+pack full of 120-line windows held 60 nodes where 90 fit with 80-line ones. The last
+step, lifting each candidate by its own match against the task's words, is the
+reranking the plan's stage 5 names; it moved three keys into the budget.
+
+Every baseline answer fits the 30 thousand token budget, and every one carries some
+part of its key, because the text index finds the file or a neighbor of the symbols a
+task names.
 What the baseline lacks is the rest of the key: `query_graph` returns five seeds and
 their direct relations as JSON, so it names the seed's callers and callees and nothing
 two hops away, carries no source text, and spends most of its tokens on citations and
