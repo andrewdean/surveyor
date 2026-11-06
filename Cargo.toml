@@ -25,7 +25,7 @@ surveyor-rules   = { path = "crates/surveyor-rules" }
 # serialization and errors
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml       = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+toml       = { version = "1.0", default-features = false, features = ["parse", "serde"] }
 thiserror  = "2"
 anyhow     = "1"
 
