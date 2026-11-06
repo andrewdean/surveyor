@@ -212,7 +212,11 @@ a quarter of the rest), expanding from seeds alone missed the owners and the sec
 ring (now both, with a hop's score shared across a fan-out wider than twelve), and a
 pack full of 120-line windows held 60 nodes where 90 fit with 80-line ones. The last
 step, lifting each candidate by its own match against the task's words, is the
-reranking the plan's stage 5 names; it moved three keys into the budget.
+reranking the plan's stage 5 names; measured on its own (the same build with the
+lift's weight at zero) it moves no key entry in or out of any pack, 54 of 100 either
+way, so it reorders what is in a pack and nothing more. The gain from 52 to 54 came
+with it from the owners of first-ring nodes, the hyphenated crate names as seeds and
+the shorter cards and windows.
 
 Every baseline answer fits the 30 thousand token budget, and every one carries some
 part of its key, because the text index finds the file or a neighbor of the symbols a
