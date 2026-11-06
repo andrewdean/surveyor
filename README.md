@@ -146,9 +146,11 @@ for now). This checkout implements Phase 0 of that plan.
   every `*.rhai` under the profile's `[rules] dirs` (default `surveyor-rules/`), each a
   `fn check(g)` returning violations with citations, judged as `fail`, `warn` or a
   `budget` to burn down. An optional `const SCOPE = ["crates/outbox/**"]` names the
-  files a rule governs, so a card lists the rule before it has a finding. Surveyor's
-  own rules live in `surveyor-rules/`: crate layering, a pure model crate, Lance named
-  only by the store, no crate cycles, and a budget of public functions without tests.
+  files a rule governs, so a card lists the rule before it has a finding. `check`
+  exits 1 on a failed rule and 2 when one does not load, which is what a CI step
+  needs (`docs/causeway-ci-check.md` proposes one for Causeway). Surveyor's own rules
+  live in `surveyor-rules/`: crate layering, a pure model crate, Lance named only by
+  the store, no crate cycles, and a budget of public functions without tests.
 - **Context packs.** `surveyor context "<task>"` (MCP `context_pack`) is the minimum
   sufficient context for a whole task inside a token budget, 30,000 by default,
   counted on the Markdown it prints with the `cl100k_base` encoding. Seeds come from

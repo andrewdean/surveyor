@@ -14,10 +14,14 @@ const SEVERITY = "budget";
 const BUDGET = 0;
 
 const SERVER_SRC = "apps/causeway-server/src/";
+// The five Causeway `main` allows at ae6bdbea (2026-11-05): checks.rs
+// `server_service_impls` added transport/explorer_session_rpc.rs in #1050. This list
+// follows that regex; a change there is a change here.
 const ORCHESTRATOR_FILES = [
     "apps/causeway-server/src/catalog.rs",
     "apps/causeway-server/src/metadata_admin/handlers.rs",
     "apps/causeway-server/src/transport/session_rpc.rs",
+    "apps/causeway-server/src/transport/explorer_session_rpc.rs",
     "apps/causeway-server/src/transport/relay_gateway.rs",
 ];
 

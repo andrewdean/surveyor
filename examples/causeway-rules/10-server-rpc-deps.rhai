@@ -10,7 +10,10 @@ const SEVERITY = "budget";
 const BUDGET = 0;
 
 const SERVER = "pkg:cargo/causeway-server";
-const ORCHESTRATORS = ["pkg:cargo/catalog-rpc", "pkg:cargo/metadata-rpc", "pkg:cargo/session-rpc", "pkg:cargo/relay-rpc"];
+// The five Causeway `main` allows at ae6bdbea (2026-11-05): checks.rs `server_rpc_deps`
+// added explorer-session-rpc in #1050. This list follows that regex; a change there is
+// a change here.
+const ORCHESTRATORS = ["pkg:cargo/catalog-rpc", "pkg:cargo/metadata-rpc", "pkg:cargo/session-rpc", "pkg:cargo/explorer-session-rpc", "pkg:cargo/relay-rpc"];
 
 fn check(g) {
     let out = [];

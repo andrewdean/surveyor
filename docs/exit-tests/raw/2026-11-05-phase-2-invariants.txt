@@ -1,0 +1,26 @@
+Causeway main ae6bdbeac9fcefa7a6544e8ab6056803958332f9
+
+## clean tree
+ok   [component-cross-deps] components must not depend on sibling component implementation crates; depend on crates/ domain+contract crates or services/ wire crates instead (ADR-0014) — 0
+ok   [server-rpc-contract-deps] non-orchestrator *-rpc deps in the server shell — 0 of 0 allowed
+ok   [server-rpc-service-impls] non-orchestrator gRPC service impls in the server shell — 0 of 0 allowed
+ok   [island-cross-references] web ui-* islands importing a sibling island — 0 of 0 allowed
+ok   [runtime-env-resource-ctors] causeway-runtime resource types must expose typed topology constructors, not env-first constructors — 0
+5 rules, 0 violations, 0 failed
+exit 0
+
+## planted
+ apps/causeway-server/src/marketplace.rs | 6 ++++++
+ component/governance/core/Cargo.toml    | 1 +
+ web/ui-catalog-filter/src/index.ts      | 1 +
+ 3 files changed, 8 insertions(+)
+FAIL [component-cross-deps] components must not depend on sibling component implementation crates; depend on crates/ domain+contract crates or services/ wire crates instead (ADR-0014) — 1
+      component/governance/core/Cargo.toml:10  -> catalog-component (component/catalog/core): cross-slice component dependency  (pkg:cargo/governance-component -DEPENDS_ON-> pkg:cargo/catalog-component)
+ok   [server-rpc-contract-deps] non-orchestrator *-rpc deps in the server shell — 0 of 0 allowed
+FAIL [server-rpc-service-impls] non-orchestrator gRPC service impls in the server shell — 1 of 0 allowed
+      apps/causeway-server/src/marketplace.rs:101  implements a gRPC service in the server shell  (rust:apps/causeway-server/src/marketplace.rs::Probe#impl(SearchService))
+FAIL [island-cross-references] web ui-* islands importing a sibling island — 1 of 0 allowed
+      web/ui-catalog-filter/src/index.ts:1  web/ui-catalog-filter -> pkg:npm/@causeway/ui-request: island imports a sibling island  (file:web/ui-catalog-filter/src/index.ts -IMPORTS-> pkg:npm/@causeway/ui-request)
+ok   [runtime-env-resource-ctors] causeway-runtime resource types must expose typed topology constructors, not env-first constructors — 0
+5 rules, 3 violations, 3 failed
+exit 1

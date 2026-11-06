@@ -13,6 +13,7 @@ const ORCHESTRATOR_FILES = [
     "apps/causeway-server/src/catalog.rs",
     "apps/causeway-server/src/metadata_admin/handlers.rs",
     "apps/causeway-server/src/transport/session_rpc.rs",
+    "apps/causeway-server/src/transport/explorer_session_rpc.rs",
     "apps/causeway-server/src/transport/relay_gateway.rs",
 ];
 

@@ -56,6 +56,18 @@ nodes, and `cargo_feature_isolation` needed the optional, default-features and f
 on Cargo `DEPENDS_ON` edges and Package nodes, plus `g.cargo_build`, the one `GraphHandle`
 addition, which resolves them the way cargo unifies features.
 
+## Keeping the constants with Causeway
+
+Several rules carry Causeway's allowlists as constants (`ORCHESTRATORS`,
+`ORCHESTRATOR_FILES`, `PATHS`, `FACADES`, `WORKSPACES`), copied from
+`bootstrap/cw-vsa/src/checks.rs` and `.mise/rhai/vsa/`. They drift: between
+`40f993d7` and `ae6bdbea` (2026-11-05) Causeway's gate added `explorer-session-rpc`
+as a fifth orchestrator and `transport/explorer_session_rpc.rs` as its file (#1050),
+and the copies here flagged both on `main` until they were updated for the Phase 2
+exit test. That is the argument for the rules living in Causeway's own
+`surveyor-rules/` directory, where a change to the gate and a change to the rule are
+one pull request; `docs/causeway-ci-check.md` in this repository proposes exactly that.
+
 ## The cw-vsa run itself
 
 `vsa-gate` printed 159 failures and exit 1 on this checkout. Every one of them names a path
