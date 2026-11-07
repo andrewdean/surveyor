@@ -1,7 +1,9 @@
-# Proposed: `surveyor check` as a Causeway CI step
+# `surveyor check` as a Causeway CI step
 
-A pull request for Andrew to open against andrewdean/causeway; nothing here has been
-pushed to Causeway. It carries the five rules of the Phase 2 exit test into
+Landed on 2026-11-06 as andrewdean/causeway#1078 (squash commit b28f1323): the five
+rules live in Causeway's `surveyor-rules/` and the `surveyor-check` job fails a pull
+request that breaks one. The text below is the proposal as written before the pull
+request opened. It carries the five rules of the Phase 2 exit test into
 Causeway's own `surveyor-rules/` directory, which its committed `surveyor.toml`
 already names, and adds a workflow job that fails a pull request on a violation.
 
