@@ -29,6 +29,7 @@ pub enum Output {
 pub struct NodeView {
     pub id: String,
     pub kind: String,
+    pub repo: String,
     pub name: String,
     pub qualified_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,6 +47,7 @@ impl NodeView {
         Self {
             id: n.id.to_string(),
             kind: n.kind.to_string(),
+            repo: n.repo.to_string(),
             name: n.name.clone(),
             qualified_name: n.qualified_name.clone(),
             file: n.file().map(ToString::to_string),
@@ -311,6 +313,7 @@ impl Output {
                 version: u64,
                 nodes: usize,
                 edges: usize,
+                federated: usize,
                 repositories: Vec<Repo<'a>>,
                 #[serde(skip_serializing_if = "Option::is_none")]
                 graph: Option<&'a GraphStats>,
@@ -320,6 +323,7 @@ impl Output {
                 version: stats.version,
                 nodes: stats.nodes,
                 edges: stats.edges,
+                federated: stats.federated,
                 repositories: stats
                     .repositories
                     .iter()
@@ -343,7 +347,10 @@ impl Output {
             store.display(),
             stats.version
         );
-        println!("  nodes {}  edges {}", stats.nodes, stats.edges);
+        println!(
+            "  nodes {}  edges {}  federated {}",
+            stats.nodes, stats.edges, stats.federated
+        );
         for s in &stats.repositories {
             println!(
                 "  {}: commit {}  files {}  nodes {}  edges {}  unresolved {}  (surveyor {})",
@@ -377,7 +384,13 @@ impl Output {
             println!("{} nodes", nodes.len());
         }
         for n in nodes {
-            println!("{:<10} {:<50} {}", n.kind, n.qualified_name, location(n));
+            println!(
+                "{:<10} {:<50} {}{}",
+                n.kind,
+                n.qualified_name,
+                location(n),
+                repo_tag(n, nodes)
+            );
             println!("           {}", n.id);
         }
     }
@@ -463,6 +476,7 @@ impl Output {
         }
         println!("{} {}", node.kind, node.qualified_name);
         println!("  id        {}", node.id);
+        println!("  repo      {}", node.repo);
         if !location(node).is_empty() {
             println!("  location  {}", location(node));
         }
@@ -480,14 +494,20 @@ impl Output {
         if !members.is_empty() {
             println!("members ({}):", members.len());
             for m in members.iter().take(limit) {
-                println!("  {:<8} {:<40} {}", m.kind, m.name, location(m));
+                println!(
+                    "  {:<8} {:<40} {}{}",
+                    m.kind,
+                    m.name,
+                    location(m),
+                    foreign(m, &node.repo)
+                );
             }
             if members.len() > limit {
                 println!("  … {} more", members.len() - limit);
             }
         }
-        print_groups("outgoing", &out, limit, true);
-        print_groups("incoming", &inc, limit, false);
+        print_groups("outgoing", &out, limit, true, &node.repo);
+        print_groups("incoming", &inc, limit, false, &node.repo);
     }
 
     /// Prints one or more cards.
@@ -610,12 +630,13 @@ impl Output {
                     String::new()
                 };
                 println!(
-                    "  {:<8} {:<48} {:<4} via {:<12} {}",
+                    "  {:<8} {:<48} {:<4} via {:<12} {}{}",
                     h.node.kind,
                     truncate(&h.node.qualified_name, 48),
                     confidence,
                     h.via.kind,
-                    cite(h.via)
+                    cite(h.via),
+                    foreign(h.node, &node.repo)
                 );
             }
         }
@@ -822,6 +843,77 @@ impl Output {
         );
     }
 
+    /// The cross-repository package edges, after `surveyor federate`.
+    pub fn federated(
+        self,
+        repositories: &[RepositorySnapshot],
+        edges: &[surveyor_model::FederatedEdge],
+    ) {
+        if self == Self::Json {
+            #[derive(Serialize)]
+            struct Row<'a> {
+                src_repo: &'a str,
+                src: &'a str,
+                dst_repo: &'a str,
+                dst: &'a str,
+                kind: String,
+                confidence: f32,
+                citation: String,
+                attributes: &'a BTreeMap<String, String>,
+            }
+            #[derive(Serialize)]
+            struct View<'a> {
+                repositories: Vec<&'a str>,
+                edges: Vec<Row<'a>>,
+            }
+            print_json(&View {
+                repositories: repositories.iter().map(|s| s.repo.as_str()).collect(),
+                edges: edges
+                    .iter()
+                    .map(|f| Row {
+                        src_repo: f.src_repo.as_str(),
+                        src: f.edge.src.as_str(),
+                        dst_repo: f.dst_repo.as_str(),
+                        dst: f.edge.dst.as_str(),
+                        kind: f.edge.kind.to_string(),
+                        confidence: f.edge.provenance.confidence.get(),
+                        citation: cite(&f.edge),
+                        attributes: &f.edge.attributes,
+                    })
+                    .collect(),
+            });
+            return;
+        }
+        println!(
+            "{} federated edges across {} repositories ({})",
+            edges.len(),
+            repositories.len(),
+            repositories
+                .iter()
+                .map(|s| s.repo.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        for f in edges {
+            let spec = f
+                .edge
+                .attributes
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!(
+                "  {}:{} -{}-> {}:{}  {}  {spec}",
+                f.src_repo,
+                f.edge.src,
+                f.edge.kind,
+                f.dst_repo,
+                f.edge.dst,
+                cite(&f.edge)
+            );
+        }
+    }
+
     pub fn source(self, window: &SourceWindow) {
         if self == Self::Json {
             print_json(window);
@@ -914,7 +1006,32 @@ fn parse_line_range(range: &str) -> anyhow::Result<(u32, u32)> {
 }
 
 /// Members: `DEFINES` and `CONTAINS` children, plus those of impl blocks for a type.
-fn print_groups(label: &str, items: &[Neighbor<'_>], limit: usize, outgoing: bool) {
+/// ` [repo]` when `node` belongs to another repository than `home`.
+fn foreign(node: &Node, home: &surveyor_model::RepoId) -> String {
+    if node.repo == *home {
+        String::new()
+    } else {
+        format!(" [{}]", node.repo)
+    }
+}
+
+/// ` [repo]` for every node when `nodes` span more than one repository.
+fn repo_tag(node: &Node, nodes: &[&Node]) -> String {
+    let mixed = nodes.iter().any(|n| n.repo != node.repo);
+    if mixed {
+        format!(" [{}]", node.repo)
+    } else {
+        String::new()
+    }
+}
+
+fn print_groups(
+    label: &str,
+    items: &[Neighbor<'_>],
+    limit: usize,
+    outgoing: bool,
+    home: &surveyor_model::RepoId,
+) {
     if items.is_empty() {
         return;
     }
@@ -928,10 +1045,11 @@ fn print_groups(label: &str, items: &[Neighbor<'_>], limit: usize, outgoing: boo
         println!("  {arrow} {kind} ({})", list.len());
         for n in list.iter().take(limit) {
             println!(
-                "     {:<8} {:<44} {}",
+                "     {:<8} {:<44} {}{}",
                 n.node.kind,
                 truncate(&n.node.qualified_name, 44),
-                cite(n.edge)
+                cite(n.edge),
+                foreign(n.node, home)
             );
         }
         if list.len() > limit {

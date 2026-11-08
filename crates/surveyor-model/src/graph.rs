@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Edge, ModelError, Node, ReferenceRole, SourceLocation};
+use crate::{Edge, ModelError, Node, ReferenceRole, RepoId, SourceLocation};
 
 /// Why a reference stayed unresolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -91,6 +91,22 @@ pub struct GraphStats {
 }
 
 /// Nodes and edges produced for a repository or a changed subset of it.
+/// A dependency edge between two repositories in one store, paired by package
+/// coordinate: a consumer package in `src_repo` depends on a package `dst_repo`
+/// declares. Rows of the store's `federated` table; never part of a repository's
+/// own partition.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FederatedEdge {
+    /// Repository of the consumer, where the manifest the edge cites lives.
+    pub src_repo: RepoId,
+    /// Repository that declares the package.
+    pub dst_repo: RepoId,
+    /// The edge: `src` is the consumer package, `dst` the declared package (the same
+    /// identifier as the consumer's external stub), kind `DEPENDS_ON`, derivation
+    /// declared, confidence `1/n` for `n` declaring repositories.
+    pub edge: Edge,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GraphDelta {
     /// Nodes to upsert.

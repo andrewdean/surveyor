@@ -1,9 +1,10 @@
 //! Persistence: the graph as Lance tables on local disk or object storage.
 //!
 //! [`LanceStore`] keeps five tables (`nodes`, `edges`, `files`, `unresolved`, `meta`)
-//! partitioned by repository. Replacing a repository deletes its rows and appends the
-//! new ones, which Lance records as a new dataset version, so the previous index stays
-//! queryable. Traversal does not happen here: [`LanceStore::load_graph`] hands the
+//! partitioned by repository, and a sixth, `federated`, for the package edges between
+//! repositories, created by the first federate pass and never for a store of one
+//! repository. Replacing a repository deletes its rows and appends the new ones, which
+//! Lance records as a new dataset version, so the previous index stays queryable. Traversal does not happen here: [`LanceStore::load_graph`] hands the
 //! rows to `surveyor-graph`.
 //!
 //! The store is also where vectors and full-text indexes will live (Phase 2); the

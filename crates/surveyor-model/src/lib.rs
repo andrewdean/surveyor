@@ -46,7 +46,7 @@ pub use fact::{
     ReferenceFact, ReferenceRole, ResolvedReference, SourceUnit, SymbolTarget,
 };
 #[doc(inline)]
-pub use graph::{GraphDelta, GraphStats, Unresolved, UnresolvedReason};
+pub use graph::{FederatedEdge, GraphDelta, GraphStats, Unresolved, UnresolvedReason};
 #[doc(inline)]
 pub use ids::{
     CommitId, ContentHash, ExtractorId, GrammarId, ModelId, NodeId, ProbeId, RepoId, RepoPath,

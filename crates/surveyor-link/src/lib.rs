@@ -26,6 +26,7 @@
 // Rust guideline compliant 2026-02-21
 
 mod command;
+mod federate;
 mod ids;
 mod input;
 mod linker;
@@ -34,6 +35,8 @@ mod update;
 
 #[doc(inline)]
 pub use command::{CommandTarget, command_names, command_targets, mise_task_id};
+#[doc(inline)]
+pub use federate::{RepoPackages, federate, is_external_package};
 #[doc(inline)]
 pub use ids::{doc_id, file_id, package_id, repo_id, sql_id, symbol_id, task_id};
 #[doc(inline)]

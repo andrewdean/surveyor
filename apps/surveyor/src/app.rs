@@ -9,8 +9,10 @@ use clap::{Args, Parser, Subcommand};
 use surveyor_extract::{
     Extraction, Profile, Repository, extract_paths_using, extract_repository_with, extractors_with,
 };
-use surveyor_graph::{CodeGraph, EdgeFilter, Lookup, PathMode, Reach};
-use surveyor_link::{ChangedFiles, FileEntry, LinkInput, link, plan_update, relink};
+use surveyor_graph::{CodeGraph, EdgeFilter, Lookup, Partition, PathMode, Reach};
+use surveyor_link::{
+    ChangedFiles, FileEntry, LinkInput, RepoPackages, federate, link, plan_update, relink,
+};
 use surveyor_model::{EdgeKind, Fact, GraphStats, LiteralRole, NodeKind, RepoId, RepoPath};
 use surveyor_store::{FileRecord, LanceStore, RepositorySnapshot, StoreUpdate};
 
@@ -92,6 +94,10 @@ pub struct Cli {
     /// Repository identifier inside the dataset (defaults to the profile or directory name).
     #[arg(long, global = true, env = "SURVEYOR_REPO_ID")]
     pub repo_id: Option<String>,
+    /// Load every repository in the dataset, not only the one asked about, so a walk
+    /// crosses the federated edges into the others.
+    #[arg(long, global = true)]
+    pub all_repos: bool,
     /// Profile file to use instead of `<repo-root>/surveyor.toml`, for a repository
     /// that cannot carry one.
     #[arg(long, global = true, env = "SURVEYOR_PROFILE")]
@@ -144,6 +150,8 @@ pub enum Command {
     /// What a change touches, what it may break, whether the invariants hold: a
     /// pull-request comment and a gate (exit 1 on a failed rule).
     Pr(pr::PrArgs),
+    /// Recompute the cross-repository package edges for every repository in the dataset.
+    Federate,
     /// Serve the graph over MCP on stdio.
     Mcp,
     /// Open, annotate or summarize a session ledger.
@@ -476,15 +484,140 @@ async fn open_graph_at(
         }
     };
     let started = Instant::now();
-    let (nodes, edges) = store.load_graph(Some(&repo)).await.context("load graph")?;
-    let graph = CodeGraph::new(nodes, edges);
+    let graph = load_graph_for(&store, &repo, cli.all_repos).await?;
     tracing::info!(
         nodes = graph.node_count(),
         edges = graph.edge_count(),
+        repositories = graph.repos().len(),
         ms = started.elapsed().as_millis() as u64,
         "graph loaded"
     );
     Ok((store, graph, repo))
+}
+
+/// Loads `repo`'s partition and, when the dataset holds other repositories, the
+/// federated edges that touch it with their foreign endpoints, or every partition with
+/// `all_repos`. A dataset of one repository loads as it always did and reads no other
+/// table.
+async fn load_graph_for(
+    store: &LanceStore,
+    repo: &RepoId,
+    all_repos: bool,
+) -> anyhow::Result<CodeGraph> {
+    let (nodes, edges) = store.load_graph(Some(repo)).await.context("load graph")?;
+    let others: Vec<RepoId> = store
+        .snapshots()
+        .await?
+        .into_iter()
+        .map(|s| s.repo)
+        .filter(|r| r != repo)
+        .collect();
+    if others.is_empty() {
+        return Ok(CodeGraph::new(nodes, edges));
+    }
+    let mut partitions = vec![Partition {
+        repo: repo.clone(),
+        nodes,
+        edges,
+    }];
+    let federated = store
+        .load_federated(repo)
+        .await
+        .context("load federated edges")?;
+    if all_repos {
+        for other in &others {
+            let (nodes, edges) = store.load_graph(Some(other)).await.context("load graph")?;
+            partitions.push(Partition {
+                repo: other.clone(),
+                nodes,
+                edges,
+            });
+        }
+    } else {
+        // Only the far ends of the federated edges, each under its own repository.
+        let mut wanted: BTreeMap<RepoId, BTreeSet<surveyor_model::NodeId>> = BTreeMap::new();
+        for f in &federated {
+            if f.src_repo != *repo {
+                wanted
+                    .entry(f.src_repo.clone())
+                    .or_default()
+                    .insert(f.edge.src.clone());
+            }
+            if f.dst_repo != *repo {
+                wanted
+                    .entry(f.dst_repo.clone())
+                    .or_default()
+                    .insert(f.edge.dst.clone());
+            }
+        }
+        for (other, ids) in wanted {
+            let ids: Vec<surveyor_model::NodeId> = ids.into_iter().collect();
+            let nodes = store
+                .nodes_in(&other, &ids)
+                .await
+                .context("load foreign nodes")?;
+            partitions.push(Partition {
+                repo: other,
+                nodes,
+                edges: Vec::new(),
+            });
+        }
+    }
+    Ok(CodeGraph::federated(repo.clone(), partitions, federated))
+}
+
+/// Runs the federate pass when the dataset holds other repositories and rewrites the
+/// `federated` table from the whole store; a dataset of one repository is left as it
+/// is. The table is rewritten rather than patched for the repository just written,
+/// because a new declarer of a coordinate changes the confidence of every consumer's
+/// row, whichever repository they are in; the rows are few.
+async fn federate_after_write(store: &LanceStore, repo: &RepoId) -> anyhow::Result<usize> {
+    let snapshots = store.snapshots().await?;
+    if snapshots.len() < 2 {
+        return Ok(0);
+    }
+    let started = Instant::now();
+    let edges = federated_edges(store, &snapshots).await?;
+    store
+        .rewrite_federated(&edges)
+        .await
+        .context("write federated edges")?;
+    let touching = edges
+        .iter()
+        .filter(|f| f.src_repo == *repo || f.dst_repo == *repo)
+        .count();
+    tracing::info!(
+        federated = edges.len(),
+        touching_this_repository = touching,
+        repositories = snapshots.len(),
+        ms = started.elapsed().as_millis() as u64,
+        "federated"
+    );
+    Ok(touching)
+}
+
+/// The federate pass over every repository's packages and dependency edges.
+async fn federated_edges(
+    store: &LanceStore,
+    snapshots: &[RepositorySnapshot],
+) -> anyhow::Result<Vec<surveyor_model::FederatedEdge>> {
+    let mut loaded = Vec::with_capacity(snapshots.len());
+    for s in snapshots {
+        let (nodes, edges) = store
+            .load_packages(&s.repo)
+            .await
+            .context("load packages")?;
+        loaded.push((s.repo.clone(), nodes, edges));
+    }
+    let input: Vec<RepoPackages<'_>> = loaded
+        .iter()
+        .map(|(repo, nodes, edges)| RepoPackages {
+            repo: repo.clone(),
+            packages: nodes,
+            depends: edges,
+        })
+        .collect();
+    Ok(federate(&input))
 }
 
 /// Resolves a user query to exactly one node, or explains why it cannot.
@@ -857,6 +990,20 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             surveyor_mcp::serve_stdio(server)
                 .await
                 .context("mcp server")?;
+            Ok(())
+        }
+        Command::Federate => {
+            let store = open_dataset(&p.store).await?;
+            let snapshots = store.snapshots().await?;
+            let edges = federated_edges(&store, &snapshots).await?;
+            // A dataset of one repository gets no table unless it already has one.
+            if snapshots.len() > 1 || store.federated_count().await? > 0 {
+                store
+                    .rewrite_federated(&edges)
+                    .await
+                    .context("write federated edges")?;
+            }
+            out.federated(&snapshots, &edges);
             Ok(())
         }
         Command::Pr(a) => pr::run(&cli, &p, a, out).await,
@@ -1256,6 +1403,7 @@ async fn index(cli: &Cli, p: &Paths, scip: &[PathBuf]) -> anyhow::Result<Indexed
         .context("write dataset")?;
     let total = started.elapsed();
     tracing::info!(ms = total.saturating_sub(linked_at).as_millis() as u64, store = %p.store.display(), "written");
+    federate_after_write(&store, repo.id()).await?;
     Ok(Indexed {
         snapshot,
         stats,
@@ -1336,17 +1484,20 @@ async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs) -> anyhow::Result<Updat
             snapshot,
             relinked,
             extraction_errors,
-        } => Ok(Updated {
-            snapshot,
-            strategy: changes.source.as_str().to_owned(),
-            reason: None,
-            modified: changes.modified,
-            added: changes.added,
-            deleted: changes.deleted,
-            relinked,
-            extraction_errors,
-            took: started.elapsed(),
-        }),
+        } => {
+            federate_after_write(&store, repo.id()).await?;
+            Ok(Updated {
+                snapshot,
+                strategy: changes.source.as_str().to_owned(),
+                reason: None,
+                modified: changes.modified,
+                added: changes.added,
+                deleted: changes.deleted,
+                relinked,
+                extraction_errors,
+                took: started.elapsed(),
+            })
+        }
         Incremental::TooLarge(reason) => full(cli, p, &reason, started).await,
     }
 }

@@ -15,8 +15,9 @@ use arrow_array::types::{Float32Type, Int64Type, UInt32Type, UInt64Type};
 use arrow_array::{Array, ArrayRef, RecordBatch};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use surveyor_model::{
-    ByteSpan, ContentHash, Edge, EdgeId, EdgeKind, Language, LineSpan, Location, Node, NodeId,
-    NodeKind, Provenance, RepoId, RepoPath, SourceLocation, TextSpan, Unresolved, UnresolvedReason,
+    ByteSpan, ContentHash, Edge, EdgeId, EdgeKind, FederatedEdge, Language, LineSpan, Location,
+    Node, NodeId, NodeKind, Provenance, RepoId, RepoPath, SourceLocation, TextSpan, Unresolved,
+    UnresolvedReason,
 };
 
 use crate::StoreError;
@@ -26,6 +27,9 @@ pub(crate) const EDGES: &str = "edges";
 pub(crate) const FILES: &str = "files";
 pub(crate) const UNRESOLVED: &str = "unresolved";
 pub(crate) const META: &str = "meta";
+/// Cross-repository package edges; created on the first federate pass, never read for a
+/// store that holds one repository.
+pub(crate) const FEDERATED: &str = "federated";
 
 fn utf8(name: &str, nullable: bool) -> Field {
     Field::new(name, DataType::Utf8, nullable)
@@ -66,6 +70,18 @@ pub(crate) fn edges_schema() -> SchemaRef {
         utf8("resolved_against", false),
         utf8("attributes", false),
     ]))
+}
+
+/// The `federated` table: an edge row whose `repo` is the consumer's repository, plus
+/// the repository that declares the package.
+pub(crate) fn federated_schema() -> SchemaRef {
+    let mut fields: Vec<Field> = edges_schema()
+        .fields()
+        .iter()
+        .map(|f| f.as_ref().clone())
+        .collect();
+    fields.push(utf8("dst_repo", false));
+    Arc::new(Schema::new(fields))
 }
 
 pub(crate) fn files_schema() -> SchemaRef {
@@ -194,7 +210,10 @@ pub(crate) fn nodes_batch(repo: &RepoId, nodes: &[Node]) -> Result<RecordBatch, 
     )
 }
 
-pub(crate) fn edges_batch(repo: &RepoId, edges: &[Edge]) -> Result<RecordBatch, StoreError> {
+/// The edge columns for `rows`, each edge under its repository.
+fn edge_columns<'a>(
+    rows: impl Iterator<Item = (&'a RepoId, &'a Edge)>,
+) -> Result<Vec<ArrayRef>, StoreError> {
     let mut id = StringBuilder::new();
     let mut repo_b = StringBuilder::new();
     let mut src = StringBuilder::new();
@@ -207,7 +226,7 @@ pub(crate) fn edges_batch(repo: &RepoId, edges: &[Edge]) -> Result<RecordBatch, 
     let mut provenance = StringBuilder::new();
     let mut against = StringBuilder::new();
     let mut attributes = StringBuilder::new();
-    for e in edges {
+    for (repo, e) in rows {
         id.append_value(e.id.as_str());
         repo_b.append_value(repo.as_str());
         src.append_value(e.src.as_str());
@@ -226,23 +245,37 @@ pub(crate) fn edges_batch(repo: &RepoId, edges: &[Edge]) -> Result<RecordBatch, 
         against.append_value(serde_json::to_string(&e.resolved_against)?);
         attributes.append_value(serde_json::to_string(&e.attributes)?);
     }
+    Ok(vec![
+        Arc::new(id.finish()),
+        Arc::new(repo_b.finish()),
+        Arc::new(src.finish()),
+        Arc::new(dst.finish()),
+        Arc::new(kind.finish()),
+        Arc::new(derivation.finish()),
+        Arc::new(confidence.finish()),
+        Arc::new(file.finish()),
+        Arc::new(observed.finish()),
+        Arc::new(provenance.finish()),
+        Arc::new(against.finish()),
+        Arc::new(attributes.finish()),
+    ])
+}
+
+pub(crate) fn edges_batch(repo: &RepoId, edges: &[Edge]) -> Result<RecordBatch, StoreError> {
     finish(
-        vec![
-            Arc::new(id.finish()),
-            Arc::new(repo_b.finish()),
-            Arc::new(src.finish()),
-            Arc::new(dst.finish()),
-            Arc::new(kind.finish()),
-            Arc::new(derivation.finish()),
-            Arc::new(confidence.finish()),
-            Arc::new(file.finish()),
-            Arc::new(observed.finish()),
-            Arc::new(provenance.finish()),
-            Arc::new(against.finish()),
-            Arc::new(attributes.finish()),
-        ],
+        edge_columns(edges.iter().map(|e| (repo, e)))?,
         edges_schema(),
     )
+}
+
+pub(crate) fn federated_batch(rows: &[FederatedEdge]) -> Result<RecordBatch, StoreError> {
+    let mut columns = edge_columns(rows.iter().map(|f| (&f.src_repo, &f.edge)))?;
+    let mut dst_repo = StringBuilder::new();
+    for f in rows {
+        dst_repo.append_value(f.dst_repo.as_str());
+    }
+    columns.push(Arc::new(dst_repo.finish()));
+    finish(columns, federated_schema())
 }
 
 pub(crate) fn files_batch(
@@ -500,6 +533,27 @@ pub(crate) fn edges_from_batch(batch: &RecordBatch) -> Result<Vec<Edge>, StoreEr
                 c.req("attributes", row)?,
             )?,
         })
+    })
+}
+
+pub(crate) fn federated_from_batch(batch: &RecordBatch) -> Result<Vec<FederatedEdge>, StoreError> {
+    let edges = edges_from_batch(batch)?;
+    rows(batch, |c, row| {
+        Ok((
+            RepoId::new(c.req("repo", row)?),
+            RepoId::new(c.req("dst_repo", row)?),
+        ))
+    })
+    .map(|repos| {
+        repos
+            .into_iter()
+            .zip(edges)
+            .map(|((src_repo, dst_repo), edge)| FederatedEdge {
+                src_repo,
+                dst_repo,
+                edge,
+            })
+            .collect()
     })
 }
 

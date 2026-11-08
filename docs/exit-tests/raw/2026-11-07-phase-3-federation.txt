@@ -1,0 +1,289 @@
+Causeway bbec89ab1e958bb30f5be8b3971becfac1364dd1 at <scratch>/federation
+Cairn bcd61a35a44dc85252cb7ac015d45c884e984b8e; torrentfx dd1bc0b2b7136b978aec89b20ce19d34991c6db9
+
+## Causeway alone: seconds, three runs each (cold index; update with nothing changed)
+label	command	run	seconds
+before	index	1	5.28
+before	index	2	7.04
+before	index	3	5.86
+before	update	1	0.18
+before	update	2	0.15
+before	update	3	0.16
+tables: edges.lance files.lance meta.lance nodes.lance unresolved.lance 
+after	index	1	5.21
+after	index	2	5.07
+after	index	3	7.43
+after	update	1	0.29
+after	update	2	0.32
+after	update	3	0.30
+tables: edges.lance files.lance meta.lance nodes.lance unresolved.lance 
+
+## Causeway, Cairn and torrentfx in one store (binary after)
+index causeway: 8.40 s
+index cairn: 0.30 s (pass runs: 2 repositories)
+## stats with two repositories
+store <scratch>/fed-stores/three (lance version 6)
+  nodes 69839  edges 300173  federated 4
+  cairn: commit bcd61a35a44d  files 228  nodes 2068  edges 8067  unresolved 628  (surveyor 0.1.0+68490b0b)
+  causeway: commit bbec89ab1e95  files 5008  nodes 67771  edges 292106  unresolved 25972  (surveyor 0.1.0+ac619c39)
+  nodes by kind: Method 13676, Function 12926, Test 6093, File 5008, Variant 4969, Const 3956, Struct 3899, Impl 3834, TypeAlias 2341, Module 2312, Column 2194, Class 1505, Enum 1377, Query 989, Package 574, Task 455, Interface 339, Document 302, Index 247, Table 229, Trait 190, Constraint 185, Design 76, Macro 37, View 25, Runbook 22, Workspace 9, Repository 1, Schema 1
+  edges by kind: CALLS 98235, USES_TYPE 46554, CONTAINS 40193, DEFINES 27278, IMPORTS 25329, TESTED_BY 24385, REFERENCES 18694, DEPENDS_ON 3058, DOCUMENTED_BY 2533, READS 1570, DISPATCHES_TO 1443, MIGRATES 685, WRITES 619, DESIGNED_BY 605, IMPLEMENTS 479, RUNS 419, EXTENDS 27
+  edges by derivation: syntactic 272669, declared 12240, resolved 7197
+## federated edges with two repositories
+4 federated edges across 2 repositories (cairn, causeway)
+  cairn:pkg:npm/cairn-vscode -DEPENDS_ON-> causeway:pkg:npm/@torrentfx/core  vscode/package.json:99 [declared]  
+  cairn:pkg:npm/cairn-vscode -DEPENDS_ON-> causeway:pkg:npm/@torrentfx/runtime-vscode-host  vscode/package.json:100 [declared]  
+  cairn:pkg:npm/cairn-vscode-components -DEPENDS_ON-> causeway:pkg:npm/@torrentfx/core  vscode/components-react/package.json:11 [declared]  
+  cairn:pkg:npm/cairn-vscode-components -DEPENDS_ON-> causeway:pkg:npm/@torrentfx/runtime-vscode-webview  vscode/components-react/package.json:12 [declared]  
+## explain from Causeway's side
+Package npm/@torrentfx/core
+  id        pkg:npm/@torrentfx/core
+  repo      causeway
+  location  torrentfx/web/framework/core/package.json:2
+  signature npm/@torrentfx/core
+  dir       torrentfx/web/framework/core
+  manifest  torrentfx/web/framework/core/package.json
+  version   0.1.0
+members (11):
+  File moon.yml                                 torrentfx/web/framework/core/moon.yml
+  File package.json                             torrentfx/web/framework/core/package.json
+  File decider.test.ts                          torrentfx/web/framework/core/src/decider.test.ts
+  File decider.ts                               torrentfx/web/framework/core/src/decider.ts
+  File envelope.test.ts                         torrentfx/web/framework/core/src/envelope.test.ts
+  File envelope.ts                              torrentfx/web/framework/core/src/envelope.ts
+  File index.ts                                 torrentfx/web/framework/core/src/index.ts
+  File upcast.test.ts                           torrentfx/web/framework/core/src/upcast.test.ts
+  File upcast.ts                                torrentfx/web/framework/core/src/upcast.ts
+  File tsconfig.json                            torrentfx/web/framework/core/tsconfig.json
+  File vitest.config.ts                         torrentfx/web/framework/core/vitest.config.ts
+outgoing:
+  -> CONTAINS (11)
+     File torrentfx/web/framework/core/moon.yml        torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/package.json    torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/src/decider.te… torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/src/decider.ts  torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/src/envelope.t… torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/src/envelope.ts torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/src/index.ts    torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/src/upcast.tes… torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/src/upcast.ts   torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/tsconfig.json   torrentfx/web/framework/core/package.json:2 [declared]
+     File torrentfx/web/framework/core/vitest.config.… torrentfx/web/framework/core/package.json:2 [declared]
+  -> DEPENDS_ON (1)
+     Package npm/vitest                                   torrentfx/web/framework/core/package.json:16 [declared]
+incoming:
+  <- CONTAINS (1)
+     Repository causeway                                     torrentfx/web/framework/core/package.json:2 [declared]
+  <- DEPENDS_ON (20)
+     Package npm/@causeway/framework                      torrentfx/web/framework/app/package.json:18 [declared]
+     Package npm/@causeway/query-editor                   web/ui-query/package.json:13 [declared]
+     Package npm/@causeway/showcase                       apps-web/showcase/package.json:26 [declared]
+     Package npm/@causeway/ui-catalog-filter              web/ui-catalog-filter/package.json:22 [declared]
+     Package npm/@causeway/ui-catalog-status              web/ui-catalog-status/package.json:20 [declared]
+     Package npm/@causeway/ui-create-product              web/ui-create-product/package.json:22 [declared]
+     Package npm/@causeway/ui-ontology                    web/ui-ontology/package.json:12 [declared]
+     Package npm/@causeway/ui-presence                    web/ui-presence/package.json:18 [declared]
+     Package npm/@causeway/ui-request                     web/ui-request/package.json:22 [declared]
+     Package npm/@causeway/ui-roadmap                     web/ui-roadmap/package.json:21 [declared]
+     Package npm/@causeway/ui-semantic-graph              web/ui-semantic-graph/package.json:16 [declared]
+     Package npm/@causeway/ui-semantic-mapping            web/ui-semantic-mapping/package.json:16 [declared]
+     Package npm/@torrentfx/adapters-react                torrentfx/web/framework/adapters-react/package.json:15 [declared]
+     Package npm/@torrentfx/adapters-wasm                 torrentfx/web/framework/adapters-wasm/package.json:15 [declared]
+     Package npm/@torrentfx/arrow-e2e-bench               torrentfx/packages-node/arrow-e2e-bench/package.json:15 [declared]
+     Package npm/@torrentfx/runtime-vscode-host           torrentfx/web/framework/runtime-vscode-host/package.json:15 [declared]
+     Package npm/@torrentfx/runtime-vscode-webview        torrentfx/web/framework/runtime-vscode-webview/package.json:15 [declared]
+     Package npm/@torrentfx/runtime-web                   torrentfx/web/framework/runtime-web/package.json:40 [declared]
+     Package npm/cairn-vscode                             vscode/package.json:99 [declared] [cairn]
+     Package npm/cairn-vscode-components                  vscode/components-react/package.json:11 [declared] [cairn]
+  <- IMPORTS (27)
+     File torrentfx/web/framework/adapters-react/src/… torrentfx/web/framework/adapters-react/src/index.ts:1
+     File torrentfx/web/framework/adapters-wasm/src/i… torrentfx/web/framework/adapters-wasm/src/index.ts:1
+     File torrentfx/web/framework/runtime-vscode-host… torrentfx/web/framework/runtime-vscode-host/src/index.ts:1-9
+     File torrentfx/web/framework/runtime-vscode-webv… torrentfx/web/framework/runtime-vscode-webview/src/index.ts:1-9
+     File torrentfx/web/framework/runtime-web/src/dia… torrentfx/web/framework/runtime-web/src/diagnostics-bridge.test.ts:15
+     File torrentfx/web/framework/runtime-web/src/ind… torrentfx/web/framework/runtime-web/src/index.ts:8-22
+     File torrentfx/web/framework/runtime-web/src/mvi… torrentfx/web/framework/runtime-web/src/mvi-solid.test.ts:1
+     File torrentfx/web/framework/runtime-web/src/mvi… torrentfx/web/framework/runtime-web/src/mvi-solid.ts:15
+     File torrentfx/web/framework/runtime-web/src/mvi… torrentfx/web/framework/runtime-web/src/mvi.test.ts:1
+     File torrentfx/web/framework/runtime-web/src/mvi… torrentfx/web/framework/runtime-web/src/mvi.ts:15
+     File web/ui-catalog-filter/src/decider.test.ts    web/ui-catalog-filter/src/decider.test.ts:1
+     File web/ui-catalog-filter/src/decider.ts         web/ui-catalog-filter/src/decider.ts:11
+     File web/ui-catalog-status/src/decider.test.ts    web/ui-catalog-status/src/decider.test.ts:1
+     File web/ui-catalog-status/src/decider.ts         web/ui-catalog-status/src/decider.ts:10
+     File web/ui-create-product/src/decider.test.ts    web/ui-create-product/src/decider.test.ts:1
+     File web/ui-create-product/src/decider.ts         web/ui-create-product/src/decider.ts:12
+     File web/ui-ontology/src/decider.ts               web/ui-ontology/src/decider.ts:1
+     File web/ui-presence/src/decider.test.ts          web/ui-presence/src/decider.test.ts:1
+     File web/ui-presence/src/decider.ts               web/ui-presence/src/decider.ts:9
+     File web/ui-query/src/decider.test.ts             web/ui-query/src/decider.test.ts:5
+     … 7 more
+## explain from Cairn's side
+Package npm/@torrentfx/core
+  id        pkg:npm/@torrentfx/core
+  repo      causeway
+  location  torrentfx/web/framework/core/package.json:2
+  signature npm/@torrentfx/core
+  dir       torrentfx/web/framework/core
+  manifest  torrentfx/web/framework/core/package.json
+  version   0.1.0
+incoming:
+  <- DEPENDS_ON (2)
+     Package npm/cairn-vscode                             vscode/package.json:99 [declared] [cairn]
+     Package npm/cairn-vscode-components                  vscode/components-react/package.json:11 [declared] [cairn]
+  <- IMPORTS (1)
+     File vscode/components-react/src/App.tsx          vscode/components-react/src/App.tsx:2 [cairn]
+## affected across both from the declared package (depth 2)
+affected by a change to Package npm/@torrentfx/core (depth 2): 74 nodes
+depth 1 (48):
+  Package npm/@torrentfx/runtime-vscode-host                    via DEPENDS_ON torrentfx/web/framework/runtime-vscode-host/package.json:15 [declared]
+  File web/ui-request/src/decider.test.ts                    via IMPORTS web/ui-request/src/decider.test.ts:1
+  File web/ui-ontology/src/decider.ts                        via IMPORTS web/ui-ontology/src/decider.ts:1
+  Package npm/@causeway/query-editor                            via DEPENDS_ON web/ui-query/package.json:13 [declared]
+  File web/ui-semantic-mapping/src/decider.ts                via IMPORTS web/ui-semantic-mapping/src/decider.ts:1
+  Package npm/@causeway/framework                               via DEPENDS_ON torrentfx/web/framework/app/package.json:18 [declared]
+  File web/ui-roadmap/src/decider.test.ts                    via IMPORTS web/ui-roadmap/src/decider.test.ts:5
+  File torrentfx/web/framework/adapters-wasm/src/index…      via IMPORTS torrentfx/web/framework/adapters-wasm/src/index.ts:1
+  File torrentfx/web/framework/runtime-web/src/mvi.ts        via IMPORTS torrentfx/web/framework/runtime-web/src/mvi.ts:15
+  File web/ui-catalog-filter/src/decider.test.ts             via IMPORTS web/ui-catalog-filter/src/decider.test.ts:1
+  Package npm/@torrentfx/runtime-vscode-webview                 via DEPENDS_ON torrentfx/web/framework/runtime-vscode-webview/package.json:15 [declared]
+  Package npm/cairn-vscode                                      via DEPENDS_ON vscode/package.json:99 [declared] [cairn]
+  File web/ui-catalog-status/src/decider.test.ts             via IMPORTS web/ui-catalog-status/src/decider.test.ts:1
+  File web/ui-create-product/src/decider.ts                  via IMPORTS web/ui-create-product/src/decider.ts:12
+  File web/ui-presence/src/decider.test.ts                   via IMPORTS web/ui-presence/src/decider.test.ts:1
+  Package npm/@causeway/ui-catalog-filter                       via DEPENDS_ON web/ui-catalog-filter/package.json:22 [declared]
+  File web/ui-query/src/decider.ts                           via IMPORTS web/ui-query/src/decider.ts:12
+  Package npm/@torrentfx/adapters-react                         via DEPENDS_ON torrentfx/web/framework/adapters-react/package.json:15 [declared]
+  File torrentfx/web/framework/adapters-react/src/inde…      via IMPORTS torrentfx/web/framework/adapters-react/src/index.ts:1
+  File web/ui-catalog-status/src/decider.ts                  via IMPORTS web/ui-catalog-status/src/decider.ts:10
+  Package npm/@causeway/ui-semantic-mapping                     via DEPENDS_ON web/ui-semantic-mapping/package.json:16 [declared]
+  File web/ui-query/src/decider.test.ts                      via IMPORTS web/ui-query/src/decider.test.ts:5
+  Package npm/@causeway/ui-catalog-status                       via DEPENDS_ON web/ui-catalog-status/package.json:20 [declared]
+  Package npm/@torrentfx/arrow-e2e-bench                        via DEPENDS_ON torrentfx/packages-node/arrow-e2e-bench/package.json:15 [declared]
+  Package npm/@causeway/ui-create-product                       via DEPENDS_ON web/ui-create-product/package.json:22 [declared]
+  Package npm/@causeway/ui-ontology                             via DEPENDS_ON web/ui-ontology/package.json:12 [declared]
+  File torrentfx/web/framework/runtime-web/src/mvi.tes…      via IMPORTS torrentfx/web/framework/runtime-web/src/mvi.test.ts:1
+  Package npm/@causeway/ui-semantic-graph                       via DEPENDS_ON web/ui-semantic-graph/package.json:16 [declared]
+  File web/ui-create-product/src/decider.test.ts             via IMPORTS web/ui-create-product/src/decider.test.ts:1
+  Package npm/@causeway/ui-roadmap                              via DEPENDS_ON web/ui-roadmap/package.json:21 [declared]
+  File web/ui-request/src/decider.ts                         via IMPORTS web/ui-request/src/decider.ts:10
+  File web/ui-roadmap/src/decider.ts                         via IMPORTS web/ui-roadmap/src/decider.ts:10
+  Package npm/cairn-vscode-components                           via DEPENDS_ON vscode/components-react/package.json:11 [declared] [cairn]
+  File torrentfx/web/framework/runtime-web/src/mvi-sol…      via IMPORTS torrentfx/web/framework/runtime-web/src/mvi-solid.test.ts:1
+  Package npm/@torrentfx/runtime-web                            via DEPENDS_ON torrentfx/web/framework/runtime-web/package.json:40 [declared]
+  File torrentfx/web/framework/runtime-web/src/mvi-sol…      via IMPORTS torrentfx/web/framework/runtime-web/src/mvi-solid.ts:15
+  File torrentfx/web/framework/runtime-vscode-host/src…      via IMPORTS torrentfx/web/framework/runtime-vscode-host/src/index.ts:1-9
+  Package npm/@causeway/showcase                                via DEPENDS_ON apps-web/showcase/package.json:26 [declared]
+  File torrentfx/web/framework/runtime-web/src/index.ts      via IMPORTS torrentfx/web/framework/runtime-web/src/index.ts:8-22
+  File web/ui-semantic-graph/src/decider.ts                  via IMPORTS web/ui-semantic-graph/src/decider.ts:1
+  File torrentfx/web/framework/runtime-vscode-webview/…      via IMPORTS torrentfx/web/framework/runtime-vscode-webview/src/index.ts:1-9
+  Package npm/@torrentfx/adapters-wasm                          via DEPENDS_ON torrentfx/web/framework/adapters-wasm/package.json:15 [declared]
+  File torrentfx/web/framework/runtime-web/src/diagnos…      via IMPORTS torrentfx/web/framework/runtime-web/src/diagnostics-bridge.test.ts:15
+  Package npm/@causeway/ui-request                              via DEPENDS_ON web/ui-request/package.json:22 [declared]
+  File vscode/components-react/src/App.tsx                   via IMPORTS vscode/components-react/src/App.tsx:2 [cairn]
+  Package npm/@causeway/ui-presence                             via DEPENDS_ON web/ui-presence/package.json:18 [declared]
+  File web/ui-catalog-filter/src/decider.ts                  via IMPORTS web/ui-catalog-filter/src/decider.ts:11
+  File web/ui-presence/src/decider.ts                        via IMPORTS web/ui-presence/src/decider.ts:9
+depth 2 (26):
+  File vscode/src/extension.ts                               via IMPORTS vscode/src/extension.ts:6 [cairn]
+  File web/ui-catalog-filter/src/index.ts                    via IMPORTS web/ui-catalog-filter/src/index.ts:18
+  File web/ui-query/src/index.ts                             via IMPORTS web/ui-query/src/index.ts:34
+  File web/ui-query/src/decode-protocol.test.ts              via IMPORTS web/ui-query/src/decode-protocol.test.ts:4
+  File web/ui-semantic-mapping/src/index.ts                  via IMPORTS web/ui-semantic-mapping/src/index.ts:6
+  Package npm/@torrentfx/flight-native                          via DEPENDS_ON torrentfx/packages-node/flight-native/package.json:43 [declared]
+  File web/ui-request/src/index.ts                           via IMPORTS web/ui-request/src/index.ts:13
+  File web/ui-query/src/decode-protocol.ts                   via IMPORTS web/ui-query/src/decode-protocol.ts:15
+  File torrentfx/packages-node/flight-native/test/flig…      via IMPORTS torrentfx/packages-node/flight-native/test/flight-native.addon.test.mts:9-12
+  File apps-web/showcase/src/stories/data-grid.story.t…      via IMPORTS apps-web/showcase/src/stories/data-grid.story.tsx:12
+  File apps-web/showcase/src/main.tsx                        via IMPORTS apps-web/showcase/src/main.tsx:1
+  File torrentfx/web/framework/app/src/post-message.te…      via IMPORTS torrentfx/web/framework/app/src/post-message.test.ts:11
+  File web/ui-semantic-graph/src/index.ts                    via IMPORTS web/ui-semantic-graph/src/index.ts:6
+  File web/ui-query/scripts/bench-columnar.ts                via IMPORTS web/ui-query/scripts/bench-columnar.ts:23
+  File torrentfx/web/framework/app/src/index.ts              via IMPORTS torrentfx/web/framework/app/src/index.ts:1-11
+  File web/ui-explorer-codecs/src/index.ts                   via IMPORTS web/ui-explorer-codecs/src/index.ts:16
+  Package npm/@causeway/ui-devtools                             via DEPENDS_ON web/ui-devtools/package.json:18 [declared]
+  File web/ui-roadmap/src/index.ts                           via IMPORTS web/ui-roadmap/src/index.ts:25-31
+  File web/ui-presence/src/index.ts                          via IMPORTS web/ui-presence/src/index.ts:9
+  File web/ui-devtools/src/index.ts                          via IMPORTS web/ui-devtools/src/index.ts:12
+  Package npm/@causeway/ui-explorer-codecs                      via DEPENDS_ON web/ui-explorer-codecs/package.json:20 [declared]
+  File web/ui-catalog-status/src/index.ts                    via IMPORTS web/ui-catalog-status/src/index.ts:22
+  File web/ui-ontology/src/index.ts                          via IMPORTS web/ui-ontology/src/index.ts:3
+  File web/ui-create-product/src/index.ts                    via IMPORTS web/ui-create-product/src/index.ts:13
+  Package npm/@causeway/dbt-demo                                via DEPENDS_ON web/ui-dbt-demo/package.json:13 [declared]
+  File web/ui-dbt-demo/src/index.ts                          via IMPORTS web/ui-dbt-demo/src/index.ts:3
+## update with nothing changed, two repositories, three runs
+update causeway	1	0.37
+update causeway	2	0.27
+update causeway	3	0.27
+
+index torrentfx: 0.19 s (pass runs: 3 repositories)
+## federated edges with three repositories
+8 federated edges across 3 repositories (cairn, causeway, torrentfx)
+  cairn:pkg:npm/cairn-vscode -DEPENDS_ON-> causeway:pkg:npm/@torrentfx/core  vscode/package.json:99 [declared 0.50]  
+  cairn:pkg:npm/cairn-vscode -DEPENDS_ON-> causeway:pkg:npm/@torrentfx/runtime-vscode-host  vscode/package.json:100 [declared 0.50]  
+  cairn:pkg:npm/cairn-vscode -DEPENDS_ON-> torrentfx:pkg:npm/@torrentfx/core  vscode/package.json:99 [declared 0.50]  
+  cairn:pkg:npm/cairn-vscode -DEPENDS_ON-> torrentfx:pkg:npm/@torrentfx/runtime-vscode-host  vscode/package.json:100 [declared 0.50]  
+  cairn:pkg:npm/cairn-vscode-components -DEPENDS_ON-> causeway:pkg:npm/@torrentfx/core  vscode/components-react/package.json:11 [declared 0.50]  
+  cairn:pkg:npm/cairn-vscode-components -DEPENDS_ON-> causeway:pkg:npm/@torrentfx/runtime-vscode-webview  vscode/components-react/package.json:12 [declared 0.50]  
+  cairn:pkg:npm/cairn-vscode-components -DEPENDS_ON-> torrentfx:pkg:npm/@torrentfx/core  vscode/components-react/package.json:11 [declared 0.50]  
+  cairn:pkg:npm/cairn-vscode-components -DEPENDS_ON-> torrentfx:pkg:npm/@torrentfx/runtime-vscode-webview  vscode/components-react/package.json:12 [declared 0.50]  
+## explain from Cairn's side with two declarers
+Package npm/@torrentfx/core
+  id        pkg:npm/@torrentfx/core
+  repo      cairn
+  external  true
+incoming:
+  <- DEPENDS_ON (2)
+     Package npm/cairn-vscode                             vscode/package.json:99 [declared]
+     Package npm/cairn-vscode-components                  vscode/components-react/package.json:11 [declared]
+  <- IMPORTS (1)
+     File vscode/components-react/src/App.tsx          vscode/components-react/src/App.tsx:2
+## Cairn's extension package with two declarers
+Package npm/cairn-vscode
+  id        pkg:npm/cairn-vscode
+  repo      cairn
+  location  vscode/package.json:2
+  signature npm/cairn-vscode
+  dir       vscode
+  manifest  vscode/package.json
+  version   0.1.0
+members (4):
+  File package.json                             vscode/package.json
+  File extension.ts                             vscode/src/extension.ts
+  File webview.ts                               vscode/src/webview.ts
+  File tsconfig.json                            vscode/tsconfig.json
+outgoing:
+  -> CONTAINS (4)
+     File vscode/package.json                          vscode/package.json:2 [declared]
+     File vscode/src/extension.ts                      vscode/package.json:2 [declared]
+     File vscode/src/webview.ts                        vscode/package.json:2 [declared]
+     File vscode/tsconfig.json                         vscode/package.json:2 [declared]
+  -> DEPENDS_ON (9)
+     Package npm/@torrentfx/core                          vscode/package.json:99 [declared 0.50] [torrentfx]
+     Package npm/@torrentfx/core                          vscode/package.json:99 [declared 0.50] [causeway]
+     Package npm/@torrentfx/core                          vscode/package.json:99 [declared]
+     Package npm/@torrentfx/runtime-vscode-host           vscode/package.json:100 [declared 0.50] [torrentfx]
+     Package npm/@torrentfx/runtime-vscode-host           vscode/package.json:100 [declared 0.50] [causeway]
+     Package npm/@torrentfx/runtime-vscode-host           vscode/package.json:100 [declared]
+     Package npm/@types/node                              vscode/package.json:94 [declared]
+     Package npm/@types/vscode                            vscode/package.json:95 [declared]
+     Package npm/typescript                               vscode/package.json:96 [declared]
+  -> DOCUMENTED_BY (1)
+     Document Checkpoint 2026-04-12 11:33                  CHECKPOINT-2026-04-12_11-33.md:115 [declared]
+incoming:
+  <- CONTAINS (1)
+     Repository cairn                                        vscode/package.json:2 [declared]
+## the correct negative: Surveyor's own repository with Cairn shares only registry stubs
+0 federated edges across 2 repositories (cairn, surveyor)
+
+## Causeway alone, empty update, the two binaries interleaved on one store (seconds)
+The three-run series above put the "after" update at 0.29 to 0.32 against 0.15 to 0.18
+before; run again with the two binaries alternating on the same store, the difference
+is gone, so it was the order of the runs and not the binary:
+before 1 0.25
+after 1 0.18
+before 2 0.17
+after 2 0.20
+before 3 0.18
+after 3 0.18
+before 4 0.19
+after 4 0.19

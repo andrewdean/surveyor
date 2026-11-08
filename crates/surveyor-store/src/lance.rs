@@ -11,15 +11,15 @@ use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::table::Table;
 use surveyor_model::{
-    CommitId, ContentHash, Edge, EdgeId, GraphDelta, GraphStats, Language, Node, RepoId, RepoPath,
-    Timestamp, Unresolved,
+    CommitId, ContentHash, Edge, EdgeId, FederatedEdge, GraphDelta, GraphStats, Language, Node,
+    NodeId, RepoId, RepoPath, Timestamp, Unresolved,
 };
 
 use crate::StoreError;
 use crate::schema::{
-    self, EDGES, FILES, META, MetaRow, NODES, UNRESOLVED, edges_batch, edges_from_batch,
-    files_batch, files_from_batch, meta_batch, meta_from_batch, nodes_batch, nodes_from_batch,
-    unresolved_batch, unresolved_from_batch,
+    self, EDGES, FEDERATED, FILES, META, MetaRow, NODES, UNRESOLVED, edges_batch, edges_from_batch,
+    federated_batch, federated_from_batch, files_batch, files_from_batch, meta_batch,
+    meta_from_batch, nodes_batch, nodes_from_batch, unresolved_batch, unresolved_from_batch,
 };
 
 /// Rows are appended in slices of this many to bound memory on large repositories.
@@ -96,6 +96,9 @@ pub struct StoreStats {
     pub nodes: usize,
     /// Total edges.
     pub edges: usize,
+    /// Cross-repository package edges in the `federated` table; zero when it was never
+    /// written.
+    pub federated: usize,
     /// Lance dataset version of the nodes table.
     pub version: u64,
 }
@@ -403,6 +406,137 @@ impl LanceStore {
         Ok((nodes, edges))
     }
 
+    /// The `federated` table when it exists; `None` for a store no federate pass has
+    /// written, so a single-repository store never opens or reads it.
+    async fn federated_table(&self) -> Result<Option<Table>, StoreError> {
+        let names = self.conn.table_names().execute().await?;
+        if !names.iter().any(|n| n == FEDERATED) {
+            return Ok(None);
+        }
+        Ok(Some(self.table(FEDERATED).await?))
+    }
+
+    /// Opens the `federated` table, creating it on first use.
+    async fn federated_table_for_write(&self) -> Result<Table, StoreError> {
+        if let Some(t) = self.federated_table().await? {
+            return Ok(t);
+        }
+        Ok(self
+            .conn
+            .create_empty_table(FEDERATED, schema::federated_schema())
+            .mode(CreateTableMode::exist_ok(|b| b))
+            .execute()
+            .await?)
+    }
+
+    /// Replaces the federated edges that touch `repo` on either side with the rows of
+    /// `edges` that do; rows between other repositories are untouched.
+    pub async fn replace_federated(
+        &self,
+        repo: &RepoId,
+        edges: &[FederatedEdge],
+    ) -> Result<usize, StoreError> {
+        let table = self.federated_table_for_write().await?;
+        let r = escape(repo.as_str());
+        table
+            .delete(format!("repo = '{r}' OR dst_repo = '{r}'").as_str())
+            .await?;
+        let mine: Vec<FederatedEdge> = edges
+            .iter()
+            .filter(|f| f.src_repo == *repo || f.dst_repo == *repo)
+            .cloned()
+            .collect();
+        self.append(&table, federated_batch(&mine)?).await?;
+        Ok(mine.len())
+    }
+
+    /// Replaces every federated edge with `edges`.
+    pub async fn rewrite_federated(&self, edges: &[FederatedEdge]) -> Result<(), StoreError> {
+        let table = self.federated_table_for_write().await?;
+        table.delete("true").await?;
+        self.append(&table, federated_batch(edges)?).await
+    }
+
+    /// The federated edges with `repo` on either side; empty when the table does not
+    /// exist.
+    pub async fn load_federated(&self, repo: &RepoId) -> Result<Vec<FederatedEdge>, StoreError> {
+        let Some(table) = self.federated_table().await? else {
+            return Ok(Vec::new());
+        };
+        let r = escape(repo.as_str());
+        let mut out = Vec::new();
+        for batch in self
+            .collect(&table, Some(format!("repo = '{r}' OR dst_repo = '{r}'")))
+            .await?
+        {
+            out.extend(federated_from_batch(&batch)?);
+        }
+        Ok(out)
+    }
+
+    /// Every federated edge in the store.
+    pub async fn all_federated(&self) -> Result<Vec<FederatedEdge>, StoreError> {
+        let Some(table) = self.federated_table().await? else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        for batch in self.collect(&table, None).await? {
+            out.extend(federated_from_batch(&batch)?);
+        }
+        Ok(out)
+    }
+
+    /// Rows in the `federated` table; zero when it does not exist.
+    pub async fn federated_count(&self) -> Result<usize, StoreError> {
+        match self.federated_table().await? {
+            Some(table) => Ok(table.count_rows(None).await?),
+            None => Ok(0),
+        }
+    }
+
+    /// The package nodes of `repo` and its `DEPENDS_ON` edges: the federate pass's input.
+    pub async fn load_packages(&self, repo: &RepoId) -> Result<(Vec<Node>, Vec<Edge>), StoreError> {
+        let predicate = repo_predicate(repo);
+        let nodes_t = self.table(NODES).await?;
+        let edges_t = self.table(EDGES).await?;
+        let mut nodes = Vec::new();
+        for batch in self
+            .collect(&nodes_t, Some(format!("{predicate} AND kind = 'Package'")))
+            .await?
+        {
+            nodes.extend(nodes_from_batch(&batch)?);
+        }
+        let mut edges = Vec::new();
+        for batch in self
+            .collect(
+                &edges_t,
+                Some(format!("{predicate} AND kind = 'DEPENDS_ON'")),
+            )
+            .await?
+        {
+            edges.extend(edges_from_batch(&batch)?);
+        }
+        Ok((nodes, edges))
+    }
+
+    /// The nodes of `repo` with the given identifiers, in bounded lists.
+    pub async fn nodes_in(&self, repo: &RepoId, ids: &[NodeId]) -> Result<Vec<Node>, StoreError> {
+        let t = self.table(NODES).await?;
+        let mut out = Vec::new();
+        for chunk in ids.chunks(IN_LIST) {
+            let list = chunk
+                .iter()
+                .map(|v| format!("'{}'", escape(v.as_str())))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let filter = format!("{} AND id IN ({list})", repo_predicate(repo));
+            for batch in self.collect(&t, Some(filter)).await? {
+                out.extend(nodes_from_batch(&batch)?);
+            }
+        }
+        Ok(out)
+    }
+
     /// Loads one node by identifier.
     pub async fn node(&self, id: &str) -> Result<Option<Node>, StoreError> {
         let t = self.table(NODES).await?;
@@ -483,6 +617,7 @@ impl LanceStore {
             repositories: self.snapshots().await?,
             nodes: nodes_t.count_rows(None).await?,
             edges: edges_t.count_rows(None).await?,
+            federated: self.federated_count().await?,
             version: nodes_t.version().await?,
         })
     }
@@ -554,7 +689,7 @@ fn escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use surveyor_model::{
-        ByteSpan, CallForm, Confidence, EdgeKind, Evidence, GrammarId, LineSpan, NodeId, NodeKind,
+        ByteSpan, CallForm, Confidence, EdgeKind, Evidence, GrammarId, LineSpan, NodeKind,
         Provenance, ReferenceRole, RuleId, SourceLocation, TextSpan, UnresolvedReason,
     };
 
@@ -725,8 +860,8 @@ mod tests {
 #[cfg(test)]
 mod update_tests {
     use surveyor_model::{
-        ByteSpan, Confidence, EdgeKind, Evidence, GrammarId, LineSpan, NodeId, NodeKind,
-        Provenance, RuleId, SourceLocation, TextSpan,
+        ByteSpan, Confidence, EdgeKind, Evidence, GrammarId, LineSpan, NodeKind, Provenance,
+        RuleId, SourceLocation, TextSpan,
     };
 
     use super::*;
@@ -766,6 +901,110 @@ mod update_tests {
             lines: 1,
             names: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn federated_rows_are_replaced_per_repository_and_never_read_without_the_table() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = LanceStore::open(dir.path().join("ds")).await.expect("open");
+        let (a, b, c) = (RepoId::new("a"), RepoId::new("b"), RepoId::new("c"));
+        // No federate pass yet: no table, no rows, no count, nothing on disk.
+        assert!(store.load_federated(&a).await.expect("load").is_empty());
+        assert_eq!(store.federated_count().await.expect("count"), 0);
+        assert!(!dir.path().join("ds/federated.lance").exists());
+
+        let fed = |src: &RepoId, dst: &RepoId| {
+            let na = node(src, "pkg:npm/consumer", "package.json");
+            let nb = node(dst, "pkg:npm/lib", "package.json");
+            let mut e = edge(src, &na, &nb, "package.json");
+            e.id = EdgeId::from(format!("{}@{dst}", e.id.as_str()));
+            FederatedEdge {
+                src_repo: src.clone(),
+                dst_repo: dst.clone(),
+                edge: e,
+            }
+        };
+        let rows = vec![fed(&a, &b), fed(&a, &c), fed(&c, &b)];
+        assert_eq!(
+            store.replace_federated(&a, &rows).await.expect("write a"),
+            2
+        );
+        assert_eq!(store.federated_count().await.expect("count"), 2);
+        // Writing c's rows adds the c->b row and keeps a->b, which does not touch c... but
+        // a->c does, and is rewritten identically.
+        assert_eq!(
+            store.replace_federated(&c, &rows).await.expect("write c"),
+            2
+        );
+        assert_eq!(store.federated_count().await.expect("count"), 3);
+        let b_side = store.load_federated(&b).await.expect("load b");
+        let mut pairs: Vec<(String, String)> = b_side
+            .iter()
+            .map(|f| (f.src_repo.to_string(), f.dst_repo.to_string()))
+            .collect();
+        pairs.sort();
+        assert_eq!(
+            pairs,
+            vec![
+                ("a".to_owned(), "b".to_owned()),
+                ("c".to_owned(), "b".to_owned())
+            ]
+        );
+        assert_eq!(
+            b_side[0].edge.provenance.evidence[0].location.file.as_str(),
+            "package.json"
+        );
+        // Reindexing a with no consumers drops its rows and leaves c->b.
+        assert_eq!(store.replace_federated(&a, &[]).await.expect("clear a"), 0);
+        let left = store.all_federated().await.expect("all");
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].src_repo.as_str(), "c");
+        store.rewrite_federated(&rows).await.expect("rewrite");
+        assert_eq!(store.federated_count().await.expect("count"), 3);
+        assert!(store.stats().await.expect("stats").federated == 3);
+        // The federate pass's input and the foreign endpoints come back by filter: a
+        // package with a dependency edge, beside a function and a call that are not.
+        let consumer = Node::synthetic(
+            NodeId::new("pkg:npm/consumer"),
+            NodeKind::Package,
+            "consumer",
+            a.clone(),
+        );
+        let lib = Node::synthetic(
+            NodeId::new("pkg:npm/lib"),
+            NodeKind::Package,
+            "lib",
+            a.clone(),
+        )
+        .with_attribute("external", "true");
+        let f1 = node(&a, "rust:a.rs::f", "a.rs");
+        let f2 = node(&a, "rust:a.rs::g", "a.rs");
+        let mut depends = edge(&a, &consumer, &lib, "package.json");
+        depends.kind = EdgeKind::DependsOn;
+        let graph = GraphDelta {
+            nodes: vec![consumer, lib, f1.clone(), f2.clone()],
+            edges: vec![depends, edge(&a, &f1, &f2, "a.rs")],
+            unresolved: vec![],
+        };
+        store
+            .replace_repository(&a, &CommitId::new("c1"), false, &graph, &[])
+            .await
+            .expect("write a");
+        let (pkgs, deps) = store.load_packages(&a).await.expect("packages");
+        assert_eq!(pkgs.len(), 2);
+        assert!(pkgs.iter().all(|n| n.kind == NodeKind::Package));
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].kind, EdgeKind::DependsOn);
+        let ids: Vec<NodeId> = graph.nodes.iter().map(|n| n.id.clone()).collect();
+        let found = store.nodes_in(&a, &ids).await.expect("nodes_in");
+        assert_eq!(found.len(), ids.len());
+        assert!(
+            store
+                .nodes_in(&b, &ids)
+                .await
+                .expect("nodes_in b")
+                .is_empty()
+        );
     }
 
     #[tokio::test]

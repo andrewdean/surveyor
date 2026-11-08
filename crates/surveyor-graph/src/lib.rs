@@ -22,6 +22,7 @@
 
 mod card;
 mod change;
+mod federation;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -34,6 +35,8 @@ use surveyor_model::{Edge, EdgeKind, GraphDelta, Node, NodeId, NodeKind};
 pub use card::{Card, Count, RuleNote, RuleStatus, SAMPLES_PER_COUNT, Sample, first_paragraph};
 #[doc(inline)]
 pub use change::{Changed, ChangedFile, Impact, ImpactGroup, changed, impact};
+#[doc(inline)]
+pub use federation::Partition;
 
 /// The direction of an edge relative to a node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -325,6 +328,10 @@ pub struct CodeGraph {
     edges: Vec<Edge>,
     by_id: HashMap<NodeId, NodeIndex>,
     by_name: HashMap<String, Vec<NodeIndex>>,
+    /// Every node by `(repo, id)`; the same as `by_id` for a single repository.
+    by_key: HashMap<(surveyor_model::RepoId, NodeId), NodeIndex>,
+    /// The repository a bare identifier refers to, when the graph spans several.
+    primary: Option<surveyor_model::RepoId>,
 }
 
 impl CodeGraph {
@@ -334,9 +341,11 @@ impl CodeGraph {
         let mut graph = DiGraph::with_capacity(nodes.len(), edges.len());
         let mut by_id = HashMap::with_capacity(nodes.len());
         let mut by_name: HashMap<String, Vec<NodeIndex>> = HashMap::new();
+        let mut by_key = HashMap::with_capacity(nodes.len());
         for (i, node) in nodes.iter().enumerate() {
             let ix = graph.add_node(i);
             by_id.insert(node.id.clone(), ix);
+            by_key.insert((node.repo.clone(), node.id.clone()), ix);
             by_name
                 .entry(node.name.to_lowercase())
                 .or_default()
@@ -357,6 +366,8 @@ impl CodeGraph {
             edges: kept,
             by_id,
             by_name,
+            by_key,
+            primary: None,
         }
     }
 

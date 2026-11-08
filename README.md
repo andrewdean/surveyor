@@ -188,6 +188,15 @@ for now). This checkout implements Phase 0 of that plan.
   Surveyor never calls GitHub: `examples/ci/github-pr-comment.yml` posts and edits
   one comment by its marker line, `examples/harness/open-pr.sh` refuses to open a
   pull request on exit 1 (`docs/harness.md`).
+- **Federation.** Several repositories share one store, each in its own partition, and
+  a package is one node wherever it is named: the federate pass pairs a repository's
+  external stub (`pkg:npm/@torrentfx/core` in a manifest that depends on it) with the
+  repository that declares the coordinate, one `DEPENDS_ON` edge per declarer at
+  `1/n`, citing the consumer's manifest line, in a sixth table that a one-repository
+  store never gets. A query loads its repository plus the far ends of those edges, or
+  every repository with `--all-repos`; the stub folds into the declared package when
+  one repository declares it and stays as the hub when two do; every rendered node
+  names its repository. `surveyor federate` recomputes the table (`docs/federation.md`).
 
 ## Numbers
 
@@ -415,8 +424,9 @@ building the release archives for a `v*` tag.
 
 ## Not yet
 
-Federation across repositories, `serve` with streamable HTTP, personas and runtime
-connectors are the following stages and phases of the RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too).
+`serve` with streamable HTTP, personas and runtime connectors are the following
+stages and phases of the RFD. Federation covers packages; contracts, topics and tables
+by namespace wait for the extractors that produce those nodes. Incremental update does not watch the file system yet (`notify` is Phase 1 too).
 It walks the tree on every run, so files a changed profile includes or excludes
 arrive and leave as added and deleted files, but a changed dialect or default schema
 still needs `index`. It relinks changed files syntactically: rerun `index --scip` when
