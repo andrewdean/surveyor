@@ -173,3 +173,26 @@ Things learned on the way:
   profile was left as it was.
 - The Linux archive is built on Ubuntu 22.04 and links glibc 2.35, so it runs on Debian
   12 and Ubuntu 22.04 or newer.
+
+## Record of the second release (2026-11-08)
+
+1. `ee46467` bumped the workspace version to 0.2.0 (the lockfile's member versions
+   followed; nothing else in it changed), moved the `v0.1.0` pins in this note, the
+   README and the formula script to `v0.2.0`, and was pushed and tagged. Run 42530057099
+   passed the gate and published <https://github.com/andrewdean/surveyor/releases/tag/v0.2.0>
+   with three archives (74 to 82 MiB) and `SHA256SUMS`, about one hour and twenty
+   minutes after the tag.
+2. `cargo binstall` into a throwaway `CARGO_HOME` installed in 5.7 s a binary that prints
+   `surveyor 0.2.0` and knows `surveyor pr`.
+3. `render-formula.sh 0.2.0` produced the formula, but `brew tap andrewdean/tap` in a
+   fresh Homebrew prefix rejected it: `Invalid formula (arm64_linux)`. The template
+   declared a URL only inside `on_macos` and `on_linux`/`on_intel` blocks, so Linux on
+   ARM, which Homebrew now evaluates when it taps, had none. The template gained a
+   top-level default (the Apple silicon archive) that the blocks override; with it the
+   tap is accepted and `brew fetch` verifies the checksum. The tap's formula is
+   `feefcac`. The 0.1.0 formula had the same shape and tapped on 2026-11-05, so the check
+   is newer than that run.
+4. `brew install` from a fresh prefix could not be run from the release session: Homebrew's
+   build sandbox refuses to start inside another sandbox (`Inherited sandbox permits
+   writes to .../brew/bin/brew`). The archive, checksum and binary are the ones binstall
+   verified; an install from a shell outside the sandbox is the remaining check.
