@@ -1,5 +1,10 @@
 # `surveyor pr` as a Causeway pull-request comment
 
+Opened as a draft on 2026-11-07, andrewdean/causeway#1088 (branch
+`feat/ci-surveyor-pr-comment`, one commit on `.github/workflows/ci.yml`). It stays a
+draft until a Surveyor release carries `pr`, because the job pins the release it
+installs. The text below is the proposal as written before the pull request opened.
+
 The `surveyor-check` job that landed as andrewdean/causeway#1078 fails a pull request
 that breaks one of the five rules. This document proposes the step that turns the
 same run into a comment: what the change touched, what it may break, and the rule
@@ -48,6 +53,7 @@ second on the Causeway graph.
      env:
        # Pinned on purpose. A bump costs one full index on the next main run.
 -      SURVEYOR_VERSION: "0.1.0"
++      # `surveyor pr` needs 0.2.0; 0.1.0 has only `check`.
 +      SURVEYOR_VERSION: "0.2.0"
      steps:
        - uses: actions/checkout@v4
@@ -63,8 +69,9 @@ second on the Causeway graph.
 -      - name: Check the invariants
 -        run: surveyor check
 +      # `pr` runs the five rules as `check` does and exits 1 when one fails, 2 when
-+      # the report could not be made. The comment is posted either way, so the
-+      # step records the code and the last step fails the job with it.
++      # the report could not be made. The report is the pull request's comment and
++      # the job summary, posted either way, so this step records the code and the
++      # last step fails the job with it.
 +      - name: Check the invariants and measure the change
 +        id: pr
 +        env:
@@ -75,6 +82,7 @@ second on the Causeway graph.
 +          echo "code=$code" >> "$GITHUB_OUTPUT"
 +          cat "$RUNNER_TEMP/surveyor-pr/pr.md" >> "$GITHUB_STEP_SUMMARY" || true
 +
++      # One comment per pull request, found again by its first line and edited.
 +      - name: Create or update the pull-request comment
 +        if: github.event_name == 'pull_request'
 +        env:
@@ -94,9 +102,11 @@ second on the Causeway graph.
 +
 +      - name: Fail on a broken invariant
 +        if: steps.pr.outputs.code != '0'
++        env:
++          CODE: ${{ steps.pr.outputs.code }}
 +        run: |
-+          echo "surveyor pr exited ${{ steps.pr.outputs.code }}; the comment names the rule and the line"
-+          exit ${{ steps.pr.outputs.code }}
++          echo "surveyor pr exited $CODE; the comment names the rule and the line"
++          exit "$CODE"
 
        - name: Save the dataset
          if: github.ref == 'refs/heads/main'
