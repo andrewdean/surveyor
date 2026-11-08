@@ -21,6 +21,7 @@ surveyor-search  = { path = "crates/surveyor-search" }
 surveyor-context = { path = "crates/surveyor-context" }
 surveyor-mcp     = { path = "crates/surveyor-mcp" }
 surveyor-rules   = { path = "crates/surveyor-rules" }
+surveyor-session = { path = "crates/surveyor-session" }
 
 # serialization and errors
 serde      = { version = "1", features = ["derive"] }

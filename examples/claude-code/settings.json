@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [{ "type": "command", "command": "surveyor hook claude-code", "timeout": 120 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "surveyor hook claude-code", "timeout": 30 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__surveyor__.*",
+        "hooks": [{ "type": "command", "command": "surveyor hook claude-code", "timeout": 10 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "surveyor hook claude-code", "timeout": 10 }]
+      }
+    ]
+  }
+}

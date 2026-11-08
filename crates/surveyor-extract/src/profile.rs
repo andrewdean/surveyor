@@ -165,6 +165,25 @@ impl Default for RulesProfile {
     }
 }
 
+/// What the agent harness does at the start of a session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HarnessProfile {
+    /// Token budget of the context pack a hook plans for a session's first prompt.
+    ///
+    /// Smaller than the 30,000 of a planned task, because it lands on every session
+    /// whether or not the prompt is a task.
+    pub prompt_budget: usize,
+}
+
+impl Default for HarnessProfile {
+    fn default() -> Self {
+        Self {
+            prompt_budget: 12_000,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 struct RepositorySection {
@@ -192,6 +211,13 @@ pub struct Profile {
     pub scip: ScipProfile,
     /// Rule settings.
     pub rules: RulesProfile,
+    /// Harness settings.
+    ///
+    /// Not serialized: the serialized profile is part of the engine version a
+    /// dataset is stamped with, and the harness changes no fact, so a change here
+    /// must not force a full reindex.
+    #[serde(skip_serializing)]
+    pub harness: HarnessProfile,
     adapter: AdapterSection,
 }
 

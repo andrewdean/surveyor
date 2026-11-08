@@ -4,11 +4,15 @@
 //! to a Lance dataset under `.surveyor/`. The query commands (`explain`, `affected`,
 //! `path`, `query`, `hubs`, `communities`, `source`, `stats`) load that dataset and
 //! answer with citations. `surveyor mcp` serves the same answers over MCP on stdio.
+//! With `--session <id>` (or `SURVEYOR_SESSION`) every answer is also recorded in a
+//! session ledger; `surveyor session` and `surveyor hook claude-code` work that
+//! ledger for an agent harness.
 
 // Rust guideline compliant 2026-02-21
 
 mod app;
 mod eval;
+mod harness;
 mod render;
 
 use clap::Parser;

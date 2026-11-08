@@ -70,7 +70,8 @@ pub use pipeline::{
 };
 #[doc(inline)]
 pub use profile::{
-    DocsProfile, Profile, RulesProfile, ScipProfile, SqlDialect, SqlProfile, WalkProfile,
+    DocsProfile, HarnessProfile, Profile, RulesProfile, ScipProfile, SqlDialect, SqlProfile,
+    WalkProfile,
 };
 #[doc(inline)]
 pub use rhai_lang::RhaiExtractor;

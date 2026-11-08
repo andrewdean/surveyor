@@ -15,6 +15,7 @@ use surveyor_model::{EdgeKind, Fact, GraphStats, LiteralRole, NodeKind, RepoId, 
 use surveyor_store::{FileRecord, LanceStore, RepositorySnapshot, StoreUpdate};
 
 use crate::eval;
+use crate::harness;
 use crate::render::{self, Output, Updated};
 
 /// Directory under the repository root that holds the dataset.
@@ -94,6 +95,9 @@ pub struct Cli {
     /// that cannot carry one.
     #[arg(long, global = true, env = "SURVEYOR_PROFILE")]
     pub profile: Option<PathBuf>,
+    /// Session ledger to record every answer in (`<store>/sessions/<id>.jsonl`).
+    #[arg(long, global = true, env = "SURVEYOR_SESSION")]
+    pub session: Option<String>,
     /// Emit JSON instead of text.
     #[arg(long, global = true)]
     pub json: bool,
@@ -138,6 +142,10 @@ pub enum Command {
     Check(CheckArgs),
     /// Serve the graph over MCP on stdio.
     Mcp,
+    /// Open, annotate or summarize a session ledger.
+    Session(harness::SessionArgs),
+    /// Act on an agent host's hook payload (stdin).
+    Hook(harness::HookArgs),
     /// Score plain-English questions against the starting nodes they should find.
     Eval(EvalArgs),
     /// Rank nodes for a plain-English question: what `query_graph` starts from.
@@ -211,8 +219,21 @@ pub struct IndexArgs {
 #[derive(Debug, Args)]
 pub struct UpdateArgs {
     /// Fall back to a full index when more than this share of files would be relinked.
-    #[arg(long, default_value_t = 0.5)]
+    #[arg(long, default_value_t = UpdateArgs::DEFAULT_FULL_THRESHOLD)]
     pub full_threshold: f64,
+}
+
+impl UpdateArgs {
+    /// Above this share of relinked files a full index is cheaper than a delta.
+    const DEFAULT_FULL_THRESHOLD: f64 = 0.5;
+}
+
+impl Default for UpdateArgs {
+    fn default() -> Self {
+        Self {
+            full_threshold: Self::DEFAULT_FULL_THRESHOLD,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -367,13 +388,13 @@ pub struct SourceArgs {
     pub context: u32,
 }
 
-struct Paths {
-    root: PathBuf,
-    store: PathBuf,
+pub struct Paths {
+    pub root: PathBuf,
+    pub store: PathBuf,
 }
 
 /// The profile: `--profile` when given, else `<repo-root>/surveyor.toml` or the defaults.
-fn load_profile(cli: &Cli, p: &Paths) -> anyhow::Result<Profile> {
+pub fn load_profile(cli: &Cli, p: &Paths) -> anyhow::Result<Profile> {
     match &cli.profile {
         Some(file) => {
             Profile::load_file(file).with_context(|| format!("load profile {}", file.display()))
@@ -383,9 +404,16 @@ fn load_profile(cli: &Cli, p: &Paths) -> anyhow::Result<Profile> {
 }
 
 fn paths(cli: &Cli) -> anyhow::Result<Paths> {
-    let root = match &cli.repo_root {
-        Some(r) => r.clone(),
-        None => std::env::current_dir().context("current directory")?,
+    paths_from(cli, None)
+}
+
+/// The root and store: `--repo-root` and `--store` when given, else `fallback_root`
+/// (a hook payload's working directory), else the current directory.
+pub fn paths_from(cli: &Cli, fallback_root: Option<&Path>) -> anyhow::Result<Paths> {
+    let root = match (&cli.repo_root, fallback_root) {
+        (Some(r), _) => r.clone(),
+        (None, Some(r)) => r.to_path_buf(),
+        (None, None) => std::env::current_dir().context("current directory")?,
     };
     let root = root
         .canonicalize()
@@ -394,7 +422,7 @@ fn paths(cli: &Cli) -> anyhow::Result<Paths> {
     Ok(Paths { root, store })
 }
 
-async fn open_graph(cli: &Cli, p: &Paths) -> anyhow::Result<(LanceStore, CodeGraph, RepoId)> {
+pub async fn open_graph(cli: &Cli, p: &Paths) -> anyhow::Result<(LanceStore, CodeGraph, RepoId)> {
     open_graph_at(cli, p, &p.store).await
 }
 
@@ -490,11 +518,22 @@ fn location(node: &surveyor_model::Node) -> String {
 
 #[expect(clippy::too_many_lines, reason = "one match arm per subcommand")]
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
+    if let Command::Hook(a) = &cli.command {
+        // A hook finds its root in the payload and must exit 0 whatever happens.
+        harness::hook(&cli, a).await;
+        return Ok(());
+    }
     let p = paths(&cli)?;
     let out = if cli.json { Output::Json } else { Output::Text };
+    let ledger = harness::ledger(&cli, &p.store)?;
+    let record = |event: surveyor_session::Event| harness::record(ledger.as_ref(), event);
     match &cli.command {
         Command::Index(a) => run_index(&cli, &p, &a.scip, &out).await,
-        Command::Update(a) => update(&cli, &p, a, &out).await,
+        Command::Update(a) => {
+            let updated = update(&cli, &p, a).await?;
+            out.updated(&updated, &p.store);
+            Ok(())
+        }
         Command::Stats => {
             let store = open_dataset(&p.store).await?;
             let stats = store.stats().await?;
@@ -515,6 +554,11 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let rules = rule_report(&cli, &p, &graph);
             let card = card_with_rules(&graph, node, rules.as_ref());
             out.explain(&graph, node, &card, q.limit);
+            record(harness::answer(
+                "explain",
+                serde_json::json!({ "query": q.query }),
+                harness::consulted_card(node, &card),
+            ));
             Ok(())
         }
         Command::Card(a) => {
@@ -537,35 +581,24 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 "cards built"
             );
             out.cards(&cards);
+            record(harness::answer(
+                "card",
+                serde_json::json!({ "queries": a.queries }),
+                nodes
+                    .iter()
+                    .zip(&cards)
+                    .flat_map(|(n, c)| harness::consulted_card(n, c))
+                    .collect(),
+            ));
             Ok(())
         }
         Command::Context(a) => {
-            let (store, graph, repo) = open_graph(&cli, &p).await?;
-            let graph = std::sync::Arc::new(graph);
-            let index = surveyor_search::TextIndex::build(graph.nodes());
-            let tokenizer = surveyor_context::Tokenizer::cl100k();
-            let rules = rule_report(&cli, &p, &graph);
-            let unresolved = store.unresolved(&repo).await.unwrap_or_default();
-            let planner = planner(
-                &graph,
-                &index,
-                &tokenizer,
-                &p.root,
-                rules.as_ref(),
-                unresolved,
-            );
-            let started = Instant::now();
-            let pack = planner.pack(&a.task, a.budget, &a.seeds);
-            tracing::info!(
-                tokens = pack.used.tokens,
-                items = pack.items.len(),
-                ms = started.elapsed().as_millis() as u64,
-                "context pack built"
-            );
+            let pack = pack_for(&cli, &p, &a.task, a.budget, &a.seeds).await?;
             match out {
                 Output::Json => render::print_json(&pack),
                 Output::Text => print!("{}", pack.markdown),
             }
+            record(surveyor_session::Event::pack_of(&pack));
             Ok(())
         }
         Command::Affected(a) => {
@@ -581,6 +614,16 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let reach = Reach::depth(a.depth).with_min_confidence(a.min_confidence);
             let hits = graph.affected(&node.id, reach, &filter);
             out.affected(node, &hits, a.depth);
+            record(harness::answer(
+                "affected",
+                serde_json::json!({ "query": a.query.query, "depth": a.depth, "min_confidence": a.min_confidence }),
+                std::iter::once(surveyor_session::Consulted::of_node(node))
+                    .chain(
+                        hits.iter()
+                            .map(|h| surveyor_session::Consulted::of_node_via(h.node, h.via)),
+                    )
+                    .collect(),
+            ));
             Ok(())
         }
         Command::Path(a) => {
@@ -589,12 +632,41 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let to = resolve_one(&graph, &a.to, None)?;
             let found = graph.best_path(&from.id, &to.id, a.mode());
             out.path(from, to, found.as_ref());
+            record(harness::answer(
+                "path",
+                serde_json::json!({ "from": a.from, "to": a.to }),
+                found.as_ref().map_or_else(
+                    || {
+                        vec![
+                            surveyor_session::Consulted::of_node(from),
+                            surveyor_session::Consulted::of_node(to),
+                        ]
+                    },
+                    |path| {
+                        path.steps
+                            .iter()
+                            .map(|s| match s.edge {
+                                Some(e) => surveyor_session::Consulted::of_node_via(s.node, e),
+                                None => surveyor_session::Consulted::of_node(s.node),
+                            })
+                            .collect()
+                    },
+                ),
+            ));
             Ok(())
         }
         Command::Query(q) => {
             let (_, graph, _) = open_graph(&cli, &p).await?;
             let found = graph.find(&q.query, q.kind.as_ref(), q.limit);
             out.nodes(&found);
+            record(harness::answer(
+                "query",
+                serde_json::json!({ "query": q.query }),
+                found
+                    .iter()
+                    .map(|n| surveyor_session::Consulted::of_node(n))
+                    .collect(),
+            ));
             Ok(())
         }
         Command::Hubs(t) => {
@@ -611,6 +683,14 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let (_, graph, _) = open_graph(&cli, &p).await?;
             let found = list_nodes(&graph, a);
             out.nodes(&found);
+            record(harness::answer(
+                "nodes",
+                serde_json::json!({ "kind": a.kind.as_ref().map(ToString::to_string), "in": a.in_path }),
+                found
+                    .iter()
+                    .map(|n| surveyor_session::Consulted::of_node(n))
+                    .collect(),
+            ));
             Ok(())
         }
         Command::Communities(t) => {
@@ -633,6 +713,25 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let (_, graph, _) = open_graph(&cli, &p).await?;
             let window = render::source_window(&graph, &p.root, &a.target, a.context)?;
             out.source(&window);
+            let citation = format!(
+                "{}:{}-{}",
+                window.file, window.span_start_line, window.span_end_line
+            );
+            record(harness::answer(
+                "source",
+                serde_json::json!({ "target": a.target }),
+                vec![surveyor_session::Consulted::new(
+                    if graph
+                        .node(&surveyor_model::NodeId::new(&a.target))
+                        .is_some()
+                    {
+                        a.target.clone()
+                    } else {
+                        citation.clone()
+                    },
+                    Some(citation),
+                )],
+            ));
             Ok(())
         }
         Command::Check(a) => {
@@ -663,6 +762,18 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
             };
             out.check(&report);
+            record(harness::answer(
+                "check",
+                serde_json::Value::Null,
+                report
+                    .outcomes
+                    .iter()
+                    .flat_map(|o| o.violations.iter())
+                    .map(|v| {
+                        surveyor_session::Consulted::new(v.subject.clone(), v.citation.clone())
+                    })
+                    .collect(),
+            ));
             if !report.passed() {
                 std::process::exit(1);
             }
@@ -715,6 +826,14 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let index = surveyor_search::TextIndex::build(graph.nodes());
             let found = surveyor_search::ranked(&graph, &index, &a.question, a.limit.max(1));
             out.ranked(&found);
+            record(harness::answer(
+                "search",
+                serde_json::json!({ "question": a.question }),
+                found
+                    .iter()
+                    .map(|(_, n)| surveyor_session::Consulted::of_node(n))
+                    .collect(),
+            ));
             Ok(())
         }
         Command::Mcp => {
@@ -722,12 +841,76 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let profile = load_profile(&cli, &p)?;
             let (dirs, files) = rule_sources(&p.root, &profile, &[]);
             let rules = surveyor_rules::RuleSet::load(&dirs, &files).context("load rules")?;
-            surveyor_mcp::serve_stdio(store, graph, repo, p.root.clone(), rules)
+            let server = surveyor_mcp::Surveyor::new(store, graph, repo, p.root.clone(), rules);
+            let server = match ledger {
+                Some(ledger) => server.with_ledger(ledger),
+                None => server,
+            };
+            surveyor_mcp::serve_stdio(server)
                 .await
                 .context("mcp server")?;
             Ok(())
         }
+        Command::Session(a) => harness::session(&cli, &p, a, &out).await,
+        Command::Hook(_) => unreachable!("handled before the dataset is opened"),
     }
+}
+
+/// The context pack for `task` inside `budget`, as `surveyor context` builds it.
+pub async fn pack_for(
+    cli: &Cli,
+    p: &Paths,
+    task: &str,
+    budget: usize,
+    seeds: &[String],
+) -> anyhow::Result<surveyor_context::ContextPack> {
+    let (store, graph, repo) = open_graph(cli, p).await?;
+    let graph = std::sync::Arc::new(graph);
+    let index = surveyor_search::TextIndex::build(graph.nodes());
+    let tokenizer = surveyor_context::Tokenizer::cl100k();
+    let rules = rule_report(cli, p, &graph);
+    let unresolved = store.unresolved(&repo).await.unwrap_or_default();
+    let planner = planner(
+        &graph,
+        &index,
+        &tokenizer,
+        &p.root,
+        rules.as_ref(),
+        unresolved,
+    );
+    let started = Instant::now();
+    let pack = planner.pack(task, budget, seeds);
+    tracing::info!(
+        tokens = pack.used.tokens,
+        items = pack.items.len(),
+        ms = started.elapsed().as_millis() as u64,
+        "context pack built"
+    );
+    Ok(pack)
+}
+
+/// How many rules the profile's directories hold; zero when they cannot be loaded.
+pub fn rule_count(cli: &Cli, p: &Paths) -> usize {
+    load_profile(cli, p)
+        .ok()
+        .and_then(|profile| {
+            let (dirs, files) = rule_sources(&p.root, &profile, &[]);
+            surveyor_rules::RuleSet::load(&dirs, &files).ok()
+        })
+        .map_or(0, |rules| rules.rules().len())
+}
+
+/// `surveyor update` with the defaults and nothing printed, for a session start.
+pub async fn update_quietly(cli: &Cli, p: &Paths) -> anyhow::Result<()> {
+    let updated = update(cli, p, &UpdateArgs::default()).await?;
+    tracing::info!(
+        repo = %updated.snapshot.repo,
+        commit = %updated.snapshot.commit,
+        strategy = %updated.strategy,
+        ms = updated.took.as_millis() as u64,
+        "dataset updated"
+    );
+    Ok(())
 }
 
 /// Scores every task of a tasks file: each against the store of its base commit
@@ -1076,18 +1259,20 @@ async fn index(cli: &Cli, p: &Paths, scip: &[PathBuf]) -> anyhow::Result<Indexed
 /// Falls back to a full index when there is no index yet, when the engine, the profile
 /// or a precise index changed, when a manifest changed, or when the plan would relink
 /// more than `--full-threshold` of the files.
-async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow::Result<()> {
+/// Reindexes what changed since the dataset's recorded commit, or everything when
+/// the delta cannot be trusted, and says what it did.
+async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs) -> anyhow::Result<Updated> {
     let started = Instant::now();
     let profile = load_profile(cli, p)?;
     let repo = Repository::open_with(&p.root, cli.repo_id.as_deref().map(RepoId::new), &profile)
         .context("open repository")?;
     if !p.store.exists() {
-        return full(cli, p, out, "no dataset", started).await;
+        return full(cli, p, "no dataset", started).await;
     }
     let indexes = scip_indexes(&profile, &p.root, &[])?;
     let store = open_store(&p.store, &profile, &indexes).await?;
     let Some(snapshot) = store.snapshot(repo.id()).await? else {
-        return full(cli, p, out, "repository not indexed", started).await;
+        return full(cli, p, "repository not indexed", started).await;
     };
     if snapshot.surveyor_version != store.engine_version() {
         let reason = format!(
@@ -1095,7 +1280,7 @@ async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow
             snapshot.surveyor_version,
             store.engine_version()
         );
-        return full(cli, p, out, &reason, started).await;
+        return full(cli, p, &reason, started).await;
     }
     let known = store.files(repo.id()).await.context("read file records")?;
     let hashes = known
@@ -1120,25 +1305,21 @@ async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow
         deleted: changes.deleted.iter().cloned().collect(),
     };
     if changed.touches_manifest() {
-        return full(cli, p, out, "a package manifest changed", started).await;
+        return full(cli, p, "a package manifest changed", started).await;
     }
     if changes.is_empty() && snapshot.commit == *repo.commit() && snapshot.dirty == repo.is_dirty()
     {
-        out.updated(
-            &Updated {
-                snapshot,
-                strategy: changes.source.as_str().to_owned(),
-                reason: None,
-                modified: Vec::new(),
-                added: Vec::new(),
-                deleted: Vec::new(),
-                relinked: BTreeMap::new(),
-                extraction_errors: 0,
-                took: started.elapsed(),
-            },
-            &p.store,
-        );
-        return Ok(());
+        return Ok(Updated {
+            snapshot,
+            strategy: changes.source.as_str().to_owned(),
+            reason: None,
+            modified: Vec::new(),
+            added: Vec::new(),
+            deleted: Vec::new(),
+            relinked: BTreeMap::new(),
+            extraction_errors: 0,
+            took: started.elapsed(),
+        });
     }
 
     match incremental(&repo, &profile, &store, &known, &changed, args, &indexes).await? {
@@ -1146,24 +1327,18 @@ async fn update(cli: &Cli, p: &Paths, args: &UpdateArgs, out: &Output) -> anyhow
             snapshot,
             relinked,
             extraction_errors,
-        } => {
-            out.updated(
-                &Updated {
-                    snapshot,
-                    strategy: changes.source.as_str().to_owned(),
-                    reason: None,
-                    modified: changes.modified,
-                    added: changes.added,
-                    deleted: changes.deleted,
-                    relinked,
-                    extraction_errors,
-                    took: started.elapsed(),
-                },
-                &p.store,
-            );
-            Ok(())
-        }
-        Incremental::TooLarge(reason) => full(cli, p, out, &reason, started).await,
+        } => Ok(Updated {
+            snapshot,
+            strategy: changes.source.as_str().to_owned(),
+            reason: None,
+            modified: changes.modified,
+            added: changes.added,
+            deleted: changes.deleted,
+            relinked,
+            extraction_errors,
+            took: started.elapsed(),
+        }),
+        Incremental::TooLarge(reason) => full(cli, p, &reason, started).await,
     }
 }
 
@@ -1281,28 +1456,18 @@ async fn incremental(
 }
 
 /// Runs a full index in place of an update and reports it as such.
-async fn full(
-    cli: &Cli,
-    p: &Paths,
-    out: &Output,
-    reason: &str,
-    started: Instant,
-) -> anyhow::Result<()> {
+async fn full(cli: &Cli, p: &Paths, reason: &str, started: Instant) -> anyhow::Result<Updated> {
     tracing::info!(reason, "updating with a full index");
     let indexed = index(cli, p, &[]).await?;
-    out.updated(
-        &Updated {
-            snapshot: indexed.snapshot,
-            strategy: "full".to_owned(),
-            reason: Some(reason.to_owned()),
-            modified: Vec::new(),
-            added: Vec::new(),
-            deleted: Vec::new(),
-            relinked: BTreeMap::new(),
-            extraction_errors: indexed.errors,
-            took: started.elapsed(),
-        },
-        &p.store,
-    );
-    Ok(())
+    Ok(Updated {
+        snapshot: indexed.snapshot,
+        strategy: "full".to_owned(),
+        reason: Some(reason.to_owned()),
+        modified: Vec::new(),
+        added: Vec::new(),
+        deleted: Vec::new(),
+        relinked: BTreeMap::new(),
+        extraction_errors: indexed.errors,
+        took: started.elapsed(),
+    })
 }

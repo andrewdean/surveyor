@@ -11,6 +11,9 @@
 //! Every answer that names an edge cites its evidence as `file:lines`, and
 //! `read_project_source` returns the exact cited window, so an agent can verify
 //! instead of trust.
+//!
+//! With a session ledger ([`Surveyor::with_ledger`]) every tool call appends what it
+//! named, so a pull request can later cite what the agent read.
 
 // Rust guideline compliant 2026-02-21
 
@@ -29,6 +32,7 @@ use surveyor_graph::{
 use surveyor_model::{Edge, EdgeKind, Node, NodeId, NodeKind, RepoId};
 use surveyor_rules::RuleSet;
 use surveyor_search::TextIndex;
+use surveyor_session::{Consulted, Event, Ledger, Source};
 use surveyor_store::LanceStore;
 
 /// Shared state behind the tool handlers.
@@ -46,7 +50,8 @@ pub struct Surveyor {
     /// The rule run the cards cite, made on the first card and kept: the graph does
     /// not change while the server runs. `None` when the rules did not run.
     report: std::sync::OnceLock<Option<surveyor_rules::Report>>,
-    #[expect(dead_code, reason = "the tool_handler macro reads the router field")]
+    /// Where tool calls are recorded, when the server runs inside a session.
+    ledger: Option<Ledger>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -406,8 +411,35 @@ impl Surveyor {
             root,
             rules,
             report: std::sync::OnceLock::new(),
+            ledger: None,
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Records every tool call in `ledger`.
+    #[must_use]
+    pub fn with_ledger(mut self, ledger: Ledger) -> Self {
+        self.ledger = Some(ledger);
+        self
+    }
+
+    /// Appends `event` to the ledger when there is one; a ledger that cannot be
+    /// written is logged, never an error to the agent.
+    fn record(&self, event: Event) {
+        if let Some(ledger) = &self.ledger
+            && let Err(e) = ledger.append(event)
+        {
+            tracing::warn!(error = %e, "session ledger not written");
+        }
+    }
+
+    /// The node an argument names, cited at its location, when the graph has it.
+    fn argument_node(&self, arguments: Option<&rmcp::model::JsonObject>) -> Option<Consulted> {
+        ["node_id", "path", "from", "to"]
+            .iter()
+            .filter_map(|k| arguments?.get(*k)?.as_str())
+            .find_map(|id| self.graph.node(&NodeId::new(id)))
+            .map(Consulted::of_node)
     }
 
     /// A node's card with its rule notes.
@@ -510,6 +542,7 @@ impl Surveyor {
             .with_rules(|node| self.rule_notes(node))
             .with_unresolved(unresolved);
         let pack = planner.pack(&p.task, budget, &p.seeds);
+        self.record(Event::pack_of(&pack));
         match p.format.as_deref() {
             None | Some("markdown") => Ok(CallToolResult::success(vec![ContentBlock::text(
                 pack.markdown,
@@ -901,8 +934,52 @@ impl Surveyor {
     }
 }
 
+/// Node references in a tool result: every text block that parses as JSON is walked.
+fn consulted_in_result(result: &CallToolResult) -> Vec<Consulted> {
+    result
+        .content
+        .iter()
+        .filter_map(|block| block.as_text())
+        .filter_map(|text| serde_json::from_str::<serde_json::Value>(&text.text).ok())
+        .flat_map(|value| surveyor_session::consulted_in(&value))
+        .collect()
+}
+
 #[tool_handler]
 impl ServerHandler for Surveyor {
+    /// Dispatches to the tool and records what it named.
+    ///
+    /// `context_pack` records itself as a pack, with seeds and gaps, so it is not
+    /// recorded again here.
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResponse, McpError> {
+        let op = request.name.to_string();
+        let arguments = request.arguments.clone();
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        let response = self.tool_router.call(tcc).await?;
+        if self.ledger.is_some()
+            && op != "context_pack"
+            && let rmcp::model::CallToolResponse::Complete(result) = &response
+        {
+            let mut consulted = consulted_in_result(result);
+            if let Some(arg) = self.argument_node(arguments.as_ref())
+                && !consulted.iter().any(|c| c.id == arg.id)
+            {
+                consulted.insert(0, arg);
+            }
+            self.record(Event::Answer {
+                source: Source::Mcp,
+                op,
+                args: arguments.map_or(serde_json::Value::Null, serde_json::Value::Object),
+                consulted,
+            });
+        }
+        Ok(response)
+    }
+
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::from_build_env())
@@ -949,14 +1026,7 @@ impl std::error::Error for ServeError {}
 ///
 /// # Errors
 /// Returns an error when the transport fails to start or the session ends abnormally.
-pub async fn serve_stdio(
-    store: LanceStore,
-    graph: CodeGraph,
-    repo: RepoId,
-    root: PathBuf,
-    rules: RuleSet,
-) -> Result<(), ServeError> {
-    let server = Surveyor::new(store, graph, repo, root, rules);
+pub async fn serve_stdio(server: Surveyor) -> Result<(), ServeError> {
     let service = server
         .serve(rmcp::transport::stdio())
         .await

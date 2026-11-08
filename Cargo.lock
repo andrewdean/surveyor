@@ -6629,6 +6629,7 @@ dependencies = [
  "surveyor-model",
  "surveyor-rules",
  "surveyor-search",
+ "surveyor-session",
  "surveyor-store",
  "tempfile",
  "tokio",
@@ -6706,7 +6707,9 @@ dependencies = [
  "surveyor-model",
  "surveyor-rules",
  "surveyor-search",
+ "surveyor-session",
  "surveyor-store",
+ "tracing",
 ]
 
 [[package]]
@@ -6736,6 +6739,17 @@ dependencies = [
  "rust-stemmers",
  "surveyor-graph",
  "surveyor-model",
+]
+
+[[package]]
+name = "surveyor-session"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "surveyor-context",
+ "surveyor-model",
+ "tempfile",
 ]
 
 [[package]]

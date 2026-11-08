@@ -169,6 +169,14 @@ for now). This checkout implements Phase 0 of that plan.
   Graphify publish (`query_graph`, `get_node`, `get_neighbors`, `shortest_path`,
   `god_nodes`, `get_community`, `read_project_source`) plus `affected`, `find_nodes`,
   `graph_stats`, `check_invariants` and `context_pack`.
+- **Session ledgers.** With `--session <id>` (or `SURVEYOR_SESSION`) every answer a
+  command or an MCP tool gives is recorded in `<store>/sessions/<id>.jsonl` with the
+  nodes it named and their citations, so a pull request can cite what the agent read
+  rather than a pack re-planned after the fact. `surveyor session start|note|summary`
+  works the ledger directly; `surveyor hook claude-code` reads Claude Code's hook
+  payloads and does the bookkeeping for a session: `update` and one line of
+  orientation at start, a pack for the first prompt, a record per Surveyor tool call,
+  the summary at stop (`docs/harness.md`, `examples/claude-code/`).
 
 ## Numbers
 
@@ -375,6 +383,7 @@ crates/surveyor-graph     petgraph compute: neighbors, affected, paths, PageRank
 crates/surveyor-search    BM25F over node text: the starting nodes of a question
 crates/surveyor-context   context packs: seeds, expansion, ranking, the budget and the Markdown
 crates/surveyor-rules     Rhai rule engine: invariants over the graph, with citations
+crates/surveyor-session   session ledgers: what an agent consulted, with citations
 crates/surveyor-mcp       rmcp server
 apps/surveyor             the CLI
 languages/<name>/surveyor.scm   query packs
@@ -395,8 +404,9 @@ building the release archives for a `v*` tag.
 
 ## Not yet
 
-Cards and embeddings, context packs, the Causeway adapter, `serve` with streamable
-HTTP, personas and runtime connectors are the following phases of the RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too).
+The pull-request comment and gate (`surveyor pr`), federation across repositories,
+`serve` with streamable HTTP, personas and runtime connectors are the following
+stages and phases of the RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too).
 It walks the tree on every run, so files a changed profile includes or excludes
 arrive and leave as added and deleted files, but a changed dialect or default schema
 still needs `index`. It relinks changed files syntactically: rerun `index --scip` when

@@ -14,10 +14,12 @@ surveyor-graph.workspace = true
 surveyor-search.workspace = true
 surveyor-context.workspace = true
 surveyor-rules.workspace = true
+surveyor-session.workspace = true
 rmcp.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

@@ -29,6 +29,7 @@ surveyor-search.workspace = true
 surveyor-context.workspace = true
 surveyor-mcp.workspace = true
 surveyor-rules.workspace = true
+surveyor-session.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true
