@@ -279,7 +279,7 @@ cargo binstall surveyor --git https://github.com/andrewdean/surveyor
 ```
 
 ```bash
-cargo install --git https://github.com/andrewdean/surveyor --tag v0.1.0 surveyor
+cargo install --git https://github.com/andrewdean/surveyor --tag v0.2.0 surveyor
 ```
 
 `cargo install` builds from source and needs `protoc` on the path (the Lance crates

@@ -42,7 +42,7 @@ binstall downloads the archive for the host target instead of compiling. Add
 ### cargo install from source
 
 ```bash
-cargo install --git https://github.com/andrewdean/surveyor --tag v0.1.0 surveyor
+cargo install --git https://github.com/andrewdean/surveyor --tag v0.2.0 surveyor
 ```
 
 Building needs the toolchain `rust-toolchain.toml` names (rustup installs it on first
@@ -62,8 +62,8 @@ prints `surveyor <version>`. The MCP server is the same binary (`surveyor mcp`),
 ### Verifying a download by hand
 
 ```bash
-curl -fsSLO https://github.com/andrewdean/surveyor/releases/download/v0.1.0/SHA256SUMS
-curl -fsSLO https://github.com/andrewdean/surveyor/releases/download/v0.1.0/surveyor-0.1.0-aarch64-apple-darwin.tar.gz
+curl -fsSLO https://github.com/andrewdean/surveyor/releases/download/v0.2.0/SHA256SUMS
+curl -fsSLO https://github.com/andrewdean/surveyor/releases/download/v0.2.0/surveyor-0.2.0-aarch64-apple-darwin.tar.gz
 shasum -a 256 -c --ignore-missing SHA256SUMS
 ```
 

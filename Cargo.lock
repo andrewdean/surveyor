@@ -6612,7 +6612,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surveyor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6640,7 +6640,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-context"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "surveyor-graph",
@@ -6651,7 +6651,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-extract"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "gix",
  "globset",
@@ -6679,7 +6679,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-graph"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "petgraph",
  "serde",
@@ -6688,7 +6688,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-link"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "surveyor-extract",
  "surveyor-model",
@@ -6696,7 +6696,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rmcp",
  "schemars 1.2.3",
@@ -6714,7 +6714,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-model"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "serde",
@@ -6723,7 +6723,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-rules"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "globset",
  "rhai",
@@ -6734,7 +6734,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-search"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rust-stemmers",
  "surveyor-graph",
@@ -6743,7 +6743,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-session"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -6754,7 +6754,7 @@ dependencies = [
 
 [[package]]
 name = "surveyor-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arrow-array",
  "arrow-schema",

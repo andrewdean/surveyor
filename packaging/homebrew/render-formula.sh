@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render the Homebrew formula for a published release.
 #
-#   packaging/homebrew/render-formula.sh 0.1.0 > ../homebrew-tap/Formula/surveyor.rb
+#   packaging/homebrew/render-formula.sh 0.2.0 > ../homebrew-tap/Formula/surveyor.rb
 #
 # Reads SHA256SUMS from the v<version> GitHub release and fills surveyor.rb.in.
 set -euo pipefail
