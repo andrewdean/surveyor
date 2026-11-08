@@ -8,6 +8,7 @@ use surveyor_model::RepoPath;
 
 use anyhow::{Context, bail};
 use serde::Serialize;
+use serde_json::Value;
 use surveyor_graph::{
     Affected, Card, CodeGraph, Community, Direction, EdgeFilter, FoundPath, Hub, Neighbor,
     PathDirection, PathTier, RuleStatus,
@@ -145,6 +146,20 @@ pub(crate) fn print_json<T: Serialize>(value: &T) {
         Ok(s) => println!("{s}"),
         Err(e) => eprintln!("json: {e}"),
     }
+}
+
+/// A view as a JSON value: what `--json` prints and what `surveyor serve` returns
+/// for the same command, so the two cannot drift apart.
+///
+/// The view goes through its text form rather than `serde_json::to_value`, which
+/// widens an `f32` confidence or score to `f64` and would print `0.8999999761581421`
+/// where the CLI prints `0.9`; the round trip keeps the digits the CLI prints.
+/// Serialization cannot fail for the views here (string keys, finite numbers); if it
+/// ever did, the value would name the error rather than drop the answer silently.
+pub(crate) fn json_value<T: Serialize>(view: &T) -> Value {
+    serde_json::to_string(view)
+        .and_then(|text| serde_json::from_str(&text))
+        .unwrap_or_else(|e| serde_json::json!({ "error": e.to_string() }))
 }
 
 fn first_paragraph(doc: &str) -> String {
@@ -296,50 +311,7 @@ impl Output {
 
     pub fn stats(self, store: &Path, stats: &StoreStats, per_repo: Option<&GraphStats>) {
         if self == Self::Json {
-            #[derive(Serialize)]
-            struct Repo<'a> {
-                repo: &'a str,
-                commit: &'a str,
-                nodes: u64,
-                edges: u64,
-                files: u64,
-                unresolved: u64,
-                indexed_at_ms: i64,
-                surveyor_version: &'a str,
-            }
-            #[derive(Serialize)]
-            struct View<'a> {
-                store: String,
-                version: u64,
-                nodes: usize,
-                edges: usize,
-                federated: usize,
-                repositories: Vec<Repo<'a>>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                graph: Option<&'a GraphStats>,
-            }
-            print_json(&View {
-                store: store.display().to_string(),
-                version: stats.version,
-                nodes: stats.nodes,
-                edges: stats.edges,
-                federated: stats.federated,
-                repositories: stats
-                    .repositories
-                    .iter()
-                    .map(|s| Repo {
-                        repo: s.repo.as_str(),
-                        commit: s.commit.as_str(),
-                        nodes: s.nodes,
-                        edges: s.edges,
-                        files: s.files,
-                        unresolved: s.unresolved,
-                        indexed_at_ms: s.indexed_at.as_unix_millis(),
-                        surveyor_version: &s.surveyor_version,
-                    })
-                    .collect(),
-                graph: per_repo,
-            });
+            print_json(&stats_json(store, stats, per_repo));
             return;
         }
         println!(
@@ -375,7 +347,7 @@ impl Output {
 
     pub fn nodes(self, nodes: &[&Node]) {
         if self == Self::Json {
-            print_json(&nodes.iter().map(|n| NodeView::of(n)).collect::<Vec<_>>());
+            print_json(&nodes_json(nodes));
             return;
         }
         if nodes.is_empty() {
@@ -398,21 +370,7 @@ impl Output {
     /// Nodes ranked for a question, with the score when the ranking was by text.
     pub fn ranked(self, found: &[(Option<f32>, &Node)]) {
         if self == Self::Json {
-            #[derive(Serialize)]
-            struct View {
-                #[serde(skip_serializing_if = "Option::is_none")]
-                score: Option<f32>,
-                node: NodeView,
-            }
-            print_json(
-                &found
-                    .iter()
-                    .map(|(score, n)| View {
-                        score: *score,
-                        node: NodeView::of(n),
-                    })
-                    .collect::<Vec<_>>(),
-            );
+            print_json(&ranked_json(found));
             return;
         }
         if found.is_empty() {
@@ -436,42 +394,7 @@ impl Output {
         let inc = graph.neighbors(&node.id, Direction::Incoming, &all);
         let members = graph.members(node);
         if self == Self::Json {
-            #[derive(Serialize)]
-            struct Rel {
-                kind: String,
-                node: NodeView,
-                evidence: Vec<String>,
-                derivation: String,
-                confidence: f32,
-            }
-            #[derive(Serialize)]
-            struct View<'a> {
-                node: NodeView,
-                card: &'a Card,
-                outgoing: Vec<Rel>,
-                incoming: Vec<Rel>,
-                members: Vec<NodeView>,
-            }
-            let rel = |n: &Neighbor<'_>| Rel {
-                kind: n.edge.kind.to_string(),
-                node: NodeView::of(n.node),
-                evidence: n
-                    .edge
-                    .provenance
-                    .evidence
-                    .iter()
-                    .map(surveyor_model::Evidence::citation)
-                    .collect(),
-                derivation: n.edge.provenance.derivation.kind().to_string(),
-                confidence: n.edge.provenance.confidence.get(),
-            };
-            print_json(&View {
-                node: NodeView::of(node),
-                card,
-                outgoing: out.iter().map(rel).collect(),
-                incoming: inc.iter().map(rel).collect(),
-                members: members.iter().map(|n| NodeView::of(n)).collect(),
-            });
+            print_json(&explain_json(graph, node, card));
             return;
         }
         println!("{} {}", node.kind, node.qualified_name);
@@ -513,7 +436,7 @@ impl Output {
     /// Prints one or more cards.
     pub fn cards(self, cards: &[Card]) {
         if self == Self::Json {
-            print_json(&cards);
+            print_json(&cards_json(cards));
             return;
         }
         for (i, c) in cards.iter().enumerate() {
@@ -582,32 +505,7 @@ impl Output {
 
     pub fn affected(self, node: &Node, hits: &[Affected<'_>], depth: usize) {
         if self == Self::Json {
-            #[derive(Serialize)]
-            struct Hit {
-                depth: usize,
-                confidence: f32,
-                node: NodeView,
-                via: EdgeView,
-            }
-            #[derive(Serialize)]
-            struct View {
-                node: NodeView,
-                depth: usize,
-                affected: Vec<Hit>,
-            }
-            print_json(&View {
-                node: NodeView::of(node),
-                depth,
-                affected: hits
-                    .iter()
-                    .map(|h| Hit {
-                        depth: h.depth,
-                        confidence: h.confidence,
-                        node: NodeView::of(h.node),
-                        via: EdgeView::of(h.via),
-                    })
-                    .collect(),
-            });
+            print_json(&affected_json(node, hits, depth));
             return;
         }
         println!(
@@ -644,39 +542,7 @@ impl Output {
 
     pub fn path(self, from: &Node, to: &Node, path: Option<&FoundPath<'_>>) {
         if self == Self::Json {
-            #[derive(Serialize)]
-            struct Step {
-                node: NodeView,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                edge: Option<EdgeView>,
-            }
-            #[derive(Serialize)]
-            struct View {
-                from: NodeView,
-                to: NodeView,
-                found: bool,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                tier: Option<PathTier>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                direction: Option<PathDirection>,
-                steps: Vec<Step>,
-            }
-            print_json(&View {
-                from: NodeView::of(from),
-                to: NodeView::of(to),
-                found: path.is_some(),
-                tier: path.map(|p| p.tier),
-                direction: path.map(|p| p.direction),
-                steps: path
-                    .map(|p| p.steps.as_slice())
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|s| Step {
-                        node: NodeView::of(s.node),
-                        edge: s.edge.map(EdgeView::of),
-                    })
-                    .collect(),
-            });
+            print_json(&path_json(from, to, path));
             return;
         }
         match path {
@@ -817,7 +683,7 @@ impl Output {
 
     pub fn check(self, report: &Report) {
         if self == Self::Json {
-            print_json(report);
+            print_json(&check_json(report));
             return;
         }
         for o in &report.outcomes {
@@ -916,7 +782,7 @@ impl Output {
 
     pub fn source(self, window: &SourceWindow) {
         if self == Self::Json {
-            print_json(window);
+            print_json(&source_json(window));
             return;
         }
         println!("{}:{}-{}", window.file, window.start_line, window.end_line);
@@ -931,6 +797,207 @@ impl Output {
             println!("{marker}{no:>5} | {line}");
         }
     }
+}
+
+/// The `stats` answer as JSON.
+pub(crate) fn stats_json(store: &Path, stats: &StoreStats, per_repo: Option<&GraphStats>) -> Value {
+    #[derive(Serialize)]
+    struct Repo<'a> {
+        repo: &'a str,
+        commit: &'a str,
+        nodes: u64,
+        edges: u64,
+        files: u64,
+        unresolved: u64,
+        indexed_at_ms: i64,
+        surveyor_version: &'a str,
+    }
+    #[derive(Serialize)]
+    struct View<'a> {
+        store: String,
+        version: u64,
+        nodes: usize,
+        edges: usize,
+        federated: usize,
+        repositories: Vec<Repo<'a>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        graph: Option<&'a GraphStats>,
+    }
+    json_value(&View {
+        store: store.display().to_string(),
+        version: stats.version,
+        nodes: stats.nodes,
+        edges: stats.edges,
+        federated: stats.federated,
+        repositories: stats
+            .repositories
+            .iter()
+            .map(|s| Repo {
+                repo: s.repo.as_str(),
+                commit: s.commit.as_str(),
+                nodes: s.nodes,
+                edges: s.edges,
+                files: s.files,
+                unresolved: s.unresolved,
+                indexed_at_ms: s.indexed_at.as_unix_millis(),
+                surveyor_version: &s.surveyor_version,
+            })
+            .collect(),
+        graph: per_repo,
+    })
+}
+
+/// The `query` and `nodes` answer as JSON: the nodes found.
+pub(crate) fn nodes_json(nodes: &[&Node]) -> Value {
+    json_value(&nodes.iter().map(|n| NodeView::of(n)).collect::<Vec<_>>())
+}
+
+/// The `search` answer as JSON: nodes with their text score, best first.
+pub(crate) fn ranked_json(found: &[(Option<f32>, &Node)]) -> Value {
+    #[derive(Serialize)]
+    struct View {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        score: Option<f32>,
+        node: NodeView,
+    }
+    json_value(
+        &found
+            .iter()
+            .map(|(score, n)| View {
+                score: *score,
+                node: NodeView::of(n),
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// The `explain` answer as JSON: the node, its card, every relation with its
+/// citation, and its members.
+pub(crate) fn explain_json(graph: &CodeGraph, node: &Node, card: &Card) -> Value {
+    let all = EdgeFilter::default();
+    let out = graph.neighbors(&node.id, Direction::Outgoing, &all);
+    let inc = graph.neighbors(&node.id, Direction::Incoming, &all);
+    let members = graph.members(node);
+    #[derive(Serialize)]
+    struct Rel {
+        kind: String,
+        node: NodeView,
+        evidence: Vec<String>,
+        derivation: String,
+        confidence: f32,
+    }
+    #[derive(Serialize)]
+    struct View<'a> {
+        node: NodeView,
+        card: &'a Card,
+        outgoing: Vec<Rel>,
+        incoming: Vec<Rel>,
+        members: Vec<NodeView>,
+    }
+    let rel = |n: &Neighbor<'_>| Rel {
+        kind: n.edge.kind.to_string(),
+        node: NodeView::of(n.node),
+        evidence: n
+            .edge
+            .provenance
+            .evidence
+            .iter()
+            .map(surveyor_model::Evidence::citation)
+            .collect(),
+        derivation: n.edge.provenance.derivation.kind().to_string(),
+        confidence: n.edge.provenance.confidence.get(),
+    };
+    json_value(&View {
+        node: NodeView::of(node),
+        card,
+        outgoing: out.iter().map(rel).collect(),
+        incoming: inc.iter().map(rel).collect(),
+        members: members.iter().map(|n| NodeView::of(n)).collect(),
+    })
+}
+
+/// The `card` answer as JSON: one card per node asked about.
+pub(crate) fn cards_json(cards: &[Card]) -> Value {
+    json_value(&cards)
+}
+
+/// The `affected` answer as JSON: every hit with its depth, path confidence and the
+/// edge it was reached through.
+pub(crate) fn affected_json(node: &Node, hits: &[Affected<'_>], depth: usize) -> Value {
+    #[derive(Serialize)]
+    struct Hit {
+        depth: usize,
+        confidence: f32,
+        node: NodeView,
+        via: EdgeView,
+    }
+    #[derive(Serialize)]
+    struct View {
+        node: NodeView,
+        depth: usize,
+        affected: Vec<Hit>,
+    }
+    json_value(&View {
+        node: NodeView::of(node),
+        depth,
+        affected: hits
+            .iter()
+            .map(|h| Hit {
+                depth: h.depth,
+                confidence: h.confidence,
+                node: NodeView::of(h.node),
+                via: EdgeView::of(h.via),
+            })
+            .collect(),
+    })
+}
+
+/// The `path` answer as JSON: the endpoints, whether a path was found, its tier and
+/// direction, and each step with the edge that leads to it.
+pub(crate) fn path_json(from: &Node, to: &Node, path: Option<&FoundPath<'_>>) -> Value {
+    #[derive(Serialize)]
+    struct Step {
+        node: NodeView,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        edge: Option<EdgeView>,
+    }
+    #[derive(Serialize)]
+    struct View {
+        from: NodeView,
+        to: NodeView,
+        found: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tier: Option<PathTier>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        direction: Option<PathDirection>,
+        steps: Vec<Step>,
+    }
+    json_value(&View {
+        from: NodeView::of(from),
+        to: NodeView::of(to),
+        found: path.is_some(),
+        tier: path.map(|p| p.tier),
+        direction: path.map(|p| p.direction),
+        steps: path
+            .map(|p| p.steps.as_slice())
+            .unwrap_or_default()
+            .iter()
+            .map(|s| Step {
+                node: NodeView::of(s.node),
+                edge: s.edge.map(EdgeView::of),
+            })
+            .collect(),
+    })
+}
+
+/// The `check` answer as JSON: the rule report itself.
+pub(crate) fn check_json(report: &Report) -> Value {
+    json_value(report)
+}
+
+/// The `source` answer as JSON: the window with its span marked.
+pub(crate) fn source_json(window: &SourceWindow) -> Value {
+    json_value(window)
 }
 
 #[derive(Debug, Serialize)]

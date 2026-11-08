@@ -634,6 +634,19 @@ impl LanceStore {
         Ok(delta.stats())
     }
 
+    /// The sum of every table's Lance version.
+    ///
+    /// It rises on any write to the dataset, whichever table the write touched, so a
+    /// long-running reader polls it to learn that `index`, `update` or `federate` ran
+    /// and reloads what it holds in memory.
+    pub async fn generation(&self) -> Result<u64, StoreError> {
+        let mut sum = 0;
+        for name in self.conn.table_names().execute().await? {
+            sum += self.table(&name).await?.version().await?;
+        }
+        Ok(sum)
+    }
+
     /// Lance versions of the nodes table, oldest first, as `(version, timestamp)`.
     pub async fn versions(&self) -> Result<Vec<(u64, Timestamp)>, StoreError> {
         let t = self.table(NODES).await?;

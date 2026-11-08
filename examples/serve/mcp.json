@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "surveyor": {
+      "type": "http",
+      "url": "http://surveyor.internal:7700/mcp/causeway",
+      "headers": {
+        "Authorization": "Bearer ${SURVEYOR_TOKEN}"
+      }
+    }
+  }
+}

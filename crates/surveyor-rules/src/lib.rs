@@ -617,7 +617,10 @@ fn engine() -> Engine {
 }
 
 /// Rules loaded from files, ready to run against any graph.
-#[derive(Debug)]
+///
+/// The default set is empty: a repository without rules gets cards with no notes and
+/// nothing to check.
+#[derive(Debug, Default)]
 pub struct RuleSet {
     rules: Vec<Rule>,
 }

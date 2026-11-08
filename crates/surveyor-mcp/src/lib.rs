@@ -14,16 +14,27 @@
 //!
 //! With a session ledger ([`Surveyor::with_ledger`]) every tool call appends what it
 //! named, so a pull request can later cite what the agent read.
+//!
+//! The same state serves `surveyor serve`: a [`Slot`] holds the current [`Surveyor`]
+//! and swaps it when the dataset changes, and [`Live`] is the handler a streamable
+//! HTTP session gets, reading the slot on every call so a reload reaches sessions
+//! already open.
 
 // Rust guideline compliant 2026-02-21
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
-use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
+    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
+};
+use rmcp::service::RequestContext;
+use rmcp::{
+    ErrorData as McpError, RoleServer, ServerHandler, ServiceExt, tool, tool_handler, tool_router,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use surveyor_graph::{
@@ -45,7 +56,9 @@ pub struct Surveyor {
     /// Counts a context pack's tokens.
     tokenizer: surveyor_context::Tokenizer,
     repo: RepoId,
-    root: PathBuf,
+    /// The checkout source windows are read from; `None` when the server has none,
+    /// as `surveyor serve` has for a repository without a `--root`.
+    root: Option<PathBuf>,
     rules: RuleSet,
     /// The rule run the cards cite, made on the first card and kept: the graph does
     /// not change while the server runs. `None` when the rules did not run.
@@ -398,7 +411,7 @@ impl Surveyor {
         store: LanceStore,
         graph: CodeGraph,
         repo: RepoId,
-        root: PathBuf,
+        root: Option<PathBuf>,
         rules: RuleSet,
     ) -> Self {
         let index = TextIndex::build(graph.nodes());
@@ -423,6 +436,92 @@ impl Surveyor {
         self
     }
 
+    /// The loaded graph.
+    #[must_use]
+    pub fn graph(&self) -> &Arc<CodeGraph> {
+        &self.graph
+    }
+
+    /// The text index over the graph's nodes.
+    #[must_use]
+    pub fn index(&self) -> &TextIndex {
+        &self.index
+    }
+
+    /// The repository this state answers for.
+    #[must_use]
+    pub fn repo(&self) -> &RepoId {
+        &self.repo
+    }
+
+    /// The checkout source is read from, when there is one.
+    #[must_use]
+    pub fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
+    /// The rules loaded for the repository; empty when it has none.
+    #[must_use]
+    pub fn rules(&self) -> &RuleSet {
+        &self.rules
+    }
+
+    /// The dataset the graph was loaded from.
+    #[must_use]
+    pub fn store(&self) -> &LanceStore {
+        &self.store
+    }
+
+    /// The rule run over the loaded graph, made once and kept; `None` when the
+    /// repository has no rules or they did not run (which is logged).
+    #[must_use]
+    pub fn report(&self) -> Option<&surveyor_rules::Report> {
+        self.report
+            .get_or_init(|| {
+                if self.rules.rules().is_empty() {
+                    return None;
+                }
+                match self.rules.run(Arc::clone(&self.graph)) {
+                    Ok(report) => Some(report),
+                    Err(e) => {
+                        tracing::warn!(error = %e, repo = %self.repo, "rules did not run");
+                        None
+                    }
+                }
+            })
+            .as_ref()
+    }
+
+    /// A node's card with its rule notes.
+    #[must_use]
+    pub fn card(&self, node: &Node) -> surveyor_graph::Card {
+        let mut card = self.graph.card(node);
+        card.rules = self.rule_notes(node);
+        card
+    }
+
+    /// The context pack for `task` inside `budget` tokens, as the `context_pack`
+    /// tool and `surveyor context` build it: source windows come from the checkout
+    /// when there is one, rule notes from the kept rule run, gaps from the
+    /// repository's unresolved references.
+    pub async fn pack(
+        &self,
+        task: &str,
+        budget: usize,
+        seeds: &[String],
+    ) -> surveyor_context::ContextPack {
+        let unresolved = self.store.unresolved(&self.repo).await.unwrap_or_default();
+        let root = self.root.clone();
+        let planner = surveyor_context::Planner::new(&self.graph, &self.index, &self.tokenizer)
+            .with_source(move |path: &surveyor_model::RepoPath| {
+                root.as_ref()
+                    .and_then(|root| std::fs::read_to_string(root.join(path.as_str())).ok())
+            })
+            .with_rules(|node| self.rule_notes(node))
+            .with_unresolved(unresolved);
+        planner.pack(task, budget, seeds)
+    }
+
     /// Appends `event` to the ledger when there is one; a ledger that cannot be
     /// written is logged, never an error to the agent.
     fn record(&self, event: Event) {
@@ -442,22 +541,9 @@ impl Surveyor {
             .map(Consulted::of_node)
     }
 
-    /// A node's card with its rule notes.
-    fn card(&self, node: &Node) -> surveyor_graph::Card {
-        let mut card = self.graph.card(node);
-        card.rules = self.rule_notes(node);
-        card
-    }
-
-    /// The rule notes of a node, from a rule run made once per server.
+    /// The rule notes of a node, from the rule run made once per server.
     fn rule_notes(&self, node: &Node) -> Vec<surveyor_graph::RuleNote> {
-        let report = self.report.get_or_init(|| {
-            if self.rules.rules().is_empty() {
-                return None;
-            }
-            self.rules.run(Arc::clone(&self.graph)).ok()
-        });
-        report.as_ref().map_or_else(Vec::new, |report| {
+        self.report().map_or_else(Vec::new, |report| {
             surveyor_rules::notes_for(&self.rules, report, node)
         })
     }
@@ -533,15 +619,7 @@ impl Surveyor {
             .budget
             .unwrap_or(surveyor_context::DEFAULT_BUDGET)
             .clamp(500, 200_000);
-        let unresolved = self.store.unresolved(&self.repo).await.unwrap_or_default();
-        let root = self.root.clone();
-        let planner = surveyor_context::Planner::new(&self.graph, &self.index, &self.tokenizer)
-            .with_source(move |path: &surveyor_model::RepoPath| {
-                std::fs::read_to_string(root.join(path.as_str())).ok()
-            })
-            .with_rules(|node| self.rule_notes(node))
-            .with_unresolved(unresolved);
-        let pack = planner.pack(&p.task, budget, &p.seeds);
+        let pack = self.pack(&p.task, budget, &p.seeds).await;
         self.record(Event::pack_of(&pack));
         match p.format.as_deref() {
             None | Some("markdown") => Ok(CallToolResult::success(vec![ContentBlock::text(
@@ -748,6 +826,15 @@ impl Surveyor {
         &self,
         Parameters(p): Parameters<SourceParams>,
     ) -> Result<CallToolResult, McpError> {
+        let Some(root) = &self.root else {
+            return Err(McpError::invalid_params(
+                format!(
+                    "this server has no checkout of repository {}; source windows are not available",
+                    self.repo
+                ),
+                None,
+            ));
+        };
         // A node id names its own window; a path takes the requested lines, or the first 60.
         let window = self.graph.node(&NodeId::new(&p.path)).map_or_else(
             || {
@@ -776,7 +863,7 @@ impl Surveyor {
                 None,
             ));
         }
-        let text = std::fs::read_to_string(self.root.join(&file))
+        let text = std::fs::read_to_string(root.join(&file))
             .map_err(|e| McpError::invalid_params(format!("read {file}: {e}"), None))?;
         let lines: Vec<&str> = text.lines().collect();
         let start = start.max(1);
@@ -990,6 +1077,78 @@ impl ServerHandler for Surveyor {
                  deterministic edges for decisions.",
                 self.repo
             ))
+    }
+}
+
+/// The current server state of one repository, swapped whole when the dataset changes.
+///
+/// Readers clone the inner `Arc` and work on that snapshot, so a swap never waits for
+/// a request in flight and a request never sees half of a reload.
+#[derive(Debug)]
+pub struct Slot {
+    current: RwLock<Arc<Surveyor>>,
+}
+
+impl Slot {
+    /// A slot holding `server`.
+    #[must_use]
+    pub fn new(server: Surveyor) -> Self {
+        Self {
+            current: RwLock::new(Arc::new(server)),
+        }
+    }
+
+    /// The state as it is now.
+    ///
+    /// # Panics
+    /// Never: the lock is held only to clone or replace an `Arc`, which cannot panic.
+    #[must_use]
+    pub fn current(&self) -> Arc<Surveyor> {
+        Arc::clone(&self.current.read().expect("slot lock not poisoned"))
+    }
+
+    /// Replaces the state; requests that already hold the old one finish on it.
+    pub fn swap(&self, server: Surveyor) {
+        *self.current.write().expect("slot lock not poisoned") = Arc::new(server);
+    }
+}
+
+/// The handler a streamable HTTP session is given: every call reads the [`Slot`], so
+/// a session opened before a reload answers from the new graph after it.
+#[derive(Debug, Clone)]
+pub struct Live(Arc<Slot>);
+
+impl Live {
+    /// A handler over `slot`.
+    #[must_use]
+    pub fn new(slot: Arc<Slot>) -> Self {
+        Self(slot)
+    }
+}
+
+impl ServerHandler for Live {
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, McpError> {
+        self.0.current().call_tool(request, context).await
+    }
+
+    async fn list_tools(
+        &self,
+        request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        self.0.current().list_tools(request, context).await
+    }
+
+    fn get_tool(&self, name: &str) -> Option<Tool> {
+        self.0.current().get_tool(name)
+    }
+
+    fn get_info(&self) -> ServerConfig {
+        self.0.current().get_info()
     }
 }
 

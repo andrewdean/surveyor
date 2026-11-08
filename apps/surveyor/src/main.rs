@@ -3,7 +3,9 @@
 //! `surveyor index` walks a checkout, extracts facts, links them and writes the graph
 //! to a Lance dataset under `.surveyor/`. The query commands (`explain`, `affected`,
 //! `path`, `query`, `hubs`, `communities`, `source`, `stats`) load that dataset and
-//! answer with citations. `surveyor mcp` serves the same answers over MCP on stdio.
+//! answer with citations. `surveyor mcp` serves the same answers over MCP on stdio,
+//! and `surveyor serve` puts them behind a port for a team: a JSON API and MCP over
+//! streamable HTTP, reloading when the dataset changes.
 //! With `--session <id>` (or `SURVEYOR_SESSION`) every answer is also recorded in a
 //! session ledger; `surveyor session` and `surveyor hook claude-code` work that
 //! ledger for an agent harness, and `surveyor pr` turns a change into the comment
@@ -16,6 +18,7 @@ mod eval;
 mod harness;
 mod pr;
 mod render;
+mod serve;
 
 use clap::Parser;
 use mimalloc::MiMalloc;

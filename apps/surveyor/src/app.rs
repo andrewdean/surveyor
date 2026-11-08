@@ -20,6 +20,7 @@ use crate::eval;
 use crate::harness;
 use crate::pr;
 use crate::render::{self, Output, Updated};
+use crate::serve;
 
 /// Directory under the repository root that holds the dataset.
 const STORE_DIR: &str = ".surveyor";
@@ -77,7 +78,7 @@ async fn open_store(
 
 /// Opens the dataset at `path` for reading; a reader writes no snapshot, so it needs
 /// no engine stamp.
-async fn open_dataset(path: &Path) -> anyhow::Result<LanceStore> {
+pub(crate) async fn open_dataset(path: &Path) -> anyhow::Result<LanceStore> {
     LanceStore::open(path).await.context("open dataset")
 }
 
@@ -154,6 +155,9 @@ pub enum Command {
     Federate,
     /// Serve the graph over MCP on stdio.
     Mcp,
+    /// Serve the graph to a team: a JSON API under `/v1` and MCP over streamable HTTP
+    /// at `/mcp/<repo>`, reloading when the dataset changes.
+    Serve(serve::ServeArgs),
     /// Open, annotate or summarize a session ledger.
     Session(harness::SessionArgs),
     /// Act on an agent host's hook payload (stdin).
@@ -499,7 +503,7 @@ async fn open_graph_at(
 /// federated edges that touch it with their foreign endpoints, or every partition with
 /// `all_repos`. A dataset of one repository loads as it always did and reads no other
 /// table.
-async fn load_graph_for(
+pub(crate) async fn load_graph_for(
     store: &LanceStore,
     repo: &RepoId,
     all_repos: bool,
@@ -621,7 +625,7 @@ async fn federated_edges(
 }
 
 /// Resolves a user query to exactly one node, or explains why it cannot.
-fn resolve_one<'a>(
+pub(crate) fn resolve_one<'a>(
     graph: &'a CodeGraph,
     query: &str,
     kind: Option<&NodeKind>,
@@ -982,7 +986,8 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let profile = load_profile(&cli, &p)?;
             let (dirs, files) = rule_sources(&p.root, &profile, &[]);
             let rules = surveyor_rules::RuleSet::load(&dirs, &files).context("load rules")?;
-            let server = surveyor_mcp::Surveyor::new(store, graph, repo, p.root.clone(), rules);
+            let server =
+                surveyor_mcp::Surveyor::new(store, graph, repo, Some(p.root.clone()), rules);
             let server = match ledger {
                 Some(ledger) => server.with_ledger(ledger),
                 None => server,
@@ -1007,6 +1012,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
         Command::Pr(a) => pr::run(&cli, &p, a, out).await,
+        Command::Serve(a) => serve::run(&cli, &p, a, out).await,
         Command::Session(a) => harness::session(&cli, &p, a, &out).await,
         Command::Hook(_) => unreachable!("handled before the dataset is opened"),
     }

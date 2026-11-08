@@ -197,6 +197,14 @@ for now). This checkout implements Phase 0 of that plan.
   every repository with `--all-repos`; the stub folds into the declared package when
   one repository declares it and stays as the hub when two do; every rendered node
   names its repository. `surveyor federate` recomputes the table (`docs/federation.md`).
+- **Team mode.** `surveyor serve` puts the same answers behind a port with no new
+  state: a JSON API under `/v1` whose every route returns what the CLI's `--json`
+  prints for the same command, and MCP over streamable HTTP at `/mcp/<repo>` with
+  the stdio server's tools unchanged, so a team's `.mcp.json` points at a URL. One
+  graph per repository in the dataset, source from `--root <repo>=<path>`, a reload
+  when the dataset's version moves (an `update` from CI reaches open sessions without
+  a restart), loopback unless `--listen` says otherwise, `--token` for a bearer check,
+  TLS left to the proxy (`docs/serve.md`, `examples/serve/`).
 
 ## Numbers
 
@@ -379,6 +387,15 @@ Every command takes `--json`. Serve the same answers to an agent over MCP on std
 }
 ```
 
+Or to a team over HTTP, from one dataset that CI keeps current:
+
+```bash
+surveyor --store /srv/surveyor/ds serve --listen 0.0.0.0:7700 --root causeway=/srv/checkouts/causeway --token "$SURVEYOR_TOKEN"
+curl -s -H "Authorization: Bearer $SURVEYOR_TOKEN" "http://host:7700/v1/causeway/explain?q=Relay::drain"
+```
+
+with `.mcp.json` pointing at `http://host:7700/mcp/causeway` (`examples/serve/`).
+
 A repository can carry a `surveyor.toml` to name itself, choose the SQL dialect and
 default schema, point at migration and documentation directories, exclude paths,
 include hidden directories that hold code (`[walk] include = [".mise"]`; every other
@@ -424,9 +441,11 @@ building the release archives for a `v*` tag.
 
 ## Not yet
 
-`serve` with streamable HTTP, personas and runtime connectors are the following
-stages and phases of the RFD. Federation covers packages; contracts, topics and tables
-by namespace wait for the extractors that produce those nodes. Incremental update does not watch the file system yet (`notify` is Phase 1 too).
+Personas and runtime connectors are the following phases of the RFD. Federation
+covers packages; contracts, topics and tables by namespace wait for the extractors
+that produce those nodes. `serve` reloads on a poll and leaves TLS to a proxy;
+indexing on push through a repository store synced with `gix` is not in this release.
+Incremental update does not watch the file system yet (`notify` is Phase 1 too).
 It walks the tree on every run, so files a changed profile includes or excludes
 arrive and leave as added and deleted files, but a changed dialect or default schema
 still needs `index`. It relinks changed files syntactically: rerun `index --scip` when

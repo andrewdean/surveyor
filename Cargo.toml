@@ -67,12 +67,14 @@ tokio              = { version = "1", features = ["macros", "rt-multi-thread", "
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi"] }
 clap               = { version = "4", features = ["derive", "env"] }
-rmcp               = { version = "3", default-features = false, features = ["server", "macros", "transport-io"] }
+rmcp               = { version = "3", default-features = false, features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+axum               = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
 schemars           = "1"
 mimalloc           = "0.1"
 
 # testing
 tempfile = "3"
+reqwest  = { version = "0.12", default-features = false, features = ["json"] }
 
 [workspace.lints.rust]
 unsafe_code                   = "forbid"
