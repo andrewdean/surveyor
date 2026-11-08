@@ -1,0 +1,2710 @@
+{
+  "surveyor": "0.1.0",
+  "repo": "causeway",
+  "dataset": {
+    "commit": "ac10ddb663950d1e913c535c2002f9111e58a6c1",
+    "dirty": false,
+    "nodes": 67105,
+    "edges": 288543
+  },
+  "change": {
+    "source": "git",
+    "base": "8647a8ff9a92d3917ddb130c9e3de27c3a048930",
+    "measured_against": "`8647a8ff9a92`",
+    "head": "ac10ddb663950d1e913c535c2002f9111e58a6c1",
+    "files_changed": 14,
+    "symbols_changed": 53,
+    "nodes_changed": [
+      {
+        "id": "doc:docs/plans/APP-TWIN-RPC-INVENTORY.md",
+        "kind": "Document",
+        "name": "App Twin-RPC Inventory — gap ledger for the `/app` port",
+        "qualified_name": "App Twin-RPC Inventory — gap ledger for the `/app` port",
+        "file": "docs/plans/APP-TWIN-RPC-INVENTORY.md",
+        "lines": "1-292",
+        "signature": "App Twin-RPC Inventory — gap ledger for the `/app` port",
+        "doc": "(verdict **Ported**). Related: ADR-bn90xr5m (authentication types for callers), ADR-3q64wdh0 (the platform surface stack over Drive, API first)."
+      },
+      {
+        "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.py::DESCRIPTOR",
+        "kind": "Const",
+        "name": "DESCRIPTOR",
+        "qualified_name": "DESCRIPTOR",
+        "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.py",
+        "lines": "30",
+        "signature": "DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\\n causeway/metadata/v2/admin.proto\\x12\\x14\\x63\\x61useway.metadata.v2\\x1a causeway/drive/v1/exposure.proto\\x1a\\x1fgoogle/protobuf/timestamp.proto\\x1a#causeway/identity/v1/identity.proto\\\"\\xc2\\x01\\n\\x0bMetadataRef\\x12\\x12\\n\\x04kind\\x18\\x01 \\…"
+      },
+      {
+        "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::PortListStuckWorkResponse",
+        "kind": "Class",
+        "name": "PortListStuckWorkResponse",
+        "qualified_name": "PortListStuckWorkResponse",
+        "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+        "lines": "626-634",
+        "signature": "class PortListStuckWorkResponse(_message.Message)"
+      },
+      {
+        "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::PortListStuckWorkResponse::__init__",
+        "kind": "Method",
+        "name": "__init__",
+        "qualified_name": "PortListStuckWorkResponse::__init__",
+        "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+        "lines": "634",
+        "signature": "def __init__(self, records: _Optional[_Iterable[_Union[StuckWorkRecord, _Mapping]]] = ..., unavailable: _Optional[_Iterable[str]] = ..., sources: _Optional[_Iterable[_Union[StuckWorkSourceSummary, _Mapping]]] = ...) -> None"
+      },
+      {
+        "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkRecord",
+        "kind": "Class",
+        "name": "StuckWorkRecord",
+        "qualified_name": "StuckWorkRecord",
+        "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+        "lines": "562-600",
+        "signature": "class StuckWorkRecord(_message.Message)"
+      },
+      {
+        "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkRecord::__init__",
+        "kind": "Method",
+        "name": "__init__",
+        "qualified_name": "StuckWorkRecord::__init__",
+        "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+        "lines": "600",
+        "signature": "def __init__(self, source: _Optional[str] = ..., id: _Optional[str] = ..., kind: _Optional[str] = ..., subject_kind: _Optional[str] = ..., subject_id: _Optional[str] = ..., subject_label: _Optional[str] = ..., first_failed_at: _Optional[str] = ..., attempts: _Optional[int] = ..., failure_class: _Opt…"
+      },
+      {
+        "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkSourceSummary",
+        "kind": "Class",
+        "name": "StuckWorkSourceSummary",
+        "qualified_name": "StuckWorkSourceSummary",
+        "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+        "lines": "602-612",
+        "signature": "class StuckWorkSourceSummary(_message.Message)"
+      },
+      {
+        "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkSourceSummary::__init__",
+        "kind": "Method",
+        "name": "__init__",
+        "qualified_name": "StuckWorkSourceSummary::__init__",
+        "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+        "lines": "612",
+        "signature": "def __init__(self, source: _Optional[str] = ..., open: _Optional[int] = ..., in_review: _Optional[int] = ..., waiting_total: _Optional[int] = ...) -> None"
+      },
+      {
+        "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::tests",
+        "kind": "Module",
+        "name": "tests",
+        "qualified_name": "tests",
+        "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+        "lines": "525-586",
+        "signature": "mod tests"
+      },
+      {
+        "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::tests::a_quiet_source_reads_zero_and_only_an_uncounted_record_reads_unknown",
+        "kind": "Test",
+        "name": "a_quiet_source_reads_zero_and_only_an_uncounted_record_reads_unknown",
+        "qualified_name": "tests::a_quiet_source_reads_zero_and_only_an_uncounted_record_reads_unknown",
+        "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+        "lines": "554-585",
+        "signature": "fn a_quiet_source_reads_zero_and_only_an_uncounted_record_reads_unknown()",
+        "doc": "A source that holds nothing reads as `0 / 0`, and a record whose\n\nsource counted nothing waiting reads 0, apart from one whose source\n\ncould not count, which reads `?`."
+      },
+      {
+        "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::tests::record",
+        "kind": "Function",
+        "name": "record",
+        "qualified_name": "tests::record",
+        "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+        "lines": "530-540",
+        "signature": "fn record(id: &str, subject: &str, radius: BlastRadius) -> StuckWorkRecord"
+      },
+      {
+        "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::tests::waiting",
+        "kind": "Function",
+        "name": "waiting",
+        "qualified_name": "tests::waiting",
+        "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+        "lines": "543-548",
+        "signature": "fn waiting<'a>(html: &'a str, subject: &str) -> &'a str",
+        "doc": "The Waiting cell of `subject`'s row: the one before First failed."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::MetadataAdmin::port_list_stuck_work",
+        "kind": "Method",
+        "name": "port_list_stuck_work",
+        "qualified_name": "MetadataAdmin::port_list_stuck_work",
+        "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+        "lines": "542-565",
+        "signature": "async fn port_list_stuck_work( &self, ctx: Context, request: OwnedView<pb::PortListStuckWorkRequestView<'static>>, ) -> Result<(pb::PortListStuckWorkResponse, Context), ConnectError>"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::listing_tests",
+        "kind": "Module",
+        "name": "listing_tests",
+        "qualified_name": "listing_tests",
+        "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+        "lines": "1028",
+        "signature": "mod listing_tests;"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::stuck_work_record",
+        "kind": "Function",
+        "name": "stuck_work_record",
+        "qualified_name": "stuck_work_record",
+        "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+        "lines": "14-50",
+        "signature": "fn stuck_work_record(record: &::stuck_work::StuckWorkRecord) -> pb::StuckWorkRecord",
+        "doc": "One record on the wire. The shape is what every source shares; the\n\ndetail that makes a record replayable stays typed in the source, so\n\nnothing here pretends a Kafka coordinate and a queue id are alike.\n\n\n\nThe proto message shares its name with the port's record, which the\n\nillegal-states lint reads as a cross-crate literal of the port type;\n\nthe baseline records that one site as generated-code construction."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::stuck_work_source",
+        "kind": "Function",
+        "name": "stuck_work_source",
+        "qualified_name": "stuck_work_source",
+        "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+        "lines": "53-61",
+        "signature": "fn stuck_work_source(count: &super::stuck_work::SourceCount) -> pb::StuckWorkSourceSummary",
+        "doc": "One source's counts on the wire, named even when it holds nothing."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::CALLER",
+        "kind": "Const",
+        "name": "CALLER",
+        "qualified_name": "CALLER",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+        "lines": "21",
+        "signature": "pub(super) const CALLER: &str = \"amelia-rhodes\";",
+        "doc": "A person in `metadata-admin` who holds no governing seat."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::a_quarantine_action_naming_somebody_else_is_refused",
+        "kind": "Test",
+        "name": "a_quarantine_action_naming_somebody_else_is_refused",
+        "qualified_name": "a_quarantine_action_naming_somebody_else_is_refused",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+        "lines": "214-246",
+        "signature": "async fn a_quarantine_action_naming_somebody_else_is_refused()"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::a_stuck_work_action_is_recorded_against_the_verified_caller",
+        "kind": "Test",
+        "name": "a_stuck_work_action_is_recorded_against_the_verified_caller",
+        "qualified_name": "a_stuck_work_action_is_recorded_against_the_verified_caller",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+        "lines": "138-175",
+        "signature": "async fn a_stuck_work_action_is_recorded_against_the_verified_caller()"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::ending_a_stuck_record_takes_the_seat_its_source_declares",
+        "kind": "Test",
+        "name": "ending_a_stuck_record_takes_the_seat_its_source_declares",
+        "qualified_name": "ending_a_stuck_record_takes_the_seat_its_source_declares",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+        "lines": "178-211",
+        "signature": "async fn ending_a_stuck_record_takes_the_seat_its_source_declares()"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::serve",
+        "kind": "Function",
+        "name": "serve",
+        "qualified_name": "serve",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+        "lines": "90-124",
+        "signature": "pub(super) async fn serve( caller: &TestCaller, sources: Vec<Arc<dyn StuckWorkSource>>, ) -> ( pb::MetadataAdminServiceClient<HttpClient>, tokio::task::JoinHandle<()>, )",
+        "doc": "The surface, mounted as the router mounts it, over `source`, and a\n\nclient signed in as [`CALLER`]."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding",
+        "kind": "Struct",
+        "name": "Holding",
+        "qualified_name": "Holding",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "17-20",
+        "signature": "struct Holding",
+        "doc": "A source holding exactly `records`."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding#impl(StuckWorkSource)",
+        "kind": "Impl",
+        "name": "Holding",
+        "qualified_name": "Holding#impl(StuckWorkSource)",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "34-70",
+        "signature": "impl StuckWorkSource for Holding"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::act",
+        "kind": "Method",
+        "name": "act",
+        "qualified_name": "Holding::act",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "54-61",
+        "signature": "fn act( &self, _id: &RecordId, _action: &StuckWorkAction, _actor: &Actor, ) -> StuckWorkFuture<'_, Result<StuckWorkRecord, StuckWorkError>>"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::bounds",
+        "kind": "Method",
+        "name": "bounds",
+        "qualified_name": "Holding::bounds",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "63-65",
+        "signature": "fn bounds(&self) -> Bounds"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::fencing",
+        "kind": "Method",
+        "name": "fencing",
+        "qualified_name": "Holding::fencing",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "67-69",
+        "signature": "fn fencing(&self) -> Fencing"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::get",
+        "kind": "Method",
+        "name": "get",
+        "qualified_name": "Holding::get",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "47-52",
+        "signature": "fn get( &self, _id: &RecordId, ) -> StuckWorkFuture<'_, Result<Option<StuckWorkRecord>, StuckWorkError>>"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::id",
+        "kind": "Method",
+        "name": "id",
+        "qualified_name": "Holding::id",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "35-37",
+        "signature": "fn id(&self) -> SourceId"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::list",
+        "kind": "Method",
+        "name": "list",
+        "qualified_name": "Holding::list",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "39-45",
+        "signature": "fn list( &self, _query: &StuckWorkQuery, ) -> StuckWorkFuture<'_, Result<Vec<StuckWorkRecord>, StuckWorkError>>"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::held",
+        "kind": "Function",
+        "name": "held",
+        "qualified_name": "held",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "22-32",
+        "signature": "fn held(source: &str, id: &str, radius: BlastRadius) -> StuckWorkRecord"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::summary",
+        "kind": "Function",
+        "name": "summary",
+        "qualified_name": "summary",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "72-80",
+        "signature": "fn summary(source: &str, open: u64, waiting_total: Option<u64>) -> pb::StuckWorkSourceSummary"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::the_listing_names_a_quiet_source_and_an_unknown_count",
+        "kind": "Test",
+        "name": "the_listing_names_a_quiet_source_and_an_unknown_count",
+        "qualified_name": "the_listing_names_a_quiet_source_and_an_unknown_count",
+        "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+        "lines": "83-167",
+        "signature": "async fn the_listing_names_a_quiet_source_and_an_unknown_count()"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount",
+        "kind": "Struct",
+        "name": "SourceCount",
+        "qualified_name": "SourceCount",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "66-76",
+        "signature": "pub(crate) struct SourceCount",
+        "doc": "How many records one source is holding, for the header an operator\n\nreads before the list (determination 13)."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount#impl",
+        "kind": "Impl",
+        "name": "SourceCount",
+        "qualified_name": "SourceCount#impl",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "78-92",
+        "signature": "impl SourceCount"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount::of",
+        "kind": "Method",
+        "name": "of",
+        "qualified_name": "SourceCount::of",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "81-91",
+        "signature": "fn of(source: &SourceId, records: &[StuckWorkRecord]) -> Self",
+        "doc": "Counts what `source` returned. A source that returned nothing\n\nholds nothing: zero open, and nothing waiting."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkListing",
+        "kind": "Struct",
+        "name": "StuckWorkListing",
+        "qualified_name": "StuckWorkListing",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "19-27",
+        "signature": "pub(crate) struct StuckWorkListing",
+        "doc": "Every source's open work, and the sources that could not be read."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts",
+        "kind": "Function",
+        "name": "counts",
+        "qualified_name": "counts",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "117-123",
+        "signature": "pub(crate) async fn counts(sources: &[Arc<dyn StuckWorkSource>]) -> StuckWorkCounts",
+        "doc": "Counts open work per source, which is what a probe asks for and what\n\nthe surface shows above the list: the listing's own counts over every\n\nsource's open work, so the two never disagree."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::list",
+        "kind": "Function",
+        "name": "list",
+        "qualified_name": "list",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "31-61",
+        "signature": "pub(crate) async fn list( sources: &[Arc<dyn StuckWorkSource>], query: &StuckWorkQuery, ) -> StuckWorkListing",
+        "doc": "Lists across the registry, oldest failure first. Each source is counted\n\nfrom everything it returned, before `limit` truncates the records."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::tests",
+        "kind": "Module",
+        "name": "tests",
+        "qualified_name": "tests",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "331-792",
+        "signature": "mod tests"
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::tests::a_source_counts_its_open_work_and_sums_only_what_it_could_count",
+        "kind": "Test",
+        "name": "a_source_counts_its_open_work_and_sums_only_what_it_could_count",
+        "qualified_name": "tests::a_source_counts_its_open_work_and_sums_only_what_it_could_count",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "404-468",
+        "signature": "fn a_source_counts_its_open_work_and_sums_only_what_it_could_count()",
+        "doc": "A source is counted by its open work: an ended record is listed\n\nwhen asked for but never counted, and what waits is summed only\n\nwhen every open record could be counted."
+      },
+      {
+        "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::tests::an_empty_registry_lists_nothing_and_reports_nothing_unavailable",
+        "kind": "Test",
+        "name": "an_empty_registry_lists_nothing_and_reports_nothing_unavailable",
+        "qualified_name": "tests::an_empty_registry_lists_nothing_and_reports_nothing_unavailable",
+        "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+        "lines": "387-398",
+        "signature": "async fn an_empty_registry_lists_nothing_and_reports_nothing_unavailable()"
+      },
+      {
+        "id": "tsx:apps-web/causeway-web/src/pages/routes/StuckWork.tsx::Records",
+        "kind": "Function",
+        "name": "Records",
+        "qualified_name": "Records",
+        "file": "apps-web/causeway-web/src/pages/routes/StuckWork.tsx",
+        "lines": "191-256",
+        "signature": "function Records(props: { readonly records: readonly StuckWorkRecord[] })"
+      },
+      {
+        "id": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::SourceCount",
+        "kind": "TypeAlias",
+        "name": "SourceCount",
+        "qualified_name": "SourceCount",
+        "file": "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+        "lines": "46",
+        "signature": "type SourceCount = typeof SourceSummary.Type;",
+        "doc": "One source's count, as the header reports it."
+      },
+      {
+        "id": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork",
+        "kind": "Function",
+        "name": "stuckWork",
+        "qualified_name": "stuckWork",
+        "file": "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+        "lines": "119-143",
+        "signature": "function stuckWork( rpc: ShellRpc, bearer: AccessToken, filter: StuckWorkFilter, now: Date, ): Effect.Effect<StuckWorkList, ShellRpcError>",
+        "doc": "The page's list, as `filter` narrows it. The twin is asked once with the\nport's filters (source, ended) and, when those narrow anything, once more\nwith none for the counts, as the shell reads every source for them."
+      },
+      {
+        "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::/app/ops/stuck in Node",
+        "kind": "Test",
+        "name": "/app/ops/stuck in Node",
+        "qualified_name": "/app/ops/stuck in Node",
+        "file": "apps-web/causeway-web/test/app-operations.test.ts",
+        "lines": "66-178",
+        "signature": "describe(\"/app/ops/stuck in Node\", () => { it(\"lists every source's open work with the counts, as the person\", async () => { const fake = fakeRpc({ PortListStuckWork: LISTING }); const { status, html, response } = await render( await pagesOver(fake.rpc), \"/app/ops/stuck\", OPERATIONS, ); expect(statu…"
+      },
+      {
+        "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::/app/ops/stuck in Node::lists every source's open work with the counts, as the person",
+        "kind": "Test",
+        "name": "lists every source's open work with the counts, as the person",
+        "qualified_name": "/app/ops/stuck in Node::lists every source's open work with the counts, as the person",
+        "file": "apps-web/causeway-web/test/app-operations.test.ts",
+        "lines": "67-97",
+        "signature": "it(\"lists every source's open work with the counts, as the person\", async () => { const fake = fakeRpc({ PortListStuckWork: LISTING }); const { status, html, response } = await render( await pagesOver(fake.rpc), \"/app/ops/stuck\", OPERATIONS, ); expect(status).toBe(200); expect(response.headers.get(\"…"
+      },
+      {
+        "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::/app/ops/stuck in Node::names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count",
+        "kind": "Test",
+        "name": "names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count",
+        "qualified_name": "/app/ops/stuck in Node::names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count",
+        "file": "apps-web/causeway-web/test/app-operations.test.ts",
+        "lines": "99-112",
+        "signature": "it(\"names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count\", async () => { const fake = fakeRpc({ PortListStuckWork: LISTING }); const { html } = await render(await pagesOver(fake.rpc), \"/app/ops/stuck\", OPERATIONS); expect(html).toMatch(/>0 \\/ 0<\\/div><div[^>]*>policy-scan…"
+      },
+      {
+        "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::/app/ops/stuck in Node::names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count::waiting",
+        "kind": "Function",
+        "name": "waiting",
+        "qualified_name": "/app/ops/stuck in Node::names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count::waiting",
+        "file": "apps-web/causeway-web/test/app-operations.test.ts",
+        "lines": "105-108",
+        "signature": "waiting = (subject: string) => html.match( new RegExp(`>${subject}</a>.*?<td>([^<]*|<span[^>]*>[^<]*</span>)</td><td>2026`), )?.[1]",
+        "doc": "A row's Waiting cell, the one before its First failed cell."
+      },
+      {
+        "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`",
+        "kind": "Test",
+        "name": "the stuck-work filters, as the shell's `admits`",
+        "qualified_name": "the stuck-work filters, as the shell's `admits`",
+        "file": "apps-web/causeway-web/test/app-operations.test.ts",
+        "lines": "180-225",
+        "signature": "describe(\"the stuck-work filters, as the shell's `admits`\", () => { const record = (overrides: Partial<StuckWorkRecord>): StuckWorkRecord => ({ source: \"s\", id: \"1\", kind: \"k\", subjectKind: \"data_asset\", subjectId: \"fct_orders\", subjectLabel: \"\", firstFailedAt: new Date(\"2026-10-26T00:00:00Z\"), atte…"
+      },
+      {
+        "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record",
+        "kind": "Function",
+        "name": "record",
+        "qualified_name": "the stuck-work filters, as the shell's `admits`::record",
+        "file": "apps-web/causeway-web/test/app-operations.test.ts",
+        "lines": "181-194",
+        "signature": "record = (overrides: Partial<StuckWorkRecord>): StuckWorkRecord => ({ source: \"s\", id: \"1\", kind: \"k\", subjectKind: \"data_asset\", subjectId: \"fct_orders\", subjectLabel: \"\", firstFailedAt: new Date(\"2026-10-26T00:00:00Z\"), attempts: 1, failureClass: \"\", status: \"open\", waitingTotal: Option.none(), ..…"
+      },
+      {
+        "id": "typescript:services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts::PortListStuckWorkResponse",
+        "kind": "TypeAlias",
+        "name": "PortListStuckWorkResponse",
+        "qualified_name": "PortListStuckWorkResponse",
+        "file": "services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts",
+        "lines": "1528-1550",
+        "signature": "type PortListStuckWorkResponse = Message<\"causeway.metadata.v2.PortListStuckWorkResponse\"> & { /** * @generated from field: repeated causeway.metadata.v2.StuckWorkRecord records = 1; */ records: StuckWorkRecord[]; /** * Sources that could not be read, named rather than omitted: one * unavailable sou…",
+        "doc": "@generated from message causeway.metadata.v2.PortListStuckWorkResponse"
+      },
+      {
+        "id": "typescript:services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts::StuckWorkRecord",
+        "kind": "TypeAlias",
+        "name": "StuckWorkRecord",
+        "qualified_name": "StuckWorkRecord",
+        "file": "services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts",
+        "lines": "1335-1440",
+        "signature": "type StuckWorkRecord = Message<\"causeway.metadata.v2.StuckWorkRecord\"> & { /** * @generated from field: string source = 1; */ source: string; /** * @generated from field: string id = 2; */ id: string; /** * @generated from field: string kind = 3; */ kind: string; /** * @generated from field: string …",
+        "doc": "One record of work that could not finish, as every source reports it.\n\n@generated from message causeway.metadata.v2.StuckWorkRecord"
+      },
+      {
+        "id": "typescript:services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts::StuckWorkSourceSummary",
+        "kind": "TypeAlias",
+        "name": "StuckWorkSourceSummary",
+        "qualified_name": "StuckWorkSourceSummary",
+        "file": "services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts",
+        "lines": "1455-1482",
+        "signature": "type StuckWorkSourceSummary = Message<\"causeway.metadata.v2.StuckWorkSourceSummary\"> & { /** * @generated from field: string source = 1; */ source: string; /** * Records nobody has ended, of what the source returned for the query. * * @generated from field: uint64 open = 2; */ open: bigint; /** * Of…",
+        "doc": "One source the listing covered, named whether or not it holds anything,\nso a source with nothing open reads as `0 / 0` rather than vanishing.\n\n@generated from message causeway.metadata.v2.StuckWorkSourceSummary"
+      },
+      {
+        "id": "file:apps-web/causeway-web/src/pages/data/wire.ts",
+        "kind": "File",
+        "name": "wire.ts",
+        "qualified_name": "apps-web/causeway-web/src/pages/data/wire.ts",
+        "file": "apps-web/causeway-web/src/pages/data/wire.ts"
+      },
+      {
+        "id": "file:proto/causeway/metadata/v2/admin.proto",
+        "kind": "File",
+        "name": "admin.proto",
+        "qualified_name": "proto/causeway/metadata/v2/admin.proto",
+        "file": "proto/causeway/metadata/v2/admin.proto"
+      }
+    ],
+    "deleted": [],
+    "unindexed": []
+  },
+  "files": [
+    {
+      "path": "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+      "added": false,
+      "hunks": [
+        "8-10",
+        "15",
+        "31-32",
+        "36-43",
+        "46",
+        "113",
+        "139"
+      ],
+      "symbols": [
+        {
+          "id": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::SourceCount",
+          "kind": "TypeAlias",
+          "name": "SourceCount",
+          "qualified_name": "SourceCount",
+          "file": "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+          "lines": "46",
+          "signature": "type SourceCount = typeof SourceSummary.Type;",
+          "doc": "One source's count, as the header reports it."
+        },
+        {
+          "id": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork",
+          "kind": "Function",
+          "name": "stuckWork",
+          "qualified_name": "stuckWork",
+          "file": "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+          "lines": "119-143",
+          "signature": "function stuckWork( rpc: ShellRpc, bearer: AccessToken, filter: StuckWorkFilter, now: Date, ): Effect.Effect<StuckWorkList, ShellRpcError>",
+          "doc": "The page's list, as `filter` narrows it. The twin is asked once with the\nport's filters (source, ended) and, when those narrow anything, once more\nwith none for the counts, as the shell reads every source for them."
+        }
+      ],
+      "file_node": "file:apps-web/causeway-web/src/pages/data/stuck-work.ts"
+    },
+    {
+      "path": "apps-web/causeway-web/src/pages/data/wire.ts",
+      "added": false,
+      "hunks": [
+        "18-26"
+      ],
+      "symbols": [],
+      "file_node": "file:apps-web/causeway-web/src/pages/data/wire.ts"
+    },
+    {
+      "path": "apps-web/causeway-web/src/pages/routes/StuckWork.tsx",
+      "added": false,
+      "hunks": [
+        "243-246"
+      ],
+      "symbols": [
+        {
+          "id": "tsx:apps-web/causeway-web/src/pages/routes/StuckWork.tsx::Records",
+          "kind": "Function",
+          "name": "Records",
+          "qualified_name": "Records",
+          "file": "apps-web/causeway-web/src/pages/routes/StuckWork.tsx",
+          "lines": "191-256",
+          "signature": "function Records(props: { readonly records: readonly StuckWorkRecord[] })"
+        }
+      ],
+      "file_node": "file:apps-web/causeway-web/src/pages/routes/StuckWork.tsx"
+    },
+    {
+      "path": "apps-web/causeway-web/test/app-operations.test.ts",
+      "added": false,
+      "hunks": [
+        "10",
+        "36",
+        "46",
+        "48-61",
+        "82",
+        "99-113",
+        "192",
+        "218"
+      ],
+      "symbols": [
+        {
+          "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::/app/ops/stuck in Node",
+          "kind": "Test",
+          "name": "/app/ops/stuck in Node",
+          "qualified_name": "/app/ops/stuck in Node",
+          "file": "apps-web/causeway-web/test/app-operations.test.ts",
+          "lines": "66-178",
+          "signature": "describe(\"/app/ops/stuck in Node\", () => { it(\"lists every source's open work with the counts, as the person\", async () => { const fake = fakeRpc({ PortListStuckWork: LISTING }); const { status, html, response } = await render( await pagesOver(fake.rpc), \"/app/ops/stuck\", OPERATIONS, ); expect(statu…"
+        },
+        {
+          "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::/app/ops/stuck in Node::lists every source's open work with the counts, as the person",
+          "kind": "Test",
+          "name": "lists every source's open work with the counts, as the person",
+          "qualified_name": "/app/ops/stuck in Node::lists every source's open work with the counts, as the person",
+          "file": "apps-web/causeway-web/test/app-operations.test.ts",
+          "lines": "67-97",
+          "signature": "it(\"lists every source's open work with the counts, as the person\", async () => { const fake = fakeRpc({ PortListStuckWork: LISTING }); const { status, html, response } = await render( await pagesOver(fake.rpc), \"/app/ops/stuck\", OPERATIONS, ); expect(status).toBe(200); expect(response.headers.get(\"…"
+        },
+        {
+          "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::/app/ops/stuck in Node::names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count",
+          "kind": "Test",
+          "name": "names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count",
+          "qualified_name": "/app/ops/stuck in Node::names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count",
+          "file": "apps-web/causeway-web/test/app-operations.test.ts",
+          "lines": "99-112",
+          "signature": "it(\"names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count\", async () => { const fake = fakeRpc({ PortListStuckWork: LISTING }); const { html } = await render(await pagesOver(fake.rpc), \"/app/ops/stuck\", OPERATIONS); expect(html).toMatch(/>0 \\/ 0<\\/div><div[^>]*>policy-scan…"
+        },
+        {
+          "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::/app/ops/stuck in Node::names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count::waiting",
+          "kind": "Function",
+          "name": "waiting",
+          "qualified_name": "/app/ops/stuck in Node::names a quiet source as 0 / 0, and shows a counted 0 apart from an unknown count::waiting",
+          "file": "apps-web/causeway-web/test/app-operations.test.ts",
+          "lines": "105-108",
+          "signature": "waiting = (subject: string) => html.match( new RegExp(`>${subject}</a>.*?<td>([^<]*|<span[^>]*>[^<]*</span>)</td><td>2026`), )?.[1]",
+          "doc": "A row's Waiting cell, the one before its First failed cell."
+        },
+        {
+          "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`",
+          "kind": "Test",
+          "name": "the stuck-work filters, as the shell's `admits`",
+          "qualified_name": "the stuck-work filters, as the shell's `admits`",
+          "file": "apps-web/causeway-web/test/app-operations.test.ts",
+          "lines": "180-225",
+          "signature": "describe(\"the stuck-work filters, as the shell's `admits`\", () => { const record = (overrides: Partial<StuckWorkRecord>): StuckWorkRecord => ({ source: \"s\", id: \"1\", kind: \"k\", subjectKind: \"data_asset\", subjectId: \"fct_orders\", subjectLabel: \"\", firstFailedAt: new Date(\"2026-10-26T00:00:00Z\"), atte…"
+        },
+        {
+          "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record",
+          "kind": "Function",
+          "name": "record",
+          "qualified_name": "the stuck-work filters, as the shell's `admits`::record",
+          "file": "apps-web/causeway-web/test/app-operations.test.ts",
+          "lines": "181-194",
+          "signature": "record = (overrides: Partial<StuckWorkRecord>): StuckWorkRecord => ({ source: \"s\", id: \"1\", kind: \"k\", subjectKind: \"data_asset\", subjectId: \"fct_orders\", subjectLabel: \"\", firstFailedAt: new Date(\"2026-10-26T00:00:00Z\"), attempts: 1, failureClass: \"\", status: \"open\", waitingTotal: Option.none(), ..…"
+        }
+      ],
+      "file_node": "file:apps-web/causeway-web/test/app-operations.test.ts"
+    },
+    {
+      "path": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+      "added": false,
+      "hunks": [
+        "523-586"
+      ],
+      "symbols": [
+        {
+          "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::tests",
+          "kind": "Module",
+          "name": "tests",
+          "qualified_name": "tests",
+          "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+          "lines": "525-586",
+          "signature": "mod tests"
+        },
+        {
+          "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::tests::record",
+          "kind": "Function",
+          "name": "record",
+          "qualified_name": "tests::record",
+          "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+          "lines": "530-540",
+          "signature": "fn record(id: &str, subject: &str, radius: BlastRadius) -> StuckWorkRecord"
+        },
+        {
+          "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::tests::waiting",
+          "kind": "Function",
+          "name": "waiting",
+          "qualified_name": "tests::waiting",
+          "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+          "lines": "543-548",
+          "signature": "fn waiting<'a>(html: &'a str, subject: &str) -> &'a str",
+          "doc": "The Waiting cell of `subject`'s row: the one before First failed."
+        },
+        {
+          "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::tests::a_quiet_source_reads_zero_and_only_an_uncounted_record_reads_unknown",
+          "kind": "Test",
+          "name": "a_quiet_source_reads_zero_and_only_an_uncounted_record_reads_unknown",
+          "qualified_name": "tests::a_quiet_source_reads_zero_and_only_an_uncounted_record_reads_unknown",
+          "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+          "lines": "554-585",
+          "signature": "fn a_quiet_source_reads_zero_and_only_an_uncounted_record_reads_unknown()",
+          "doc": "A source that holds nothing reads as `0 / 0`, and a record whose\n\nsource counted nothing waiting reads 0, apart from one whose source\n\ncould not count, which reads `?`."
+        }
+      ],
+      "file_node": "file:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs"
+    },
+    {
+      "path": "apps/causeway-server/src/metadata_admin/handlers.rs",
+      "added": false,
+      "hunks": [
+        "47-58",
+        "559",
+        "1027-1028"
+      ],
+      "symbols": [
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::stuck_work_record",
+          "kind": "Function",
+          "name": "stuck_work_record",
+          "qualified_name": "stuck_work_record",
+          "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+          "lines": "14-50",
+          "signature": "fn stuck_work_record(record: &::stuck_work::StuckWorkRecord) -> pb::StuckWorkRecord",
+          "doc": "One record on the wire. The shape is what every source shares; the\n\ndetail that makes a record replayable stays typed in the source, so\n\nnothing here pretends a Kafka coordinate and a queue id are alike.\n\n\n\nThe proto message shares its name with the port's record, which the\n\nillegal-states lint reads as a cross-crate literal of the port type;\n\nthe baseline records that one site as generated-code construction."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::stuck_work_source",
+          "kind": "Function",
+          "name": "stuck_work_source",
+          "qualified_name": "stuck_work_source",
+          "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+          "lines": "53-61",
+          "signature": "fn stuck_work_source(count: &super::stuck_work::SourceCount) -> pb::StuckWorkSourceSummary",
+          "doc": "One source's counts on the wire, named even when it holds nothing."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::MetadataAdmin::port_list_stuck_work",
+          "kind": "Method",
+          "name": "port_list_stuck_work",
+          "qualified_name": "MetadataAdmin::port_list_stuck_work",
+          "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+          "lines": "542-565",
+          "signature": "async fn port_list_stuck_work( &self, ctx: Context, request: OwnedView<pb::PortListStuckWorkRequestView<'static>>, ) -> Result<(pb::PortListStuckWorkResponse, Context), ConnectError>"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::listing_tests",
+          "kind": "Module",
+          "name": "listing_tests",
+          "qualified_name": "listing_tests",
+          "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+          "lines": "1028",
+          "signature": "mod listing_tests;"
+        }
+      ],
+      "file_node": "file:apps/causeway-server/src/metadata_admin/handlers.rs"
+    },
+    {
+      "path": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+      "added": false,
+      "hunks": [
+        "21",
+        "90",
+        "92",
+        "98",
+        "143",
+        "146",
+        "183",
+        "186",
+        "218",
+        "221"
+      ],
+      "symbols": [
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::CALLER",
+          "kind": "Const",
+          "name": "CALLER",
+          "qualified_name": "CALLER",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+          "lines": "21",
+          "signature": "pub(super) const CALLER: &str = \"amelia-rhodes\";",
+          "doc": "A person in `metadata-admin` who holds no governing seat."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::serve",
+          "kind": "Function",
+          "name": "serve",
+          "qualified_name": "serve",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+          "lines": "90-124",
+          "signature": "pub(super) async fn serve( caller: &TestCaller, sources: Vec<Arc<dyn StuckWorkSource>>, ) -> ( pb::MetadataAdminServiceClient<HttpClient>, tokio::task::JoinHandle<()>, )",
+          "doc": "The surface, mounted as the router mounts it, over `source`, and a\n\nclient signed in as [`CALLER`]."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::a_stuck_work_action_is_recorded_against_the_verified_caller",
+          "kind": "Test",
+          "name": "a_stuck_work_action_is_recorded_against_the_verified_caller",
+          "qualified_name": "a_stuck_work_action_is_recorded_against_the_verified_caller",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+          "lines": "138-175",
+          "signature": "async fn a_stuck_work_action_is_recorded_against_the_verified_caller()"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::ending_a_stuck_record_takes_the_seat_its_source_declares",
+          "kind": "Test",
+          "name": "ending_a_stuck_record_takes_the_seat_its_source_declares",
+          "qualified_name": "ending_a_stuck_record_takes_the_seat_its_source_declares",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+          "lines": "178-211",
+          "signature": "async fn ending_a_stuck_record_takes_the_seat_its_source_declares()"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::a_quarantine_action_naming_somebody_else_is_refused",
+          "kind": "Test",
+          "name": "a_quarantine_action_naming_somebody_else_is_refused",
+          "qualified_name": "a_quarantine_action_naming_somebody_else_is_refused",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs",
+          "lines": "214-246",
+          "signature": "async fn a_quarantine_action_naming_somebody_else_is_refused()"
+        }
+      ],
+      "file_node": "file:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs"
+    },
+    {
+      "path": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+      "added": true,
+      "hunks": [
+        "1-167"
+      ],
+      "symbols": [
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding",
+          "kind": "Struct",
+          "name": "Holding",
+          "qualified_name": "Holding",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "17-20",
+          "signature": "struct Holding",
+          "doc": "A source holding exactly `records`."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::held",
+          "kind": "Function",
+          "name": "held",
+          "qualified_name": "held",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "22-32",
+          "signature": "fn held(source: &str, id: &str, radius: BlastRadius) -> StuckWorkRecord"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding#impl(StuckWorkSource)",
+          "kind": "Impl",
+          "name": "Holding",
+          "qualified_name": "Holding#impl(StuckWorkSource)",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "34-70",
+          "signature": "impl StuckWorkSource for Holding"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::id",
+          "kind": "Method",
+          "name": "id",
+          "qualified_name": "Holding::id",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "35-37",
+          "signature": "fn id(&self) -> SourceId"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::list",
+          "kind": "Method",
+          "name": "list",
+          "qualified_name": "Holding::list",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "39-45",
+          "signature": "fn list( &self, _query: &StuckWorkQuery, ) -> StuckWorkFuture<'_, Result<Vec<StuckWorkRecord>, StuckWorkError>>"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::get",
+          "kind": "Method",
+          "name": "get",
+          "qualified_name": "Holding::get",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "47-52",
+          "signature": "fn get( &self, _id: &RecordId, ) -> StuckWorkFuture<'_, Result<Option<StuckWorkRecord>, StuckWorkError>>"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::act",
+          "kind": "Method",
+          "name": "act",
+          "qualified_name": "Holding::act",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "54-61",
+          "signature": "fn act( &self, _id: &RecordId, _action: &StuckWorkAction, _actor: &Actor, ) -> StuckWorkFuture<'_, Result<StuckWorkRecord, StuckWorkError>>"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::bounds",
+          "kind": "Method",
+          "name": "bounds",
+          "qualified_name": "Holding::bounds",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "63-65",
+          "signature": "fn bounds(&self) -> Bounds"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::fencing",
+          "kind": "Method",
+          "name": "fencing",
+          "qualified_name": "Holding::fencing",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "67-69",
+          "signature": "fn fencing(&self) -> Fencing"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::summary",
+          "kind": "Function",
+          "name": "summary",
+          "qualified_name": "summary",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "72-80",
+          "signature": "fn summary(source: &str, open: u64, waiting_total: Option<u64>) -> pb::StuckWorkSourceSummary"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::the_listing_names_a_quiet_source_and_an_unknown_count",
+          "kind": "Test",
+          "name": "the_listing_names_a_quiet_source_and_an_unknown_count",
+          "qualified_name": "the_listing_names_a_quiet_source_and_an_unknown_count",
+          "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+          "lines": "83-167",
+          "signature": "async fn the_listing_names_a_quiet_source_and_an_unknown_count()"
+        }
+      ],
+      "file_node": "file:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs"
+    },
+    {
+      "path": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+      "added": false,
+      "hunks": [
+        "22-24",
+        "29-30",
+        "36",
+        "45-48",
+        "58",
+        "63",
+        "65",
+        "73-91",
+        "115-116",
+        "118",
+        "120-121",
+        "392-393",
+        "400-469"
+      ],
+      "symbols": [
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkListing",
+          "kind": "Struct",
+          "name": "StuckWorkListing",
+          "qualified_name": "StuckWorkListing",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "19-27",
+          "signature": "pub(crate) struct StuckWorkListing",
+          "doc": "Every source's open work, and the sources that could not be read."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::list",
+          "kind": "Function",
+          "name": "list",
+          "qualified_name": "list",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "31-61",
+          "signature": "pub(crate) async fn list( sources: &[Arc<dyn StuckWorkSource>], query: &StuckWorkQuery, ) -> StuckWorkListing",
+          "doc": "Lists across the registry, oldest failure first. Each source is counted\n\nfrom everything it returned, before `limit` truncates the records."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount",
+          "kind": "Struct",
+          "name": "SourceCount",
+          "qualified_name": "SourceCount",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "66-76",
+          "signature": "pub(crate) struct SourceCount",
+          "doc": "How many records one source is holding, for the header an operator\n\nreads before the list (determination 13)."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount#impl",
+          "kind": "Impl",
+          "name": "SourceCount",
+          "qualified_name": "SourceCount#impl",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "78-92",
+          "signature": "impl SourceCount"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount::of",
+          "kind": "Method",
+          "name": "of",
+          "qualified_name": "SourceCount::of",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "81-91",
+          "signature": "fn of(source: &SourceId, records: &[StuckWorkRecord]) -> Self",
+          "doc": "Counts what `source` returned. A source that returned nothing\n\nholds nothing: zero open, and nothing waiting."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts",
+          "kind": "Function",
+          "name": "counts",
+          "qualified_name": "counts",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "117-123",
+          "signature": "pub(crate) async fn counts(sources: &[Arc<dyn StuckWorkSource>]) -> StuckWorkCounts",
+          "doc": "Counts open work per source, which is what a probe asks for and what\n\nthe surface shows above the list: the listing's own counts over every\n\nsource's open work, so the two never disagree."
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::tests",
+          "kind": "Module",
+          "name": "tests",
+          "qualified_name": "tests",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "331-792",
+          "signature": "mod tests"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::tests::an_empty_registry_lists_nothing_and_reports_nothing_unavailable",
+          "kind": "Test",
+          "name": "an_empty_registry_lists_nothing_and_reports_nothing_unavailable",
+          "qualified_name": "tests::an_empty_registry_lists_nothing_and_reports_nothing_unavailable",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "387-398",
+          "signature": "async fn an_empty_registry_lists_nothing_and_reports_nothing_unavailable()"
+        },
+        {
+          "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::tests::a_source_counts_its_open_work_and_sums_only_what_it_could_count",
+          "kind": "Test",
+          "name": "a_source_counts_its_open_work_and_sums_only_what_it_could_count",
+          "qualified_name": "tests::a_source_counts_its_open_work_and_sums_only_what_it_could_count",
+          "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+          "lines": "404-468",
+          "signature": "fn a_source_counts_its_open_work_and_sums_only_what_it_could_count()",
+          "doc": "A source is counted by its open work: an ended record is listed\n\nwhen asked for but never counted, and what waits is summed only\n\nwhen every open record could be counted."
+        }
+      ],
+      "file_node": "file:apps/causeway-server/src/metadata_admin/stuck_work.rs"
+    },
+    {
+      "path": "docs/plans/APP-TWIN-RPC-INVENTORY.md",
+      "added": false,
+      "hunks": [
+        "103"
+      ],
+      "symbols": [
+        {
+          "id": "doc:docs/plans/APP-TWIN-RPC-INVENTORY.md",
+          "kind": "Document",
+          "name": "App Twin-RPC Inventory — gap ledger for the `/app` port",
+          "qualified_name": "App Twin-RPC Inventory — gap ledger for the `/app` port",
+          "file": "docs/plans/APP-TWIN-RPC-INVENTORY.md",
+          "lines": "1-292",
+          "signature": "App Twin-RPC Inventory — gap ledger for the `/app` port",
+          "doc": "(verdict **Ported**). Related: ADR-bn90xr5m (authentication types for callers), ADR-3q64wdh0 (the platform surface stack over Drive, API first)."
+        }
+      ],
+      "file_node": "file:docs/plans/APP-TWIN-RPC-INVENTORY.md"
+    },
+    {
+      "path": "proto/causeway/metadata/v2/admin.proto",
+      "added": false,
+      "hunks": [
+        "592-593",
+        "596-611",
+        "626-629"
+      ],
+      "symbols": [],
+      "file_node": "file:proto/causeway/metadata/v2/admin.proto"
+    },
+    {
+      "path": "services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts",
+      "added": false,
+      "hunks": [
+        "20",
+        "1421-1423",
+        "1432-1439",
+        "1449-1490",
+        "1523",
+        "1541-1549",
+        "1557",
+        "1613",
+        "1630",
+        "1661",
+        "1674",
+        "1705",
+        "1718",
+        "1759",
+        "1776",
+        "1817",
+        "1834",
+        "1851",
+        "1868",
+        "1885",
+        "1902",
+        "1919",
+        "1936",
+        "1953",
+        "1970",
+        "1987",
+        "2004",
+        "2021",
+        "2038",
+        "2055",
+        "2072",
+        "2094",
+        "2111",
+        "2128",
+        "2145",
+        "2162",
+        "2179",
+        "2196",
+        "2213",
+        "2230",
+        "2247",
+        "2264",
+        "2281"
+      ],
+      "symbols": [
+        {
+          "id": "typescript:services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts::StuckWorkRecord",
+          "kind": "TypeAlias",
+          "name": "StuckWorkRecord",
+          "qualified_name": "StuckWorkRecord",
+          "file": "services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts",
+          "lines": "1335-1440",
+          "signature": "type StuckWorkRecord = Message<\"causeway.metadata.v2.StuckWorkRecord\"> & { /** * @generated from field: string source = 1; */ source: string; /** * @generated from field: string id = 2; */ id: string; /** * @generated from field: string kind = 3; */ kind: string; /** * @generated from field: string …",
+          "doc": "One record of work that could not finish, as every source reports it.\n\n@generated from message causeway.metadata.v2.StuckWorkRecord"
+        },
+        {
+          "id": "typescript:services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts::StuckWorkSourceSummary",
+          "kind": "TypeAlias",
+          "name": "StuckWorkSourceSummary",
+          "qualified_name": "StuckWorkSourceSummary",
+          "file": "services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts",
+          "lines": "1455-1482",
+          "signature": "type StuckWorkSourceSummary = Message<\"causeway.metadata.v2.StuckWorkSourceSummary\"> & { /** * @generated from field: string source = 1; */ source: string; /** * Records nobody has ended, of what the source returned for the query. * * @generated from field: uint64 open = 2; */ open: bigint; /** * Of…",
+          "doc": "One source the listing covered, named whether or not it holds anything,\nso a source with nothing open reads as `0 / 0` rather than vanishing.\n\n@generated from message causeway.metadata.v2.StuckWorkSourceSummary"
+        },
+        {
+          "id": "typescript:services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts::PortListStuckWorkResponse",
+          "kind": "TypeAlias",
+          "name": "PortListStuckWorkResponse",
+          "qualified_name": "PortListStuckWorkResponse",
+          "file": "services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts",
+          "lines": "1528-1550",
+          "signature": "type PortListStuckWorkResponse = Message<\"causeway.metadata.v2.PortListStuckWorkResponse\"> & { /** * @generated from field: repeated causeway.metadata.v2.StuckWorkRecord records = 1; */ records: StuckWorkRecord[]; /** * Sources that could not be read, named rather than omitted: one * unavailable sou…",
+          "doc": "@generated from message causeway.metadata.v2.PortListStuckWorkResponse"
+        }
+      ],
+      "file_node": "file:services-node/relay-grpc/gen/causeway/metadata/v2/admin_pb.ts"
+    },
+    {
+      "path": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.py",
+      "added": false,
+      "hunks": [
+        "30",
+        "67-78",
+        "174-254"
+      ],
+      "symbols": [
+        {
+          "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.py::DESCRIPTOR",
+          "kind": "Const",
+          "name": "DESCRIPTOR",
+          "qualified_name": "DESCRIPTOR",
+          "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.py",
+          "lines": "30",
+          "signature": "DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\\n causeway/metadata/v2/admin.proto\\x12\\x14\\x63\\x61useway.metadata.v2\\x1a causeway/drive/v1/exposure.proto\\x1a\\x1fgoogle/protobuf/timestamp.proto\\x1a#causeway/identity/v1/identity.proto\\\"\\xc2\\x01\\n\\x0bMetadataRef\\x12\\x12\\n\\x04kind\\x18\\x01 \\…"
+        }
+      ],
+      "file_node": "file:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.py"
+    },
+    {
+      "path": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+      "added": false,
+      "hunks": [
+        "563",
+        "581",
+        "599-612",
+        "627",
+        "630",
+        "633-634"
+      ],
+      "symbols": [
+        {
+          "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkRecord",
+          "kind": "Class",
+          "name": "StuckWorkRecord",
+          "qualified_name": "StuckWorkRecord",
+          "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+          "lines": "562-600",
+          "signature": "class StuckWorkRecord(_message.Message)"
+        },
+        {
+          "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkRecord::__init__",
+          "kind": "Method",
+          "name": "__init__",
+          "qualified_name": "StuckWorkRecord::__init__",
+          "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+          "lines": "600",
+          "signature": "def __init__(self, source: _Optional[str] = ..., id: _Optional[str] = ..., kind: _Optional[str] = ..., subject_kind: _Optional[str] = ..., subject_id: _Optional[str] = ..., subject_label: _Optional[str] = ..., first_failed_at: _Optional[str] = ..., attempts: _Optional[int] = ..., failure_class: _Opt…"
+        },
+        {
+          "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkSourceSummary",
+          "kind": "Class",
+          "name": "StuckWorkSourceSummary",
+          "qualified_name": "StuckWorkSourceSummary",
+          "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+          "lines": "602-612",
+          "signature": "class StuckWorkSourceSummary(_message.Message)"
+        },
+        {
+          "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkSourceSummary::__init__",
+          "kind": "Method",
+          "name": "__init__",
+          "qualified_name": "StuckWorkSourceSummary::__init__",
+          "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+          "lines": "612",
+          "signature": "def __init__(self, source: _Optional[str] = ..., open: _Optional[int] = ..., in_review: _Optional[int] = ..., waiting_total: _Optional[int] = ...) -> None"
+        },
+        {
+          "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::PortListStuckWorkResponse",
+          "kind": "Class",
+          "name": "PortListStuckWorkResponse",
+          "qualified_name": "PortListStuckWorkResponse",
+          "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+          "lines": "626-634",
+          "signature": "class PortListStuckWorkResponse(_message.Message)"
+        },
+        {
+          "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::PortListStuckWorkResponse::__init__",
+          "kind": "Method",
+          "name": "__init__",
+          "qualified_name": "PortListStuckWorkResponse::__init__",
+          "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+          "lines": "634",
+          "signature": "def __init__(self, records: _Optional[_Iterable[_Union[StuckWorkRecord, _Mapping]]] = ..., unavailable: _Optional[_Iterable[str]] = ..., sources: _Optional[_Iterable[_Union[StuckWorkSourceSummary, _Mapping]]] = ...) -> None"
+        }
+      ],
+      "file_node": "file:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi"
+    }
+  ],
+  "removed": {
+    "listed": true,
+    "symbols": [
+      {
+        "file": "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+        "kind": "Function",
+        "qualified_name": "countsOf",
+        "lines": "111-121"
+      },
+      {
+        "file": "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+        "kind": "Interface",
+        "qualified_name": "SourceCount",
+        "lines": "38-42"
+      },
+      {
+        "file": "apps-web/causeway-web/test/app-operations.test.ts",
+        "kind": "Test",
+        "qualified_name": "the stuck-work filters, as the shell's `admits`::counts open and in-review work per source",
+        "lines": "194-205"
+      }
+    ]
+  },
+  "impact": {
+    "depth": 3,
+    "min_confidence": 0.25,
+    "total": 54,
+    "groups": [
+      {
+        "group": "code",
+        "label": "Code symbols",
+        "rows": [
+          {
+            "node": {
+              "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::PortActOnStuckWorkResponse",
+              "kind": "Class",
+              "name": "PortActOnStuckWorkResponse",
+              "qualified_name": "PortActOnStuckWorkResponse",
+              "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+              "lines": "652-656",
+              "signature": "class PortActOnStuckWorkResponse(_message.Message)"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::PortActOnStuckWorkResponse",
+              "dst": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkRecord",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi:655"
+              ]
+            },
+            "citation": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi:655",
+            "from": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkRecord"
+          },
+          {
+            "node": {
+              "id": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::PortActOnStuckWorkResponse::__init__",
+              "kind": "Method",
+              "name": "__init__",
+              "qualified_name": "PortActOnStuckWorkResponse::__init__",
+              "file": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi",
+              "lines": "656",
+              "signature": "def __init__(self, record: _Optional[_Union[StuckWorkRecord, _Mapping]] = ...) -> None"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::PortActOnStuckWorkResponse::__init__",
+              "dst": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkRecord",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi:656"
+              ]
+            },
+            "citation": "services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi:656",
+            "from": "python:services-py/relay-grpc/gen/causeway/metadata/v2/admin_pb2.pyi::StuckWorkRecord"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::SourceCount",
+              "kind": "Struct",
+              "name": "SourceCount",
+              "qualified_name": "SourceCount",
+              "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+              "lines": "16-23",
+              "signature": "pub struct SourceCount",
+              "doc": "One source's count, as the header reports it."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::SourceCount",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:16"
+              ]
+            },
+            "citation": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:16",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/governance/issues.rs::stuck_work_indication",
+              "kind": "Function",
+              "name": "stuck_work_indication",
+              "qualified_name": "stuck_work_indication",
+              "file": "apps/causeway-server/src/governance/issues.rs",
+              "lines": "111-124",
+              "signature": "async fn stuck_work_indication( state: &crate::composition::state::AppState, ) -> Option<StuckWorkIndication>",
+              "doc": "What the product app may say about stuck work: how much there is, and\n\nwhere it is repaired (RFD-2n2tcfe2 determination 10).\n\n\n\nA source that cannot answer marks the count as a floor rather than\n\nremoving the indication, because \"some of it is invisible\" is the one\n\nthing a reader must not conclude from a smaller number."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server/src/governance/issues.rs::stuck_work_indication",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/governance/issues.rs:114"
+              ]
+            },
+            "citation": "apps/causeway-server/src/governance/issues.rs:114",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::MetadataAdmin::port_act_on_stuck_work",
+              "kind": "Method",
+              "name": "port_act_on_stuck_work",
+              "qualified_name": "MetadataAdmin::port_act_on_stuck_work",
+              "file": "apps/causeway-server/src/metadata_admin/handlers.rs",
+              "lines": "567-623",
+              "signature": "async fn port_act_on_stuck_work( &self, ctx: Context, request: OwnedView<pb::PortActOnStuckWorkRequestView<'static>>, ) -> Result<(pb::PortActOnStuckWorkResponse, Context), ConnectError>"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::MetadataAdmin::port_act_on_stuck_work",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::stuck_work_record",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/handlers.rs:618"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/handlers.rs:618",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers.rs::stuck_work_record"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkCounts",
+              "kind": "Struct",
+              "name": "StuckWorkCounts",
+              "qualified_name": "StuckWorkCounts",
+              "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+              "lines": "95-100",
+              "signature": "pub(crate) struct StuckWorkCounts",
+              "doc": "The counts across the registry, and the sources that could not answer."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkCounts",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/stuck_work.rs:97"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/stuck_work.rs:97",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::tests::every_class_of_stuck_work_reaches_one_surface",
+              "kind": "Test",
+              "name": "every_class_of_stuck_work_reaches_one_surface",
+              "qualified_name": "tests::every_class_of_stuck_work_reaches_one_surface",
+              "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+              "lines": "568-624",
+              "signature": "async fn every_class_of_stuck_work_reaches_one_surface()",
+              "doc": "One workspace, one record of every class, read through the one\n\nregistry an operator reads — which is the claim the whole\n\nprogramme makes and the only one no single slice could prove.\n\n\n\nEach slice tested its own source against its own store. This\n\nasserts they compose: five subsystems that share no schema, no\n\nrelease and no table answer one query in one vocabulary, each\n\ndeclaring what may be done to its records.\n\n\n\nAgainst a workspace the testkit migrates in an ephemeral Postgres\n\n(RFD-fpg4tnq2), which it seeds with one record of each class."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::tests::every_class_of_stuck_work_reaches_one_surface",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/stuck_work.rs:616"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/stuck_work.rs:616",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/system_status.rs::stuck_work_metrics",
+              "kind": "Function",
+              "name": "stuck_work_metrics",
+              "qualified_name": "stuck_work_metrics",
+              "file": "apps/causeway-server/src/system_status.rs",
+              "lines": "74-96",
+              "signature": "async fn stuck_work_metrics(state: &AppState) -> serde_json::Value",
+              "doc": "The per-source counts, with the sources that could not be asked named\n\nrather than dropped: a probe that sees a smaller number without being\n\ntold why would read an outage as an improvement."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server/src/system_status.rs::stuck_work_metrics",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/system_status.rs:75"
+              ]
+            },
+            "citation": "apps/causeway-server/src/system_status.rs:75",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts"
+          },
+          {
+            "node": {
+              "id": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::act",
+              "kind": "Method",
+              "name": "act",
+              "qualified_name": "StuckWorkSource::act",
+              "file": "crates/stuck-work/src/port.rs",
+              "lines": "860-865",
+              "signature": "fn act( &self, id: &RecordId, action: &StuckWorkAction, actor: &Actor, ) -> StuckWorkFuture<'_, Result<StuckWorkRecord, StuckWorkError>>;",
+              "doc": "Acts on one record, returning it as it now stands."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "DISPATCHES_TO",
+              "src": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::act",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::act",
+              "derivation": "resolved",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:54-61"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:54-61 [resolved]",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::act"
+          },
+          {
+            "node": {
+              "id": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::bounds",
+              "kind": "Method",
+              "name": "bounds",
+              "qualified_name": "StuckWorkSource::bounds",
+              "file": "crates/stuck-work/src/port.rs",
+              "lines": "910",
+              "signature": "fn bounds(&self) -> Bounds;",
+              "doc": "How long this source keeps trying (determinations 5 and 17).\n\n\n\nThere is no default. An unbounded retry loop is the defect this\n\nprogramme exists to retire, so a source that joins the surface\n\nsays what its bounds are rather than inheriting a number someone\n\nelse chose."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "DISPATCHES_TO",
+              "src": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::bounds",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::bounds",
+              "derivation": "resolved",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:63-65"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:63-65 [resolved]",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::bounds"
+          },
+          {
+            "node": {
+              "id": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::fencing",
+              "kind": "Method",
+              "name": "fencing",
+              "qualified_name": "StuckWorkSource::fencing",
+              "file": "crates/stuck-work/src/port.rs",
+              "lines": "953",
+              "signature": "fn fencing(&self) -> Fencing;",
+              "doc": "Whether this source's completion path is fenced\n\n(determination 17).\n\n\n\nNo default either, and for the same reason: a source that has not\n\nanswered would be assumed safe to reclaim from, which is the one\n\nwrong answer."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "DISPATCHES_TO",
+              "src": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::fencing",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::fencing",
+              "derivation": "resolved",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:67-69"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:67-69 [resolved]",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::fencing"
+          },
+          {
+            "node": {
+              "id": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::get",
+              "kind": "Method",
+              "name": "get",
+              "qualified_name": "StuckWorkSource::get",
+              "file": "crates/stuck-work/src/port.rs",
+              "lines": "854-857",
+              "signature": "fn get( &self, id: &RecordId, ) -> StuckWorkFuture<'_, Result<Option<StuckWorkRecord>, StuckWorkError>>;",
+              "doc": "One record."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "DISPATCHES_TO",
+              "src": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::get",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::get",
+              "derivation": "resolved",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:47-52"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:47-52 [resolved]",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::get"
+          },
+          {
+            "node": {
+              "id": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::id",
+              "kind": "Method",
+              "name": "id",
+              "qualified_name": "StuckWorkSource::id",
+              "file": "crates/stuck-work/src/port.rs",
+              "lines": "845",
+              "signature": "fn id(&self) -> SourceId;",
+              "doc": "Which source this is."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "DISPATCHES_TO",
+              "src": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::id",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::id",
+              "derivation": "resolved",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:35-37"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:35-37 [resolved]",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::id"
+          },
+          {
+            "node": {
+              "id": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::list",
+              "kind": "Method",
+              "name": "list",
+              "qualified_name": "StuckWorkSource::list",
+              "file": "crates/stuck-work/src/port.rs",
+              "lines": "848-851",
+              "signature": "fn list( &self, query: &StuckWorkQuery, ) -> StuckWorkFuture<'_, Result<Vec<StuckWorkRecord>, StuckWorkError>>;",
+              "doc": "The records this source has, newest failure first."
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "DISPATCHES_TO",
+              "src": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::list",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::list",
+              "derivation": "resolved",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:39-45"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:39-45 [resolved]",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::list"
+          },
+          {
+            "node": {
+              "id": "tsx:apps-web/causeway-web/src/pages/routes.tsx::createPages",
+              "kind": "Function",
+              "name": "createPages",
+              "qualified_name": "createPages",
+              "file": "apps-web/causeway-web/src/pages/routes.tsx",
+              "lines": "314-592",
+              "signature": "function createPages(deps: PageDeps): PageApp"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "tsx:apps-web/causeway-web/src/pages/routes.tsx::createPages",
+              "dst": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/routes.tsx:567"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/routes.tsx:567",
+            "from": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork"
+          },
+          {
+            "node": {
+              "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::formats and links as the shell does",
+              "kind": "Test",
+              "name": "formats and links as the shell does",
+              "qualified_name": "the stuck-work filters, as the shell's `admits`::formats and links as the shell does",
+              "file": "apps-web/causeway-web/test/app-operations.test.ts",
+              "lines": "219-224",
+              "signature": "it(\"formats and links as the shell does\", () => { expect(failedAt(new Date(\"2026-01-02T03:04:59Z\"))).toBe(\"2026-01-02 03:04\"); expect(recordHref(record({ source: \"a/b\", id: \"x y\" }))).toBe(\"/app/ops/stuck/a%2Fb/x%20y\"); expect(statusTone(\"retrying\")).toBe(\"amber\"); expect(statusTone(\"superseded\")).t…"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::formats and links as the shell does",
+              "dst": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/test/app-operations.test.ts:221"
+              ]
+            },
+            "citation": "apps-web/causeway-web/test/app-operations.test.ts:221",
+            "from": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record"
+          },
+          {
+            "node": {
+              "id": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::narrows by class, subject and age",
+              "kind": "Test",
+              "name": "narrows by class, subject and age",
+              "qualified_name": "the stuck-work filters, as the shell's `admits`::narrows by class, subject and age",
+              "file": "apps-web/causeway-web/test/app-operations.test.ts",
+              "lines": "198-210",
+              "signature": "it(\"narrows by class, subject and age\", () => { expect(admits(record({}), filter(\"class=unjudged\"), now)).toBe(true); expect(admits(record({ failureClass: \"permanent\" }), filter(\"class=unjudged\"), now)).toBe( false, ); expect(admits(record({ failureClass: \"permanent\" }), filter(\"class=%20any%20\"), n…"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::narrows by class, subject and age",
+              "dst": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/test/app-operations.test.ts:203"
+              ]
+            },
+            "citation": "apps-web/causeway-web/test/app-operations.test.ts:203",
+            "from": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::StuckWorkListPage",
+              "kind": "Struct",
+              "name": "StuckWorkListPage",
+              "qualified_name": "StuckWorkListPage",
+              "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+              "lines": "26-47",
+              "signature": "pub struct StuckWorkListPage",
+              "doc": "The list page."
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::StuckWorkListPage",
+              "dst": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::SourceCount",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:30"
+              ]
+            },
+            "citation": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:30",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::StuckWorkListPage::new",
+              "kind": "Method",
+              "name": "new",
+              "qualified_name": "StuckWorkListPage::new",
+              "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+              "lines": "52-69",
+              "signature": "pub fn new( records: Vec<StuckWorkRecord>, counts: Vec<SourceCount>, unavailable: Vec<String>, ) -> Self",
+              "doc": "The page over what the registry returned."
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::StuckWorkListPage::new",
+              "dst": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::SourceCount",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:54"
+              ]
+            },
+            "citation": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:54",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::counts_header",
+              "kind": "Function",
+              "name": "counts_header",
+              "qualified_name": "counts_header",
+              "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+              "lines": "208-231",
+              "signature": "fn counts_header(open: u64, in_review: u64, counts: &[SourceCount]) -> Markup"
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::counts_header",
+              "dst": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::SourceCount",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:208"
+              ]
+            },
+            "citation": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:208",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/governance/issues.rs::load_issues",
+              "kind": "Function",
+              "name": "load_issues",
+              "qualified_name": "load_issues",
+              "file": "apps/causeway-server/src/governance/issues.rs",
+              "lines": "23-103",
+              "signature": "pub(crate) async fn load_issues(state: &crate::composition::state::AppState) -> IssuesPage",
+              "doc": "Reads every finding of both system policies and groups the column\n\nfindings per dataset; dataset aggregates are folded into the grouping."
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server/src/governance/issues.rs::load_issues",
+              "dst": "rust:apps/causeway-server/src/governance/issues.rs::stuck_work_indication",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/governance/issues.rs:101"
+              ]
+            },
+            "citation": "apps/causeway-server/src/governance/issues.rs:101",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkCounts#impl",
+              "kind": "Impl",
+              "name": "StuckWorkCounts",
+              "qualified_name": "StuckWorkCounts#impl",
+              "file": "apps/causeway-server/src/metadata_admin/stuck_work.rs",
+              "lines": "102-112",
+              "signature": "impl StuckWorkCounts"
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkCounts#impl",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::StuckWorkCounts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/stuck_work.rs:102-112"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/stuck_work.rs:102-112",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs::stuck_work",
+              "kind": "Function",
+              "name": "stuck_work",
+              "qualified_name": "stuck_work",
+              "file": "apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs",
+              "lines": "132-212",
+              "signature": "pub async fn stuck_work( State(state): State<AppState>, Query(params): Query<StuckWorkListQuery>, Extension(caller): Extension<BrowserCaller>, method: Method, uri: Uri, headers: HeaderMap, ) -> Response",
+              "doc": "Every source's open work, oldest failure first, for a caller the\n\nmetadata-admin plane admits as it admits them to `PortListStuckWork`."
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs::stuck_work",
+              "dst": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::SourceCount",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs:181"
+              ]
+            },
+            "citation": "apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs:181",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/system_status.rs::metrics_json_payload",
+              "kind": "Function",
+              "name": "metrics_json_payload",
+              "qualified_name": "metrics_json_payload",
+              "file": "apps/causeway-server/src/system_status.rs",
+              "lines": "44-69",
+              "signature": "pub(crate) async fn metrics_json_payload(state: &AppState) -> serde_json::Value"
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server/src/system_status.rs::metrics_json_payload",
+              "dst": "rust:apps/causeway-server/src/system_status.rs::stuck_work_metrics",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/system_status.rs:66"
+              ]
+            },
+            "citation": "apps/causeway-server/src/system_status.rs:66",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts"
+          },
+          {
+            "node": {
+              "id": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::detail",
+              "kind": "Method",
+              "name": "detail",
+              "qualified_name": "StuckWorkSource::detail",
+              "file": "crates/stuck-work/src/port.rs",
+              "lines": "872-890",
+              "signature": "fn detail( &self, id: &RecordId, ) -> StuckWorkFuture<'_, Result<Option<StuckWorkDetail>, StuckWorkError>>",
+              "doc": "One record with what an operator needs before deciding: the\n\npayload and the failure history (determination 12).\n\n\n\nA source that shares neither is still a source; the default says\n\nso rather than leaving the surface to infer it from emptiness."
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::detail",
+              "dst": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::get",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "crates/stuck-work/src/port.rs:878"
+              ]
+            },
+            "citation": "crates/stuck-work/src/port.rs:878",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::get"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::StuckWorkListPage#impl",
+              "kind": "Impl",
+              "name": "StuckWorkListPage",
+              "qualified_name": "StuckWorkListPage#impl",
+              "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+              "lines": "49-100",
+              "signature": "impl StuckWorkListPage"
+            },
+            "depth": 3,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::StuckWorkListPage#impl",
+              "dst": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::StuckWorkListPage",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:49-100"
+              ]
+            },
+            "citation": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:49-100",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::filters",
+              "kind": "Function",
+              "name": "filters",
+              "qualified_name": "filters",
+              "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+              "lines": "249-287",
+              "signature": "fn filters(page: &StuckWorkListPage) -> Markup"
+            },
+            "depth": 3,
+            "confidence": 1.0,
+            "via": {
+              "kind": "USES_TYPE",
+              "src": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::filters",
+              "dst": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::StuckWorkListPage",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:249"
+              ]
+            },
+            "citation": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:249",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::stuck_work_list",
+              "kind": "Function",
+              "name": "stuck_work_list",
+              "qualified_name": "stuck_work_list",
+              "file": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs",
+              "lines": "144-172",
+              "signature": "pub fn stuck_work_list(page: &StuckWorkListPage) -> Markup",
+              "doc": "The list: every source's open work, oldest first."
+            },
+            "depth": 3,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::stuck_work_list",
+              "dst": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::counts_header",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:158"
+              ]
+            },
+            "citation": "apps/causeway-server-web/src/views/platform/operations/stuck_work.rs:158",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/routes/pages/governance/issues.rs::issues",
+              "kind": "Function",
+              "name": "issues",
+              "qualified_name": "issues",
+              "file": "apps/causeway-server/src/routes/pages/governance/issues.rs",
+              "lines": "15-56",
+              "signature": "pub async fn issues( State(state): State<AppState>, Query(query): Query<TabQuery>, Extension(caller): Extension<BrowserCaller>, method: Method, uri: Uri, headers: HeaderMap, ) -> Response",
+              "doc": "The open issues, decided as their twin `PolicyService/ListViolations` is."
+            },
+            "depth": 3,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server/src/routes/pages/governance/issues.rs::issues",
+              "dst": "rust:apps/causeway-server/src/governance/issues.rs::load_issues",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/routes/pages/governance/issues.rs:38"
+              ]
+            },
+            "citation": "apps/causeway-server/src/routes/pages/governance/issues.rs:38",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/routes/system.rs::metrics_json",
+              "kind": "Function",
+              "name": "metrics_json",
+              "qualified_name": "metrics_json",
+              "file": "apps/causeway-server/src/routes/system.rs",
+              "lines": "108-110",
+              "signature": "pub(super) async fn metrics_json(State(state): State<AppState>) -> axum::Json<serde_json::Value>",
+              "doc": "JSON format for KEDA metrics-api scaler."
+            },
+            "depth": 3,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:apps/causeway-server/src/routes/system.rs::metrics_json",
+              "dst": "rust:apps/causeway-server/src/system_status.rs::metrics_json_payload",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/routes/system.rs:109"
+              ]
+            },
+            "citation": "apps/causeway-server/src/routes/system.rs:109",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts"
+          },
+          {
+            "node": {
+              "id": "rust:crates/stuck-work/src/port.rs::tests::a_source_that_shares_no_payload_still_has_a_detail",
+              "kind": "Test",
+              "name": "a_source_that_shares_no_payload_still_has_a_detail",
+              "qualified_name": "tests::a_source_that_shares_no_payload_still_has_a_detail",
+              "file": "crates/stuck-work/src/port.rs",
+              "lines": "1117-1178",
+              "signature": "async fn a_source_that_shares_no_payload_still_has_a_detail()",
+              "doc": "The default detail is honest about a source that shares nothing,\n\nand still carries the failure the record already knows about."
+            },
+            "depth": 3,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:crates/stuck-work/src/port.rs::tests::a_source_that_shares_no_payload_still_has_a_detail",
+              "dst": "rust:crates/stuck-work/src/port.rs::StuckWorkSource::detail",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "crates/stuck-work/src/port.rs:1165"
+              ]
+            },
+            "citation": "crates/stuck-work/src/port.rs:1165",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::Holding::get"
+          },
+          {
+            "node": {
+              "id": "typescript:apps-web/causeway-web/src/pages/runtime.ts::startPages::appFor",
+              "kind": "Function",
+              "name": "appFor",
+              "qualified_name": "startPages::appFor",
+              "file": "apps-web/causeway-web/src/pages/runtime.ts",
+              "lines": "175-181",
+              "signature": "appFor = (module: PageModule) => { const existing = apps.get(module); if (existing !== undefined) return existing; const created = module.createPages(deps); apps.set(module, created); return created; }"
+            },
+            "depth": 2,
+            "confidence": 0.75,
+            "via": {
+              "kind": "CALLS",
+              "src": "typescript:apps-web/causeway-web/src/pages/runtime.ts::startPages::appFor",
+              "dst": "tsx:apps-web/causeway-web/src/pages/routes.tsx::createPages",
+              "derivation": "syntactic",
+              "confidence": 0.75,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/runtime.ts:178"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/runtime.ts:178 [syntactic 0.75]",
+            "from": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork"
+          },
+          {
+            "node": {
+              "id": "typescript:apps-web/causeway-web/src/pages/runtime.ts::startPages::page",
+              "kind": "Function",
+              "name": "page",
+              "qualified_name": "startPages::page",
+              "file": "apps-web/causeway-web/src/pages/runtime.ts",
+              "lines": "192-209",
+              "signature": "page = async (request: Request, facts: RequestFacts): Promise<Response | undefined> => { let module: PageModule; try { module = await load(); } catch (error) { // In development an edit that does not compile lands here; the page // says why, and the next save reloads it. if (!dev) throw error; if (e…"
+            },
+            "depth": 3,
+            "confidence": 0.75,
+            "via": {
+              "kind": "CALLS",
+              "src": "typescript:apps-web/causeway-web/src/pages/runtime.ts::startPages::page",
+              "dst": "typescript:apps-web/causeway-web/src/pages/runtime.ts::startPages::appFor",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/runtime.ts:207"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/runtime.ts:207",
+            "from": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork"
+          },
+          {
+            "node": {
+              "id": "rust:component/platform/coherence/src/checks.rs::tests::unheld_groups",
+              "kind": "Function",
+              "name": "unheld_groups",
+              "qualified_name": "tests::unheld_groups",
+              "file": "component/platform/coherence/src/checks.rs",
+              "lines": "805-814",
+              "signature": "fn unheld_groups( named: &std::collections::BTreeMap<String, String>, held: impl Fn(&str) -> bool, ) -> Vec<String>",
+              "doc": "The groups `named` that nothing holds, each with where it is named."
+            },
+            "depth": 1,
+            "confidence": 0.5,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:component/platform/coherence/src/checks.rs::tests::unheld_groups",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::held",
+              "derivation": "syntactic",
+              "confidence": 0.5,
+              "evidence": [
+                "component/platform/coherence/src/checks.rs:811"
+              ]
+            },
+            "citation": "component/platform/coherence/src/checks.rs:811 [syntactic 0.50]",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::held"
+          },
+          {
+            "node": {
+              "id": "rust:component/platform/coherence/src/checks.rs::tests::a_policy_group_with_no_holder_is_reported",
+              "kind": "Test",
+              "name": "a_policy_group_with_no_holder_is_reported",
+              "qualified_name": "tests::a_policy_group_with_no_holder_is_reported",
+              "file": "component/platform/coherence/src/checks.rs",
+              "lines": "819-846",
+              "signature": "fn a_policy_group_with_no_holder_is_reported()",
+              "doc": "The scan reads both forms, and a group nobody holds is reported with\n\nthe file that names it."
+            },
+            "depth": 2,
+            "confidence": 0.5,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:component/platform/coherence/src/checks.rs::tests::a_policy_group_with_no_holder_is_reported",
+              "dst": "rust:component/platform/coherence/src/checks.rs::tests::unheld_groups",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "component/platform/coherence/src/checks.rs:843"
+              ]
+            },
+            "citation": "component/platform/coherence/src/checks.rs:843",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::held"
+          },
+          {
+            "node": {
+              "id": "rust:component/platform/coherence/src/checks.rs::tests::every_group_a_policy_names_is_held_by_a_principal",
+              "kind": "Test",
+              "name": "every_group_a_policy_names_is_held_by_a_principal",
+              "qualified_name": "tests::every_group_a_policy_names_is_held_by_a_principal",
+              "file": "component/platform/coherence/src/checks.rs",
+              "lines": "788-802",
+              "signature": "fn every_group_a_policy_names_is_held_by_a_principal()",
+              "doc": "No policy branch is unreachable in the lower environments: every\n\ngroup a policy names is held by at least one principal in the\n\ndirectory (RFD-krvga4f3, \"Group names\", first rule)."
+            },
+            "depth": 2,
+            "confidence": 0.5,
+            "via": {
+              "kind": "CALLS",
+              "src": "rust:component/platform/coherence/src/checks.rs::tests::every_group_a_policy_names_is_held_by_a_principal",
+              "dst": "rust:component/platform/coherence/src/checks.rs::tests::unheld_groups",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "component/platform/coherence/src/checks.rs:795"
+              ]
+            },
+            "citation": "component/platform/coherence/src/checks.rs:795",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs::held"
+          },
+          {
+            "node": {
+              "id": "rust:apps/causeway-server/src/routes/app/operations.rs::routes",
+              "kind": "Function",
+              "name": "routes",
+              "qualified_name": "routes",
+              "file": "apps/causeway-server/src/routes/app/operations.rs",
+              "lines": "10-42",
+              "signature": "pub(super) fn routes() -> Router<AppState>"
+            },
+            "depth": 3,
+            "confidence": 0.5,
+            "via": {
+              "kind": "REFERENCES",
+              "src": "rust:apps/causeway-server/src/routes/app/operations.rs::routes",
+              "dst": "rust:apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs::stuck_work",
+              "derivation": "syntactic",
+              "confidence": 0.5,
+              "evidence": [
+                "apps/causeway-server/src/routes/app/operations.rs:34"
+              ]
+            },
+            "citation": "apps/causeway-server/src/routes/app/operations.rs:34 [syntactic 0.50]",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "typescript:apps-web/causeway-web/src/edge/telemetry.ts::edgeMeters",
+              "kind": "Function",
+              "name": "edgeMeters",
+              "qualified_name": "edgeMeters",
+              "file": "apps-web/causeway-web/src/edge/telemetry.ts",
+              "lines": "107-153",
+              "signature": "function edgeMeters(meter: Meter): EdgeMeters",
+              "doc": "The edge's instruments on `meter`."
+            },
+            "depth": 1,
+            "confidence": 0.375,
+            "via": {
+              "kind": "CALLS",
+              "src": "typescript:apps-web/causeway-web/src/edge/telemetry.ts::edgeMeters",
+              "dst": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record",
+              "derivation": "syntactic",
+              "confidence": 0.375,
+              "evidence": [
+                "apps-web/causeway-web/src/edge/telemetry.ts:135"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/edge/telemetry.ts:135 [syntactic 0.38]",
+            "from": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record"
+          },
+          {
+            "node": {
+              "id": "typescript:apps-web/causeway-web/src/server.ts::startEdge",
+              "kind": "Function",
+              "name": "startEdge",
+              "qualified_name": "startEdge",
+              "file": "apps-web/causeway-web/src/server.ts",
+              "lines": "105-284",
+              "signature": "function startEdge( config: EdgeConfig, paths: EdgePaths = { repository: REPOSITORY, viteRoot: APP_DIR }, ): Effect.Effect<RunningEdge, Error, Scope.Scope>",
+              "doc": "Start the edge with `config` in the current scope. Closing the scope shuts\nit down as a signal would."
+            },
+            "depth": 2,
+            "confidence": 0.375,
+            "via": {
+              "kind": "CALLS",
+              "src": "typescript:apps-web/causeway-web/src/server.ts::startEdge",
+              "dst": "typescript:apps-web/causeway-web/src/edge/telemetry.ts::edgeMeters",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/server.ts:113"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/server.ts:113",
+            "from": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record"
+          },
+          {
+            "node": {
+              "id": "typescript:apps-web/causeway-web/test/harness.ts::startTestEdge",
+              "kind": "Function",
+              "name": "startTestEdge",
+              "qualified_name": "startTestEdge",
+              "file": "apps-web/causeway-web/test/harness.ts",
+              "lines": "112-119",
+              "signature": "async function startTestEdge(config: EdgeConfig, paths?: EdgePaths): Promise<Edge>"
+            },
+            "depth": 3,
+            "confidence": 0.375,
+            "via": {
+              "kind": "CALLS",
+              "src": "typescript:apps-web/causeway-web/test/harness.ts::startTestEdge",
+              "dst": "typescript:apps-web/causeway-web/src/server.ts::startEdge",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/test/harness.ts:114"
+              ]
+            },
+            "citation": "apps-web/causeway-web/test/harness.ts:114",
+            "from": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record"
+          }
+        ]
+      },
+      {
+        "group": "files",
+        "label": "Files and packages",
+        "rows": [
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/pages/data/governance.ts",
+              "kind": "File",
+              "name": "governance.ts",
+              "qualified_name": "apps-web/causeway-web/src/pages/data/governance.ts",
+              "file": "apps-web/causeway-web/src/pages/data/governance.ts"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/pages/data/governance.ts",
+              "dst": "file:apps-web/causeway-web/src/pages/data/wire.ts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/data/governance.ts:14"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/data/governance.ts:14",
+            "from": "file:apps-web/causeway-web/src/pages/data/wire.ts"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/pages/data/marketplace.ts",
+              "kind": "File",
+              "name": "marketplace.ts",
+              "qualified_name": "apps-web/causeway-web/src/pages/data/marketplace.ts",
+              "file": "apps-web/causeway-web/src/pages/data/marketplace.ts"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/pages/data/marketplace.ts",
+              "dst": "file:apps-web/causeway-web/src/pages/data/wire.ts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/data/marketplace.ts:14"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/data/marketplace.ts:14",
+            "from": "file:apps-web/causeway-web/src/pages/data/wire.ts"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/pages/data/people.ts",
+              "kind": "File",
+              "name": "people.ts",
+              "qualified_name": "apps-web/causeway-web/src/pages/data/people.ts",
+              "file": "apps-web/causeway-web/src/pages/data/people.ts"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/pages/data/people.ts",
+              "dst": "file:apps-web/causeway-web/src/pages/data/wire.ts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/data/people.ts:9"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/data/people.ts:9",
+            "from": "file:apps-web/causeway-web/src/pages/data/wire.ts"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/pages/data/stuck-work.ts",
+              "kind": "File",
+              "name": "stuck-work.ts",
+              "qualified_name": "apps-web/causeway-web/src/pages/data/stuck-work.ts",
+              "file": "apps-web/causeway-web/src/pages/data/stuck-work.ts"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/pages/data/stuck-work.ts",
+              "dst": "file:apps-web/causeway-web/src/pages/data/wire.ts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/data/stuck-work.ts:15"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/data/stuck-work.ts:15",
+            "from": "file:apps-web/causeway-web/src/pages/data/wire.ts"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/pages/routes.tsx",
+              "kind": "File",
+              "name": "routes.tsx",
+              "qualified_name": "apps-web/causeway-web/src/pages/routes.tsx",
+              "file": "apps-web/causeway-web/src/pages/routes.tsx"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/pages/routes.tsx",
+              "dst": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/routes.tsx:52"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/routes.tsx:52",
+            "from": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::stuckWork"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/pages/routes/Glossary.tsx",
+              "kind": "File",
+              "name": "Glossary.tsx",
+              "qualified_name": "apps-web/causeway-web/src/pages/routes/Glossary.tsx",
+              "file": "apps-web/causeway-web/src/pages/routes/Glossary.tsx"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/pages/routes/Glossary.tsx",
+              "dst": "file:apps-web/causeway-web/src/pages/data/wire.ts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/routes/Glossary.tsx:22"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/routes/Glossary.tsx:22",
+            "from": "file:apps-web/causeway-web/src/pages/data/wire.ts"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/pages/routes/Product.tsx",
+              "kind": "File",
+              "name": "Product.tsx",
+              "qualified_name": "apps-web/causeway-web/src/pages/routes/Product.tsx",
+              "file": "apps-web/causeway-web/src/pages/routes/Product.tsx"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/pages/routes/Product.tsx",
+              "dst": "file:apps-web/causeway-web/src/pages/data/wire.ts",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/routes/Product.tsx:12"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/routes/Product.tsx:12",
+            "from": "file:apps-web/causeway-web/src/pages/data/wire.ts"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/pages/routes/StuckWork.tsx",
+              "kind": "File",
+              "name": "StuckWork.tsx",
+              "qualified_name": "apps-web/causeway-web/src/pages/routes/StuckWork.tsx",
+              "file": "apps-web/causeway-web/src/pages/routes/StuckWork.tsx"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/pages/routes/StuckWork.tsx",
+              "dst": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::SourceCount",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/pages/routes/StuckWork.tsx:9-15"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/pages/routes/StuckWork.tsx:9-15",
+            "from": "typescript:apps-web/causeway-web/src/pages/data/stuck-work.ts::SourceCount"
+          },
+          {
+            "node": {
+              "id": "file:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+              "kind": "File",
+              "name": "listing_tests.rs",
+              "qualified_name": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+              "file": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs",
+              "dst": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::CALLER",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:13"
+              ]
+            },
+            "citation": "apps/causeway-server/src/metadata_admin/handlers/listing_tests.rs:13",
+            "from": "rust:apps/causeway-server/src/metadata_admin/handlers/caller_tests.rs::CALLER"
+          },
+          {
+            "node": {
+              "id": "file:apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs",
+              "kind": "File",
+              "name": "stuck_work.rs",
+              "qualified_name": "apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs",
+              "file": "apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs"
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs",
+              "dst": "rust:apps/causeway-server-web/src/views/platform/operations/stuck_work.rs::SourceCount",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs:15-17"
+              ]
+            },
+            "citation": "apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs:15-17",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "file:apps/causeway-server/src/governance.rs",
+              "kind": "File",
+              "name": "governance.rs",
+              "qualified_name": "apps/causeway-server/src/governance.rs",
+              "file": "apps/causeway-server/src/governance.rs"
+            },
+            "depth": 3,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps/causeway-server/src/governance.rs",
+              "dst": "rust:apps/causeway-server/src/governance/issues.rs::load_issues",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/governance.rs:20"
+              ]
+            },
+            "citation": "apps/causeway-server/src/governance.rs:20",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::counts"
+          },
+          {
+            "node": {
+              "id": "file:apps/causeway-server/src/routes/pages.rs",
+              "kind": "File",
+              "name": "pages.rs",
+              "qualified_name": "apps/causeway-server/src/routes/pages.rs",
+              "file": "apps/causeway-server/src/routes/pages.rs"
+            },
+            "depth": 3,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps/causeway-server/src/routes/pages.rs",
+              "dst": "rust:apps/causeway-server/src/routes/pages/metadata_ops/stuck_work.rs::stuck_work",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps/causeway-server/src/routes/pages.rs:53-58"
+              ]
+            },
+            "citation": "apps/causeway-server/src/routes/pages.rs:53-58",
+            "from": "rust:apps/causeway-server/src/metadata_admin/stuck_work.rs::SourceCount"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/src/server.ts",
+              "kind": "File",
+              "name": "server.ts",
+              "qualified_name": "apps-web/causeway-web/src/server.ts",
+              "file": "apps-web/causeway-web/src/server.ts"
+            },
+            "depth": 2,
+            "confidence": 0.375,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/src/server.ts",
+              "dst": "typescript:apps-web/causeway-web/src/edge/telemetry.ts::edgeMeters",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/src/server.ts:31-37"
+              ]
+            },
+            "citation": "apps-web/causeway-web/src/server.ts:31-37",
+            "from": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record"
+          },
+          {
+            "node": {
+              "id": "file:apps-web/causeway-web/test/harness.ts",
+              "kind": "File",
+              "name": "harness.ts",
+              "qualified_name": "apps-web/causeway-web/test/harness.ts",
+              "file": "apps-web/causeway-web/test/harness.ts"
+            },
+            "depth": 3,
+            "confidence": 0.375,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "file:apps-web/causeway-web/test/harness.ts",
+              "dst": "typescript:apps-web/causeway-web/src/server.ts::startEdge",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "apps-web/causeway-web/test/harness.ts:15"
+              ]
+            },
+            "citation": "apps-web/causeway-web/test/harness.ts:15",
+            "from": "typescript:apps-web/causeway-web/test/app-operations.test.ts::the stuck-work filters, as the shell's `admits`::record"
+          }
+        ]
+      }
+    ],
+    "absent": [
+      "Contracts and topics",
+      "Workloads"
+    ]
+  },
+  "rules": {
+    "sources": [
+      "<scratch>/pr-replay/surveyor-rules",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/06-component-cross-deps.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/10-server-rpc-deps.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/11-server-service-impls.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/13-island-cross-refs.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/04-runtime-env-resource-ctors.rhai"
+    ],
+    "report": {
+      "outcomes": [
+        {
+          "id": "component-cross-deps",
+          "desc": "components must not depend on sibling component implementation crates; depend on crates/ domain+contract crates or services/ wire crates instead (ADR-0014)",
+          "severity": "fail",
+          "budget": null,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "server-rpc-contract-deps",
+          "desc": "non-orchestrator *-rpc deps in the server shell",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "server-rpc-service-impls",
+          "desc": "non-orchestrator gRPC service impls in the server shell",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "island-cross-references",
+          "desc": "web ui-* islands importing a sibling island",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "runtime-env-resource-ctors",
+          "desc": "causeway-runtime resource types must expose typed topology constructors, not env-first constructors",
+          "severity": "fail",
+          "budget": null,
+          "violations": [],
+          "passed": true
+        }
+      ]
+    }
+  },
+  "gate": {
+    "enforced": true,
+    "passed": true,
+    "exit": 0
+  },
+  "took_ms": 2126
+}

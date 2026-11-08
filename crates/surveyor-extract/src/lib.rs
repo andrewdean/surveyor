@@ -38,6 +38,7 @@
 
 // Rust guideline compliant 2026-02-21
 
+mod diff;
 mod error;
 mod extractor;
 mod manifest;
@@ -53,6 +54,8 @@ mod treesitter;
 
 mod walk;
 
+#[doc(inline)]
+pub use diff::Base;
 #[doc(inline)]
 pub use error::ExtractError;
 #[doc(inline)]

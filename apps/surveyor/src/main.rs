@@ -6,13 +6,15 @@
 //! answer with citations. `surveyor mcp` serves the same answers over MCP on stdio.
 //! With `--session <id>` (or `SURVEYOR_SESSION`) every answer is also recorded in a
 //! session ledger; `surveyor session` and `surveyor hook claude-code` work that
-//! ledger for an agent harness.
+//! ledger for an agent harness, and `surveyor pr` turns a change into the comment
+//! and gate a pull request carries.
 
 // Rust guideline compliant 2026-02-21
 
 mod app;
 mod eval;
 mod harness;
+mod pr;
 mod render;
 
 use clap::Parser;

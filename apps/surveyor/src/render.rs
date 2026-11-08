@@ -114,7 +114,7 @@ fn location(n: &Node) -> String {
         .unwrap_or_default()
 }
 
-fn cite(e: &Edge) -> String {
+pub(crate) fn cite(e: &Edge) -> String {
     let mut s = e
         .provenance
         .evidence

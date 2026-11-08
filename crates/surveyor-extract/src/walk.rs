@@ -294,19 +294,30 @@ impl Repository {
     pub fn unit(&self, path: &RepoPath) -> Result<Option<SourceUnit>, ExtractError> {
         let full = self.root.join(path.as_str());
         let content = std::fs::read(&full).map_err(|e| ExtractError::io(e).at(&full))?;
+        Ok(self.unit_of(path, self.commit.clone(), content))
+    }
+
+    /// A source unit over `content` read at `commit`, or `None` when it is binary.
+    #[must_use]
+    pub fn unit_of(
+        &self,
+        path: &RepoPath,
+        commit: CommitId,
+        content: Vec<u8>,
+    ) -> Option<SourceUnit> {
         if looks_binary(&content) {
-            return Ok(None);
+            return None;
         }
-        let unit = SourceUnit::new(self.id.clone(), path.clone(), self.commit.clone(), content);
+        let unit = SourceUnit::new(self.id.clone(), path.clone(), commit, content);
         // An extensionless script (a mise file task) is known by its shebang.
         let from_shebang = || {
             let first = unit.content.split(|b| *b == b'\n').next()?;
             Language::from_shebang(std::str::from_utf8(first).ok()?)
         };
-        Ok(Some(match unit.language.clone().or_else(from_shebang) {
+        Some(match unit.language.clone().or_else(from_shebang) {
             Some(language) => unit.with_language(language),
             None => unit,
-        }))
+        })
     }
 
     /// Reads every extractable file into source units.
@@ -389,7 +400,7 @@ pub(crate) fn is_extractable(path: &RepoPath) -> bool {
 }
 
 /// A NUL byte in the first 8 KiB marks a file as binary, as git does.
-fn looks_binary(content: &[u8]) -> bool {
+pub(crate) fn looks_binary(content: &[u8]) -> bool {
     const PROBE: usize = 8 * 1024;
     content.iter().take(PROBE).any(|b| *b == 0)
 }

@@ -16,6 +16,7 @@ use surveyor_store::{FileRecord, LanceStore, RepositorySnapshot, StoreUpdate};
 
 use crate::eval;
 use crate::harness;
+use crate::pr;
 use crate::render::{self, Output, Updated};
 
 /// Directory under the repository root that holds the dataset.
@@ -140,6 +141,9 @@ pub enum Command {
     Source(SourceArgs),
     /// Run the repository's architectural rules against the graph.
     Check(CheckArgs),
+    /// What a change touches, what it may break, whether the invariants hold: a
+    /// pull-request comment and a gate (exit 1 on a failed rule).
+    Pr(pr::PrArgs),
     /// Serve the graph over MCP on stdio.
     Mcp,
     /// Open, annotate or summarize a session ledger.
@@ -372,7 +376,11 @@ pub struct CheckArgs {
 }
 
 /// Rule directories from the profile plus the extra paths, split into dirs and files.
-fn rule_sources(root: &Path, profile: &Profile, extra: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
+pub(crate) fn rule_sources(
+    root: &Path,
+    profile: &Profile,
+    extra: &[PathBuf],
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let (dirs, files): (Vec<PathBuf>, Vec<PathBuf>) =
         extra.iter().cloned().partition(|p| p.is_dir());
     let profile_dirs = profile.rules.dirs.iter().map(|d| root.join(d));
@@ -851,6 +859,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 .context("mcp server")?;
             Ok(())
         }
+        Command::Pr(a) => pr::run(&cli, &p, a, out).await,
         Command::Session(a) => harness::session(&cli, &p, a, &out).await,
         Command::Hook(_) => unreachable!("handled before the dataset is opened"),
     }

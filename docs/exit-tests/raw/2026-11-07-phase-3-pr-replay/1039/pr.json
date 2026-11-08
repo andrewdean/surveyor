@@ -1,0 +1,601 @@
+{
+  "surveyor": "0.1.0",
+  "repo": "causeway",
+  "dataset": {
+    "commit": "a3779e8e4d284ee3543db1899e7db7ca796a31c5",
+    "dirty": false,
+    "nodes": 64880,
+    "edges": 274962
+  },
+  "change": {
+    "source": "git",
+    "base": "9c15a151987e14a6bbf8e2a9ec82cc6e1d047197",
+    "measured_against": "`9c15a151987e`",
+    "head": "a3779e8e4d284ee3543db1899e7db7ca796a31c5",
+    "files_changed": 8,
+    "symbols_changed": 17,
+    "nodes_changed": [
+      {
+        "id": "rhai:.mise/rhai/causeway/node_addon_release_test.rhai::test_the_addon_suites_run_after_the_single_build",
+        "kind": "Function",
+        "name": "test_the_addon_suites_run_after_the_single_build",
+        "qualified_name": "test_the_addon_suites_run_after_the_single_build",
+        "file": ".mise/rhai/causeway/node_addon_release_test.rhai",
+        "lines": "58-69",
+        "signature": "fn test_the_addon_suites_run_after_the_single_build()",
+        "doc": "The consumers' addon suites make the binary loadable with ensure-addon.sh,\nwhich builds when none loads. In one `moon run` beside the rpc-access\nbuild-addon, moon runs them in parallel and two napi builds race on one\ntarget dir and one .node; the task runs the build first and each consumer\nafter it, one `moon run` per line."
+      },
+      {
+        "id": "task:mise/ffi:rpc-access:test",
+        "kind": "Task",
+        "name": "ffi:rpc-access:test",
+        "qualified_name": "ffi:rpc-access:test",
+        "file": ".mise/toml/ffi.toml",
+        "lines": "101-112",
+        "signature": "mise run ffi:rpc-access:test",
+        "doc": "Build the @causeway/rpc-access addon, run its decision conformance suite, then the relay's and the search relay's suites that load it. Needs cargo."
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::a backend failure",
+        "kind": "Test",
+        "name": "a backend failure",
+        "qualified_name": "a backend failure",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "126-147",
+        "signature": "describe(\"a backend failure\", () => { it(\"is Unavailable to the caller, without the backend's reason\", async () => { const failing = Layer.succeed(VectorStore, { ensureCollection: Effect.void, upsert: () => Effect.void, queryHybrid: () => Effect.fail(new SearchError({ stage: \"store\", reason: \"connec…"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::a backend failure::is Unavailable to the caller, without the backend's reason",
+        "kind": "Test",
+        "name": "is Unavailable to the caller, without the backend's reason",
+        "qualified_name": "a backend failure::is Unavailable to the caller, without the backend's reason",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "127-146",
+        "signature": "it(\"is Unavailable to the caller, without the backend's reason\", async () => { const failing = Layer.succeed(VectorStore, { ensureCollection: Effect.void, upsert: () => Effect.void, queryHybrid: () => Effect.fail(new SearchError({ stage: \"store\", reason: \"connect ECONNREFUSED 10.0.0.7\" })), }); cons…"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller",
+        "kind": "Test",
+        "name": "an authorized caller",
+        "qualified_name": "an authorized caller",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "90-124",
+        "signature": "describe(\"an authorized caller\", () => { it(\"gets results, and the search is attributed to their subject\", async () => { const response = await relay.client.search({ text: \"data lineage\", limit: 5 }, as(\"person\")); expect(response.hits.map((hit) => hit.url)).toEqual(HITS.map((hit) => hit.url)); expe…"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::attributes a workload's search to the workload",
+        "kind": "Test",
+        "name": "attributes a workload's search to the workload",
+        "qualified_name": "an authorized caller::attributes a workload's search to the workload",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "106-111",
+        "signature": "it(\"attributes a workload's search to the workload\", async () => { await relay.client.search({ text: \"lineage\" }, as(\"workload-without-rpc-invoke\")); expect(recorded.map((event) => event.searcher)).toEqual([ { subjectKind: \"service\", subjectId: \"causeway-drive-ops\" }, ]); })"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::attributes an agent's search to the person it acts for",
+        "kind": "Test",
+        "name": "attributes an agent's search to the person it acts for",
+        "qualified_name": "an authorized caller::attributes an agent's search to the person it acts for",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "99-104",
+        "signature": "it(\"attributes an agent's search to the person it acts for\", async () => { await relay.client.search({ text: \"lineage\" }, as(\"agent-for-person-with-rpc-delegate\")); expect(recorded.map((event) => event.searcher)).toEqual([ { subjectKind: \"person\", subjectId: \"schen\" }, ]); })"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::gets no hits for a blank query, and nothing is recorded",
+        "kind": "Test",
+        "name": "gets no hits for a blank query, and nothing is recorded",
+        "qualified_name": "an authorized caller::gets no hits for a blank query, and nothing is recorded",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "113-117",
+        "signature": "it(\"gets no hits for a blank query, and nothing is recorded\", async () => { const response = await relay.client.search({ text: \" \" }, as(\"person\")); expect(response.hits).toEqual([]); expect(recorded).toEqual([]); })"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::gets results, and the search is attributed to their subject",
+        "kind": "Test",
+        "name": "gets results, and the search is attributed to their subject",
+        "qualified_name": "an authorized caller::gets results, and the search is attributed to their subject",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "91-97",
+        "signature": "it(\"gets results, and the search is attributed to their subject\", async () => { const response = await relay.client.search({ text: \"data lineage\", limit: 5 }, as(\"person\")); expect(response.hits.map((hit) => hit.url)).toEqual(HITS.map((hit) => hit.url)); expect(recorded).toHaveLength(1); expect(reco…"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::is told a query over the length cap is invalid",
+        "kind": "Test",
+        "name": "is told a query over the length cap is invalid",
+        "qualified_name": "an authorized caller::is told a query over the length cap is invalid",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "119-123",
+        "signature": "it(\"is told a query over the length cap is invalid\", async () => { expect(await codeOf(relay.client.search({ text: \"x\".repeat(2000) }, as(\"person\")))).toBe( Code.InvalidArgument, ); })"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an unauthorized caller",
+        "kind": "Test",
+        "name": "an unauthorized caller",
+        "qualified_name": "an unauthorized caller",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "67-88",
+        "signature": "describe(\"an unauthorized caller\", () => { it(\"is refused without a token, and nothing is searched or recorded\", async () => { expect(await codeOf(relay.client.search({ text: \"lineage\" }))).toBe(Code.Unauthenticated); expect(recorded).toEqual([]); }); it(\"is refused with an expired token\", async () …"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an unauthorized caller::is refused when an agent acts for a person without a delegation token",
+        "kind": "Test",
+        "name": "is refused when an agent acts for a person without a delegation token",
+        "qualified_name": "an unauthorized caller::is refused when an agent acts for a person without a delegation token",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "80-87",
+        "signature": "it(\"is refused when an agent acts for a person without a delegation token\", async () => { expect( await codeOf( relay.client.search({ text: \"lineage\" }, as(\"agent-for-person-without-rpc-delegate\")), ), ).toBe(Code.PermissionDenied); expect(recorded).toEqual([]); })"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an unauthorized caller::is refused with an expired token",
+        "kind": "Test",
+        "name": "is refused with an expired token",
+        "qualified_name": "an unauthorized caller::is refused with an expired token",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "73-78",
+        "signature": "it(\"is refused with an expired token\", async () => { expect(await codeOf(relay.client.search({ text: \"lineage\" }, as(\"expired\")))).toBe( Code.Unauthenticated, ); expect(recorded).toEqual([]); })"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an unauthorized caller::is refused without a token, and nothing is searched or recorded",
+        "kind": "Test",
+        "name": "is refused without a token, and nothing is searched or recorded",
+        "qualified_name": "an unauthorized caller::is refused without a token, and nothing is searched or recorded",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "68-71",
+        "signature": "it(\"is refused without a token, and nothing is searched or recorded\", async () => { expect(await codeOf(relay.client.search({ text: \"lineage\" }))).toBe(Code.Unauthenticated); expect(recorded).toEqual([]); })"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::codeOf",
+        "kind": "Function",
+        "name": "codeOf",
+        "qualified_name": "codeOf",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "44-51",
+        "signature": "async function codeOf(call: Promise<unknown>): Promise<Code | undefined>"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::the class table beside the proto",
+        "kind": "Test",
+        "name": "the class table beside the proto",
+        "qualified_name": "the class table beside the proto",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "53-65",
+        "signature": "describe(\"the class table beside the proto\", () => { it(\"classifies every SearchService method\", () => { const table: { methods: { method: string; class: string }[] } = JSON.parse( readFileSync(DEFAULT_RPC_CLASS_TABLE, \"utf-8\"), ); const classified = new Set(table.methods.map((entry) => entry.method…"
+      },
+      {
+        "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::the class table beside the proto::classifies every SearchService method",
+        "kind": "Test",
+        "name": "classifies every SearchService method",
+        "qualified_name": "the class table beside the proto::classifies every SearchService method",
+        "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+        "lines": "54-64",
+        "signature": "it(\"classifies every SearchService method\", () => { const table: { methods: { method: string; class: string }[] } = JSON.parse( readFileSync(DEFAULT_RPC_CLASS_TABLE, \"utf-8\"), ); const classified = new Set(table.methods.map((entry) => entry.method)); for (const method of SearchService.methods) { exp…"
+      },
+      {
+        "id": "file:services-node/search-relay/moon.yml",
+        "kind": "File",
+        "name": "moon.yml",
+        "qualified_name": "services-node/search-relay/moon.yml",
+        "file": "services-node/search-relay/moon.yml"
+      },
+      {
+        "id": "file:services-node/search-relay/package.json",
+        "kind": "File",
+        "name": "package.json",
+        "qualified_name": "services-node/search-relay/package.json",
+        "file": "services-node/search-relay/package.json"
+      },
+      {
+        "id": "file:services-node/search-relay/vitest.config.addon.ts",
+        "kind": "File",
+        "name": "vitest.config.addon.ts",
+        "qualified_name": "services-node/search-relay/vitest.config.addon.ts",
+        "file": "services-node/search-relay/vitest.config.addon.ts"
+      },
+      {
+        "id": "file:services-node/search-relay/vitest.config.ts",
+        "kind": "File",
+        "name": "vitest.config.ts",
+        "qualified_name": "services-node/search-relay/vitest.config.ts",
+        "file": "services-node/search-relay/vitest.config.ts"
+      }
+    ],
+    "deleted": [
+      "services-node/search-relay/tests/rpc-access.test.ts"
+    ],
+    "unindexed": []
+  },
+  "files": [
+    {
+      "path": ".mise/rhai/causeway/node_addon_release_test.rhai",
+      "added": false,
+      "hunks": [
+        "53",
+        "55-57",
+        "60-68"
+      ],
+      "symbols": [
+        {
+          "id": "rhai:.mise/rhai/causeway/node_addon_release_test.rhai::test_the_addon_suites_run_after_the_single_build",
+          "kind": "Function",
+          "name": "test_the_addon_suites_run_after_the_single_build",
+          "qualified_name": "test_the_addon_suites_run_after_the_single_build",
+          "file": ".mise/rhai/causeway/node_addon_release_test.rhai",
+          "lines": "58-69",
+          "signature": "fn test_the_addon_suites_run_after_the_single_build()",
+          "doc": "The consumers' addon suites make the binary loadable with ensure-addon.sh,\nwhich builds when none loads. In one `moon run` beside the rpc-access\nbuild-addon, moon runs them in parallel and two napi builds race on one\ntarget dir and one .node; the task runs the build first and each consumer\nafter it, one `moon run` per line."
+        }
+      ],
+      "file_node": "file:.mise/rhai/causeway/node_addon_release_test.rhai"
+    },
+    {
+      "path": ".mise/toml/ffi.toml",
+      "added": false,
+      "hunks": [
+        "102",
+        "110"
+      ],
+      "symbols": [
+        {
+          "id": "task:mise/ffi:rpc-access:test",
+          "kind": "Task",
+          "name": "ffi:rpc-access:test",
+          "qualified_name": "ffi:rpc-access:test",
+          "file": ".mise/toml/ffi.toml",
+          "lines": "101-112",
+          "signature": "mise run ffi:rpc-access:test",
+          "doc": "Build the @causeway/rpc-access addon, run its decision conformance suite, then the relay's and the search relay's suites that load it. Needs cargo."
+        }
+      ],
+      "file_node": "file:.mise/toml/ffi.toml"
+    },
+    {
+      "path": "services-node/search-relay/moon.yml",
+      "added": false,
+      "hunks": [
+        "15-17",
+        "25-41",
+        "45"
+      ],
+      "symbols": [],
+      "file_node": "file:services-node/search-relay/moon.yml"
+    },
+    {
+      "path": "services-node/search-relay/package.json",
+      "added": false,
+      "hunks": [
+        "13-14"
+      ],
+      "symbols": [],
+      "file_node": "file:services-node/search-relay/package.json"
+    },
+    {
+      "path": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+      "added": true,
+      "hunks": [
+        "1-147"
+      ],
+      "symbols": [
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::codeOf",
+          "kind": "Function",
+          "name": "codeOf",
+          "qualified_name": "codeOf",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "44-51",
+          "signature": "async function codeOf(call: Promise<unknown>): Promise<Code | undefined>"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::the class table beside the proto",
+          "kind": "Test",
+          "name": "the class table beside the proto",
+          "qualified_name": "the class table beside the proto",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "53-65",
+          "signature": "describe(\"the class table beside the proto\", () => { it(\"classifies every SearchService method\", () => { const table: { methods: { method: string; class: string }[] } = JSON.parse( readFileSync(DEFAULT_RPC_CLASS_TABLE, \"utf-8\"), ); const classified = new Set(table.methods.map((entry) => entry.method…"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::the class table beside the proto::classifies every SearchService method",
+          "kind": "Test",
+          "name": "classifies every SearchService method",
+          "qualified_name": "the class table beside the proto::classifies every SearchService method",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "54-64",
+          "signature": "it(\"classifies every SearchService method\", () => { const table: { methods: { method: string; class: string }[] } = JSON.parse( readFileSync(DEFAULT_RPC_CLASS_TABLE, \"utf-8\"), ); const classified = new Set(table.methods.map((entry) => entry.method)); for (const method of SearchService.methods) { exp…"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an unauthorized caller",
+          "kind": "Test",
+          "name": "an unauthorized caller",
+          "qualified_name": "an unauthorized caller",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "67-88",
+          "signature": "describe(\"an unauthorized caller\", () => { it(\"is refused without a token, and nothing is searched or recorded\", async () => { expect(await codeOf(relay.client.search({ text: \"lineage\" }))).toBe(Code.Unauthenticated); expect(recorded).toEqual([]); }); it(\"is refused with an expired token\", async () …"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an unauthorized caller::is refused without a token, and nothing is searched or recorded",
+          "kind": "Test",
+          "name": "is refused without a token, and nothing is searched or recorded",
+          "qualified_name": "an unauthorized caller::is refused without a token, and nothing is searched or recorded",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "68-71",
+          "signature": "it(\"is refused without a token, and nothing is searched or recorded\", async () => { expect(await codeOf(relay.client.search({ text: \"lineage\" }))).toBe(Code.Unauthenticated); expect(recorded).toEqual([]); })"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an unauthorized caller::is refused with an expired token",
+          "kind": "Test",
+          "name": "is refused with an expired token",
+          "qualified_name": "an unauthorized caller::is refused with an expired token",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "73-78",
+          "signature": "it(\"is refused with an expired token\", async () => { expect(await codeOf(relay.client.search({ text: \"lineage\" }, as(\"expired\")))).toBe( Code.Unauthenticated, ); expect(recorded).toEqual([]); })"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an unauthorized caller::is refused when an agent acts for a person without a delegation token",
+          "kind": "Test",
+          "name": "is refused when an agent acts for a person without a delegation token",
+          "qualified_name": "an unauthorized caller::is refused when an agent acts for a person without a delegation token",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "80-87",
+          "signature": "it(\"is refused when an agent acts for a person without a delegation token\", async () => { expect( await codeOf( relay.client.search({ text: \"lineage\" }, as(\"agent-for-person-without-rpc-delegate\")), ), ).toBe(Code.PermissionDenied); expect(recorded).toEqual([]); })"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller",
+          "kind": "Test",
+          "name": "an authorized caller",
+          "qualified_name": "an authorized caller",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "90-124",
+          "signature": "describe(\"an authorized caller\", () => { it(\"gets results, and the search is attributed to their subject\", async () => { const response = await relay.client.search({ text: \"data lineage\", limit: 5 }, as(\"person\")); expect(response.hits.map((hit) => hit.url)).toEqual(HITS.map((hit) => hit.url)); expe…"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::gets results, and the search is attributed to their subject",
+          "kind": "Test",
+          "name": "gets results, and the search is attributed to their subject",
+          "qualified_name": "an authorized caller::gets results, and the search is attributed to their subject",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "91-97",
+          "signature": "it(\"gets results, and the search is attributed to their subject\", async () => { const response = await relay.client.search({ text: \"data lineage\", limit: 5 }, as(\"person\")); expect(response.hits.map((hit) => hit.url)).toEqual(HITS.map((hit) => hit.url)); expect(recorded).toHaveLength(1); expect(reco…"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::attributes an agent's search to the person it acts for",
+          "kind": "Test",
+          "name": "attributes an agent's search to the person it acts for",
+          "qualified_name": "an authorized caller::attributes an agent's search to the person it acts for",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "99-104",
+          "signature": "it(\"attributes an agent's search to the person it acts for\", async () => { await relay.client.search({ text: \"lineage\" }, as(\"agent-for-person-with-rpc-delegate\")); expect(recorded.map((event) => event.searcher)).toEqual([ { subjectKind: \"person\", subjectId: \"schen\" }, ]); })"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::attributes a workload's search to the workload",
+          "kind": "Test",
+          "name": "attributes a workload's search to the workload",
+          "qualified_name": "an authorized caller::attributes a workload's search to the workload",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "106-111",
+          "signature": "it(\"attributes a workload's search to the workload\", async () => { await relay.client.search({ text: \"lineage\" }, as(\"workload-without-rpc-invoke\")); expect(recorded.map((event) => event.searcher)).toEqual([ { subjectKind: \"service\", subjectId: \"causeway-drive-ops\" }, ]); })"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::gets no hits for a blank query, and nothing is recorded",
+          "kind": "Test",
+          "name": "gets no hits for a blank query, and nothing is recorded",
+          "qualified_name": "an authorized caller::gets no hits for a blank query, and nothing is recorded",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "113-117",
+          "signature": "it(\"gets no hits for a blank query, and nothing is recorded\", async () => { const response = await relay.client.search({ text: \" \" }, as(\"person\")); expect(response.hits).toEqual([]); expect(recorded).toEqual([]); })"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::an authorized caller::is told a query over the length cap is invalid",
+          "kind": "Test",
+          "name": "is told a query over the length cap is invalid",
+          "qualified_name": "an authorized caller::is told a query over the length cap is invalid",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "119-123",
+          "signature": "it(\"is told a query over the length cap is invalid\", async () => { expect(await codeOf(relay.client.search({ text: \"x\".repeat(2000) }, as(\"person\")))).toBe( Code.InvalidArgument, ); })"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::a backend failure",
+          "kind": "Test",
+          "name": "a backend failure",
+          "qualified_name": "a backend failure",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "126-147",
+          "signature": "describe(\"a backend failure\", () => { it(\"is Unavailable to the caller, without the backend's reason\", async () => { const failing = Layer.succeed(VectorStore, { ensureCollection: Effect.void, upsert: () => Effect.void, queryHybrid: () => Effect.fail(new SearchError({ stage: \"store\", reason: \"connec…"
+        },
+        {
+          "id": "typescript:services-node/search-relay/tests/rpc-access.addon.test.ts::a backend failure::is Unavailable to the caller, without the backend's reason",
+          "kind": "Test",
+          "name": "is Unavailable to the caller, without the backend's reason",
+          "qualified_name": "a backend failure::is Unavailable to the caller, without the backend's reason",
+          "file": "services-node/search-relay/tests/rpc-access.addon.test.ts",
+          "lines": "127-146",
+          "signature": "it(\"is Unavailable to the caller, without the backend's reason\", async () => { const failing = Layer.succeed(VectorStore, { ensureCollection: Effect.void, upsert: () => Effect.void, queryHybrid: () => Effect.fail(new SearchError({ stage: \"store\", reason: \"connect ECONNREFUSED 10.0.0.7\" })), }); cons…"
+        }
+      ],
+      "file_node": "file:services-node/search-relay/tests/rpc-access.addon.test.ts"
+    },
+    {
+      "path": "services-node/search-relay/vitest.config.addon.ts",
+      "added": true,
+      "hunks": [
+        "1-12"
+      ],
+      "symbols": [],
+      "file_node": "file:services-node/search-relay/vitest.config.addon.ts"
+    },
+    {
+      "path": "services-node/search-relay/vitest.config.ts",
+      "added": false,
+      "hunks": [
+        "1-8",
+        "13-15"
+      ],
+      "symbols": [],
+      "file_node": "file:services-node/search-relay/vitest.config.ts"
+    }
+  ],
+  "removed": {
+    "listed": true,
+    "symbols": [
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Function",
+        "qualified_name": "codeOf",
+        "lines": "44-51"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "a backend failure",
+        "lines": "126-147"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "a backend failure::is Unavailable to the caller, without the backend's reason",
+        "lines": "127-146"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an authorized caller",
+        "lines": "90-124"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an authorized caller::attributes a workload's search to the workload",
+        "lines": "106-111"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an authorized caller::attributes an agent's search to the person it acts for",
+        "lines": "99-104"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an authorized caller::gets no hits for a blank query, and nothing is recorded",
+        "lines": "113-117"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an authorized caller::gets results, and the search is attributed to their subject",
+        "lines": "91-97"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an authorized caller::is told a query over the length cap is invalid",
+        "lines": "119-123"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an unauthorized caller",
+        "lines": "67-88"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an unauthorized caller::is refused when an agent acts for a person without a delegation token",
+        "lines": "80-87"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an unauthorized caller::is refused with an expired token",
+        "lines": "73-78"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "an unauthorized caller::is refused without a token, and nothing is searched or recorded",
+        "lines": "68-71"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "the class table beside the proto",
+        "lines": "53-65"
+      },
+      {
+        "file": "services-node/search-relay/tests/rpc-access.test.ts",
+        "kind": "Test",
+        "qualified_name": "the class table beside the proto::classifies every SearchService method",
+        "lines": "54-64"
+      }
+    ]
+  },
+  "impact": {
+    "depth": 3,
+    "min_confidence": 0.25,
+    "total": 0,
+    "groups": [],
+    "absent": [
+      "Contracts and topics",
+      "Workloads"
+    ]
+  },
+  "rules": {
+    "sources": [
+      "<scratch>/pr-replay/surveyor-rules",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/06-component-cross-deps.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/10-server-rpc-deps.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/11-server-service-impls.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/13-island-cross-refs.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/04-runtime-env-resource-ctors.rhai"
+    ],
+    "report": {
+      "outcomes": [
+        {
+          "id": "component-cross-deps",
+          "desc": "components must not depend on sibling component implementation crates; depend on crates/ domain+contract crates or services/ wire crates instead (ADR-0014)",
+          "severity": "fail",
+          "budget": null,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "server-rpc-contract-deps",
+          "desc": "non-orchestrator *-rpc deps in the server shell",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "server-rpc-service-impls",
+          "desc": "non-orchestrator gRPC service impls in the server shell",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "island-cross-references",
+          "desc": "web ui-* islands importing a sibling island",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "runtime-env-resource-ctors",
+          "desc": "causeway-runtime resource types must expose typed topology constructors, not env-first constructors",
+          "severity": "fail",
+          "budget": null,
+          "violations": [],
+          "passed": true
+        }
+      ]
+    }
+  },
+  "gate": {
+    "enforced": true,
+    "passed": true,
+    "exit": 0
+  },
+  "took_ms": 1632
+}

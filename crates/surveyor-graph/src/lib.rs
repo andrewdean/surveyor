@@ -21,6 +21,7 @@
 // Rust guideline compliant 2026-02-21
 
 mod card;
+mod change;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -31,6 +32,8 @@ use surveyor_model::{Edge, EdgeKind, GraphDelta, Node, NodeId, NodeKind};
 
 #[doc(inline)]
 pub use card::{Card, Count, RuleNote, RuleStatus, SAMPLES_PER_COUNT, Sample, first_paragraph};
+#[doc(inline)]
+pub use change::{Changed, ChangedFile, Impact, ImpactGroup, changed, impact};
 
 /// The direction of an edge relative to a node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -23,6 +23,7 @@
 
 // Rust guideline compliant 2026-02-21
 
+mod change;
 mod edge;
 mod error;
 mod fact;
@@ -33,6 +34,8 @@ mod node;
 mod provenance;
 mod span;
 
+#[doc(inline)]
+pub use change::{ChangeSet, FileChange, new_side_range};
 #[doc(inline)]
 pub use edge::{Edge, EdgeId, EdgeKind};
 #[doc(inline)]

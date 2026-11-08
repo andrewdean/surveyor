@@ -1,0 +1,84 @@
+# The Surveyor comment on a pull request: what the change touches, what it may break,
+# and whether the architectural invariants hold, with the gate's exit code as the
+# job's result.
+#
+# Drop this job into the workflow that already runs `surveyor check` (it reuses the
+# same dataset cache; see docs/causeway-ci-check.md for that job). `surveyor pr`
+# writes the Markdown and the JSON; the last step creates or edits one comment on
+# the pull request, found again by its first line `<!-- surveyor-pr -->`. Nothing
+# here needs a toolchain beyond the Surveyor binary and `gh`.
+name: surveyor pr comment
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  surveyor-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SURVEYOR_VERSION: "0.1.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge base with the base branch needs the history on both sides.
+          fetch-depth: 0
+
+      - name: Install surveyor from its GitHub release
+        env:
+          RELEASE: https://github.com/andrewdean/surveyor/releases/download/v${{ env.SURVEYOR_VERSION }}
+          ARCHIVE: surveyor-${{ env.SURVEYOR_VERSION }}-x86_64-unknown-linux-gnu
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$RELEASE/$ARCHIVE.tar.gz"
+          curl -fsSLO "$RELEASE/SHA256SUMS"
+          sha256sum -c --ignore-missing SHA256SUMS
+          tar -xzf "$ARCHIVE.tar.gz"
+          echo "$RUNNER_TEMP/$ARCHIVE" >> "$GITHUB_PATH"
+
+      - name: Restore the dataset
+        uses: actions/cache/restore@v4
+        with:
+          path: .surveyor
+          key: surveyor-${{ env.SURVEYOR_VERSION }}-db-${{ github.sha }}
+          restore-keys: surveyor-${{ env.SURVEYOR_VERSION }}-db-
+
+      - name: Bring the dataset to this commit
+        run: surveyor update
+
+      # Exit 1 when a `fail` rule fails, 2 when the report could not be made; the
+      # comment is posted either way, so the step records the code and goes on.
+      - name: Measure the change
+        id: pr
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          code=0
+          surveyor pr --base "origin/$BASE" --out "$RUNNER_TEMP/pr" || code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update the comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          body="$RUNNER_TEMP/pr/pr.md"
+          [ -s "$body" ] || printf '<!-- surveyor-pr -->\n### Surveyor\n\nThe report could not be made; see the job log.\n' > "$body"
+          existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '[.[] | select(.body | startswith("<!-- surveyor-pr -->"))][0].id // empty')
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$existing" -F body=@"$body" > /dev/null
+          else
+            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$body" > /dev/null
+          fi
+
+      - name: Fail the job when the gate failed
+        if: steps.pr.outputs.code != '0'
+        run: |
+          echo "surveyor pr exited ${{ steps.pr.outputs.code }}; the comment says which rule"
+          exit ${{ steps.pr.outputs.code }}

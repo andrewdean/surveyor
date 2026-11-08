@@ -177,6 +177,17 @@ for now). This checkout implements Phase 0 of that plan.
   payloads and does the bookkeeping for a session: `update` and one line of
   orientation at start, a pack for the first prompt, a record per Surveyor tool call,
   the summary at stop (`docs/harness.md`, `examples/claude-code/`).
+- **Pull-request comment and gate.** `surveyor pr` measures the working tree against
+  the merge base with the default branch (or `--base <ref>`, or a `--diff` file): each
+  changed line maps to the innermost declaration around it, the reverse impact walks
+  three hops from every changed node and is grouped by kind (code, tables, contracts,
+  workloads, tasks, documents, files), the rules run as `check` runs them, and every
+  row carries its `file:lines`. Markdown on stdout, `--json`, or `--out <dir>` for
+  both; exit 1 on a failed `fail` rule, 2 when no report could be made, `--no-gate`
+  for a job that only comments, `--session` to embed the ledger's summary.
+  Surveyor never calls GitHub: `examples/ci/github-pr-comment.yml` posts and edits
+  one comment by its marker line, `examples/harness/open-pr.sh` refuses to open a
+  pull request on exit 1 (`docs/harness.md`).
 
 ## Numbers
 
@@ -404,9 +415,8 @@ building the release archives for a `v*` tag.
 
 ## Not yet
 
-The pull-request comment and gate (`surveyor pr`), federation across repositories,
-`serve` with streamable HTTP, personas and runtime connectors are the following
-stages and phases of the RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too).
+Federation across repositories, `serve` with streamable HTTP, personas and runtime
+connectors are the following stages and phases of the RFD. Incremental update does not watch the file system yet (`notify` is Phase 1 too).
 It walks the tree on every run, so files a changed profile includes or excludes
 arrive and leave as added and deleted files, but a changed dialect or default schema
 still needs `index`. It relinks changed files syntactically: rerun `index --scip` when

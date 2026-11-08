@@ -1,0 +1,325 @@
+{
+  "surveyor": "0.1.0",
+  "repo": "causeway",
+  "dataset": {
+    "commit": "36157f3ea844fa6ba105fd68aa15f4ed9bc42562",
+    "dirty": false,
+    "nodes": 66762,
+    "edges": 286447
+  },
+  "change": {
+    "source": "git",
+    "base": "08bc6c236da8c6c87f42775094233637b8191704",
+    "measured_against": "`08bc6c236da8`",
+    "head": "36157f3ea844fa6ba105fd68aa15f4ed9bc42562",
+    "files_changed": 4,
+    "symbols_changed": 5,
+    "nodes_changed": [
+      {
+        "id": "rhai:.mise/rhai/vsa/rules.rhai::migration_rules",
+        "kind": "Function",
+        "name": "migration_rules",
+        "qualified_name": "migration_rules",
+        "file": ".mise/rhai/vsa/rules.rhai",
+        "lines": "40-1310",
+        "signature": "fn migration_rules()"
+      },
+      {
+        "id": "rust:crates/causeway-db-core/src/migrations.rs::EMBEDDED_MIGRATIONS",
+        "kind": "Const",
+        "name": "EMBEDDED_MIGRATIONS",
+        "qualified_name": "EMBEDDED_MIGRATIONS",
+        "file": "crates/causeway-db-core/src/migrations.rs",
+        "lines": "19-49",
+        "signature": "pub const EMBEDDED_MIGRATIONS: &[&str] = &[ \"0001_initial_schema.sql\", \"0002_metadata_trust_profiles.sql\", \"0003_policy_propagation_barriers.sql\", \"0004_pure_artifact_projection_views.sql\", \"0005_article_search_export.sql\", \"0006_content_search_export.sql\", \"0007_article_author_ref.sql\", \"0008_artic…",
+        "doc": "Every migration file embedded by [`crate::migrate`], in order."
+      },
+      {
+        "id": "rust:crates/causeway-testkit/tests/postgres.rs::no_base_table_is_shadowed_by_a_component_schema",
+        "kind": "Test",
+        "name": "no_base_table_is_shadowed_by_a_component_schema",
+        "qualified_name": "no_base_table_is_shadowed_by_a_component_schema",
+        "file": "crates/causeway-testkit/tests/postgres.rs",
+        "lines": "131-158",
+        "signature": "async fn no_base_table_is_shadowed_by_a_component_schema()",
+        "doc": "A table lives in one schema. When a slice takes a table over from the\n\nbase schema, the base copy is dropped, or it lingers empty beside the one\n\nthe code reads. The exceptions are shared by design: each migration set\n\nkeeps its own `_sqlx_migrations`, and each search source (the base\n\nschema's editorial content among them) exports its own\n\n`catalog_search_export_v1` and keeps its own watermarks."
+      },
+      {
+        "id": "rust:crates/causeway-testkit/tests/postgres.rs::no_base_table_is_shadowed_by_a_component_schema::SHARED_BY_DESIGN",
+        "kind": "Const",
+        "name": "SHARED_BY_DESIGN",
+        "qualified_name": "no_base_table_is_shadowed_by_a_component_schema::SHARED_BY_DESIGN",
+        "file": "crates/causeway-testkit/tests/postgres.rs",
+        "lines": "132-136",
+        "signature": "const SHARED_BY_DESIGN: &[&str] = &[ \"_sqlx_migrations\", \"catalog_search_export_v1\", \"catalog_search_watermarks\", ];"
+      },
+      {
+        "id": "rust:crates/causeway-testkit/tests/postgres.rs::no_base_table_is_shadowed_by_a_component_schema::query#9e13a97d",
+        "kind": "Query",
+        "name": "select #9e13a97d",
+        "qualified_name": "no_base_table_is_shadowed_by_a_component_schema::select #9e13a97d",
+        "file": "crates/causeway-testkit/tests/postgres.rs",
+        "lines": "141-146",
+        "signature": "SELECT b.table_name::text, c.table_schema::text            FROM information_schema.tables b            JOIN information_schema.tables c ON c.table_name = b.tabl…"
+      },
+      {
+        "id": "file:crates/causeway-db-core/migrations/0029_drop_orphaned_base_tables.sql",
+        "kind": "File",
+        "name": "0029_drop_orphaned_base_tables.sql",
+        "qualified_name": "crates/causeway-db-core/migrations/0029_drop_orphaned_base_tables.sql",
+        "file": "crates/causeway-db-core/migrations/0029_drop_orphaned_base_tables.sql"
+      }
+    ],
+    "deleted": [],
+    "unindexed": []
+  },
+  "files": [
+    {
+      "path": ".mise/rhai/vsa/rules.rhai",
+      "added": false,
+      "hunks": [
+        "62-63",
+        "68"
+      ],
+      "symbols": [
+        {
+          "id": "rhai:.mise/rhai/vsa/rules.rhai::migration_rules",
+          "kind": "Function",
+          "name": "migration_rules",
+          "qualified_name": "migration_rules",
+          "file": ".mise/rhai/vsa/rules.rhai",
+          "lines": "40-1310",
+          "signature": "fn migration_rules()"
+        }
+      ],
+      "file_node": "file:.mise/rhai/vsa/rules.rhai"
+    },
+    {
+      "path": "crates/causeway-db-core/migrations/0029_drop_orphaned_base_tables.sql",
+      "added": true,
+      "hunks": [
+        "1-10"
+      ],
+      "symbols": [],
+      "file_node": "file:crates/causeway-db-core/migrations/0029_drop_orphaned_base_tables.sql"
+    },
+    {
+      "path": "crates/causeway-db-core/src/migrations.rs",
+      "added": false,
+      "hunks": [
+        "48"
+      ],
+      "symbols": [
+        {
+          "id": "rust:crates/causeway-db-core/src/migrations.rs::EMBEDDED_MIGRATIONS",
+          "kind": "Const",
+          "name": "EMBEDDED_MIGRATIONS",
+          "qualified_name": "EMBEDDED_MIGRATIONS",
+          "file": "crates/causeway-db-core/src/migrations.rs",
+          "lines": "19-49",
+          "signature": "pub const EMBEDDED_MIGRATIONS: &[&str] = &[ \"0001_initial_schema.sql\", \"0002_metadata_trust_profiles.sql\", \"0003_policy_propagation_barriers.sql\", \"0004_pure_artifact_projection_views.sql\", \"0005_article_search_export.sql\", \"0006_content_search_export.sql\", \"0007_article_author_ref.sql\", \"0008_artic…",
+          "doc": "Every migration file embedded by [`crate::migrate`], in order."
+        }
+      ],
+      "file_node": "file:crates/causeway-db-core/src/migrations.rs"
+    },
+    {
+      "path": "crates/causeway-testkit/tests/postgres.rs",
+      "added": false,
+      "hunks": [
+        "124-159"
+      ],
+      "symbols": [
+        {
+          "id": "rust:crates/causeway-testkit/tests/postgres.rs::no_base_table_is_shadowed_by_a_component_schema",
+          "kind": "Test",
+          "name": "no_base_table_is_shadowed_by_a_component_schema",
+          "qualified_name": "no_base_table_is_shadowed_by_a_component_schema",
+          "file": "crates/causeway-testkit/tests/postgres.rs",
+          "lines": "131-158",
+          "signature": "async fn no_base_table_is_shadowed_by_a_component_schema()",
+          "doc": "A table lives in one schema. When a slice takes a table over from the\n\nbase schema, the base copy is dropped, or it lingers empty beside the one\n\nthe code reads. The exceptions are shared by design: each migration set\n\nkeeps its own `_sqlx_migrations`, and each search source (the base\n\nschema's editorial content among them) exports its own\n\n`catalog_search_export_v1` and keeps its own watermarks."
+        },
+        {
+          "id": "rust:crates/causeway-testkit/tests/postgres.rs::no_base_table_is_shadowed_by_a_component_schema::SHARED_BY_DESIGN",
+          "kind": "Const",
+          "name": "SHARED_BY_DESIGN",
+          "qualified_name": "no_base_table_is_shadowed_by_a_component_schema::SHARED_BY_DESIGN",
+          "file": "crates/causeway-testkit/tests/postgres.rs",
+          "lines": "132-136",
+          "signature": "const SHARED_BY_DESIGN: &[&str] = &[ \"_sqlx_migrations\", \"catalog_search_export_v1\", \"catalog_search_watermarks\", ];"
+        },
+        {
+          "id": "rust:crates/causeway-testkit/tests/postgres.rs::no_base_table_is_shadowed_by_a_component_schema::query#9e13a97d",
+          "kind": "Query",
+          "name": "select #9e13a97d",
+          "qualified_name": "no_base_table_is_shadowed_by_a_component_schema::select #9e13a97d",
+          "file": "crates/causeway-testkit/tests/postgres.rs",
+          "lines": "141-146",
+          "signature": "SELECT b.table_name::text, c.table_schema::text            FROM information_schema.tables b            JOIN information_schema.tables c ON c.table_name = b.tabl…"
+        }
+      ],
+      "file_node": "file:crates/causeway-testkit/tests/postgres.rs"
+    }
+  ],
+  "removed": {
+    "listed": true,
+    "symbols": []
+  },
+  "impact": {
+    "depth": 3,
+    "min_confidence": 0.25,
+    "total": 3,
+    "groups": [
+      {
+        "group": "code",
+        "label": "Code symbols",
+        "rows": [
+          {
+            "node": {
+              "id": "rhai:.mise/rhai/vsa/rules.rhai::all_rules",
+              "kind": "Function",
+              "name": "all_rules",
+              "qualified_name": "all_rules",
+              "file": ".mise/rhai/vsa/rules.rhai",
+              "lines": "1419-1437",
+              "signature": "fn all_rules()"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "rhai:.mise/rhai/vsa/rules.rhai::all_rules",
+              "dst": "rhai:.mise/rhai/vsa/rules.rhai::migration_rules",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                ".mise/rhai/vsa/rules.rhai:1422"
+              ]
+            },
+            "citation": ".mise/rhai/vsa/rules.rhai:1422",
+            "from": "rhai:.mise/rhai/vsa/rules.rhai::migration_rules"
+          }
+        ]
+      },
+      {
+        "group": "files",
+        "label": "Files and packages",
+        "rows": [
+          {
+            "node": {
+              "id": "rust:crates/causeway-db-core/src/migrations.rs::tests",
+              "kind": "Module",
+              "name": "tests",
+              "qualified_name": "tests",
+              "file": "crates/causeway-db-core/src/migrations.rs",
+              "lines": "52-82",
+              "signature": "mod tests"
+            },
+            "depth": 1,
+            "confidence": 1.0,
+            "via": {
+              "kind": "IMPORTS",
+              "src": "rust:crates/causeway-db-core/src/migrations.rs::tests",
+              "dst": "rust:crates/causeway-db-core/src/migrations.rs::EMBEDDED_MIGRATIONS",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                "crates/causeway-db-core/src/migrations.rs:53"
+              ]
+            },
+            "citation": "crates/causeway-db-core/src/migrations.rs:53",
+            "from": "rust:crates/causeway-db-core/src/migrations.rs::EMBEDDED_MIGRATIONS"
+          },
+          {
+            "node": {
+              "id": "file:.mise/rhai/vsa/all.rhai",
+              "kind": "File",
+              "name": "all.rhai",
+              "qualified_name": ".mise/rhai/vsa/all.rhai",
+              "file": ".mise/rhai/vsa/all.rhai"
+            },
+            "depth": 2,
+            "confidence": 1.0,
+            "via": {
+              "kind": "CALLS",
+              "src": "file:.mise/rhai/vsa/all.rhai",
+              "dst": "rhai:.mise/rhai/vsa/rules.rhai::all_rules",
+              "derivation": "syntactic",
+              "confidence": 1.0,
+              "evidence": [
+                ".mise/rhai/vsa/all.rhai:7"
+              ]
+            },
+            "citation": ".mise/rhai/vsa/all.rhai:7",
+            "from": "rhai:.mise/rhai/vsa/rules.rhai::migration_rules"
+          }
+        ]
+      }
+    ],
+    "absent": [
+      "Contracts and topics",
+      "Workloads"
+    ]
+  },
+  "rules": {
+    "sources": [
+      "<scratch>/pr-replay/surveyor-rules",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/06-component-cross-deps.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/10-server-rpc-deps.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/11-server-service-impls.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/13-island-cross-refs.rhai",
+      "docs/exit-tests/raw/../../../examples/causeway-rules/04-runtime-env-resource-ctors.rhai"
+    ],
+    "report": {
+      "outcomes": [
+        {
+          "id": "component-cross-deps",
+          "desc": "components must not depend on sibling component implementation crates; depend on crates/ domain+contract crates or services/ wire crates instead (ADR-0014)",
+          "severity": "fail",
+          "budget": null,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "server-rpc-contract-deps",
+          "desc": "non-orchestrator *-rpc deps in the server shell",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "server-rpc-service-impls",
+          "desc": "non-orchestrator gRPC service impls in the server shell",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "island-cross-references",
+          "desc": "web ui-* islands importing a sibling island",
+          "severity": "budget",
+          "budget": 0,
+          "violations": [],
+          "passed": true
+        },
+        {
+          "id": "runtime-env-resource-ctors",
+          "desc": "causeway-runtime resource types must expose typed topology constructors, not env-first constructors",
+          "severity": "fail",
+          "budget": null,
+          "violations": [],
+          "passed": true
+        }
+      ]
+    }
+  },
+  "gate": {
+    "enforced": true,
+    "passed": true,
+    "exit": 0
+  },
+  "took_ms": 1743
+}
